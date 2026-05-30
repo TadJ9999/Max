@@ -183,7 +183,7 @@ Parser rules:
 - [x] **Floating transparent widget** — frameless/transparent/always-on-top/skip-taskbar window, **top-right anchoring**, **global hotkey toggle** (`Ctrl+Shift+M`), and **click-through-when-idle** (Rust cursor-poll). ✅ *Confirmed on-screen (placement, hotkey, hover interactivity).*
 - [x] **Live vector mascot** ("X") reacting to engine state (idle / thinking / busy / done / error) — built as a **"Jarvis"-style SVG + CSS HUD** (not Rive; same state API)
 - [x] **Task cards** per session (model · provider · state · ☁ marker · cancel/promote) — UI done on **mock data**; live `/sessions` polling pending
-- [~] **SYS INFO** meters (CPU · GPU · **VRAM** · RAM) + **⚙ settings** cog — laid out ✅; **values are mock until a Rust sysinfo/nvidia-smi command lands**
+- [x] **SYS INFO** meters (CPU · GPU · **VRAM** · RAM) + **⚙ settings** cog — **live** values (Rust `sysinfo` for CPU/RAM, `nvidia-smi` for GPU/VRAM, polled ~1.5s); mascot reacts to real VRAM
 - [~] Chat UI with a **cloud indicator** when `!` used ✅ + SSE streaming + `/health` dot; **markdown/code-blocks/copy pending**
 - [ ] **Model manager**: list / download / switch / params (temp, ctx, quant)
 - [ ] **Routing config**: map sigils → providers/models, set **per-task defaults**, assign **hotkeys**

@@ -5,6 +5,7 @@ import { Mascot } from "./components/Mascot";
 import { ChatBar } from "./components/ChatBar";
 import { deriveMascotState } from "./mascot/deriveMascotState";
 import { initFloatingWindow } from "./window";
+import { getSystemStats } from "./system";
 import { type Session } from "./types";
 import "./App.css";
 
@@ -40,12 +41,28 @@ const MOCK_SESSIONS: Session[] = [
 
 function App() {
   const [sessions, setSessions] = useState<Session[]>(MOCK_SESSIONS);
-  const [sys] = useState<SysInfo>(MOCK_SYS);
+  const [sys, setSys] = useState<SysInfo>(MOCK_SYS);
   const [showSettings, setShowSettings] = useState(false);
 
   // Anchor top-right + register the global hotkey (no-op outside Tauri).
   useEffect(() => {
     void initFloatingWindow();
+  }, []);
+
+  // Poll real system meters from the backend (~1.5s); keeps placeholders in the
+  // browser preview where the Tauri command isn't available.
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      const s = await getSystemStats();
+      if (alive && s) setSys(s);
+    };
+    void tick();
+    const id = window.setInterval(() => void tick(), 1500);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
   }, []);
 
   // Collapse sessions (+ measured VRAM) into the single mascot signal.

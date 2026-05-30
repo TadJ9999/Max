@@ -1,7 +1,78 @@
+use std::sync::Mutex;
+
 use tauri::Manager;
 
 #[cfg(desktop)]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+/// Live system meters shown in the widget's top bar. Percentages are 0..100.
+#[derive(serde::Serialize)]
+struct SystemStats {
+    cpu: f32,
+    ram: f32,
+    gpu: f32,
+    vram: f32,
+    /// False when no NVIDIA GPU / `nvidia-smi` is available (gpu/vram are 0).
+    gpu_available: bool,
+}
+
+/// CPU + RAM via `sysinfo`; GPU + VRAM via `nvidia-smi` (the 4070 Ti). Polled by
+/// the frontend every ~1.5s. VRAM is the meter that matters most (12 GB ceiling).
+#[tauri::command]
+fn get_system_stats(sys: tauri::State<'_, Mutex<sysinfo::System>>) -> SystemStats {
+    let (cpu, ram) = {
+        let mut s = sys.lock().unwrap();
+        s.refresh_cpu_usage();
+        s.refresh_memory();
+        let total = s.total_memory();
+        let ram = if total > 0 {
+            s.used_memory() as f32 / total as f32 * 100.0
+        } else {
+            0.0
+        };
+        (s.global_cpu_usage(), ram)
+    };
+
+    let (gpu, vram, gpu_available) = query_nvidia().unwrap_or((0.0, 0.0, false));
+    SystemStats {
+        cpu,
+        ram,
+        gpu,
+        vram,
+        gpu_available,
+    }
+}
+
+/// Returns (gpu_util%, vram_used%, true) by parsing `nvidia-smi`, or None if it
+/// isn't present / fails. Runs without flashing a console window on Windows.
+fn query_nvidia() -> Option<(f32, f32, bool)> {
+    let mut cmd = std::process::Command::new("nvidia-smi");
+    cmd.args([
+        "--query-gpu=utilization.gpu,memory.used,memory.total",
+        "--format=csv,noheader,nounits",
+    ]);
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+
+    let out = cmd.output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let line = text.lines().next()?;
+    let parts: Vec<&str> = line.split(',').map(str::trim).collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    let gpu: f32 = parts[0].parse().ok()?;
+    let used: f32 = parts[1].parse().ok()?;
+    let total: f32 = parts[2].parse().ok()?;
+    let vram = if total > 0.0 { used / total * 100.0 } else { 0.0 };
+    Some((gpu, vram, true))
+}
 
 /// Click-through-when-idle: Tauri's `set_ignore_cursor_events` is whole-window,
 /// so once the window ignores the cursor the webview can't see hover to switch
@@ -19,7 +90,6 @@ fn spawn_click_through_guard(app: &tauri::AppHandle) {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(120));
 
-            // Only manage interactivity while the window is actually shown.
             if !window.is_visible().unwrap_or(false) {
                 continue;
             }
@@ -63,6 +133,8 @@ fn toggle_main(app: &tauri::AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .manage(Mutex::new(sysinfo::System::new_all()))
+        .invoke_handler(tauri::generate_handler![get_system_stats])
         .setup(|app| {
             #[cfg(desktop)]
             {
