@@ -21,6 +21,9 @@ model on a different task, in parallel.
 - **Scheduling:** smart scheduler + UI to **manually push queued tasks to cloud** when local is backed up ✅
 - **Session results:** **isolated** — each viewed separately in its own pane ✅
 - **Desktop shell:** **Tauri** ✅
+- **v1 scope:** chat + config + **full Smart-Auto delegation** (ambitious but the goal) ✅
+- **Smart-Auto signal:** route by **task complexity** (small/simple → local, big/complex → cloud) ✅
+- **Workspace access:** a **folder allowlist** set in the UI; anything inside listed paths is in-scope ✅
 - VS Code integration is a **later phase** (after the chat app) ✅
 - Hardware can be upgraded later if the project proves out ✅
 
@@ -165,12 +168,13 @@ Parser rules:
 - [ ] **Routing config**: map sigils → providers/models, set **per-task defaults**, assign **hotkeys**
 - [ ] **Provider/key management** (add Claude key, toggle cloud on/off)
 - [ ] Engine start/stop/restart + live VRAM/RAM meters
-- [ ] Settings: **auto-delegate toggle (Manual / Smart-Auto)**, cloud on/off, privacy rules
+- [ ] Settings: **auto-delegate toggle (Manual / Smart-Auto)**, cloud on/off
+- [ ] **Workspace folder allowlist** — list the paths Max may read/operate on
 
 ### Phase 4 — Delegate system: parallel sessions & multi-model orchestration  🎯 *run many tasks at once, each on its own model*
 - [ ] Session manager: spawn / track / cancel concurrent sessions, each bound to a provider+model
 - [ ] **Mode toggle (settings): Manual** (you assign model+task) **and Smart-Auto** (AI decides local vs cloud)
-- [ ] Smart-Auto router: choose local vs cloud per task from capability / queue depth / (later) privacy rules
+- [ ] Smart-Auto router: choose local vs cloud per task, primarily by **task complexity** (queue depth as tie-breaker)
 - [ ] Task scheduler aware of the **12 GB VRAM limit** (cloud + small-local run in parallel; heavy local models queue)
 - [ ] **Queue dashboard** with manual override: push a queued task to cloud when local is backed up
 - [ ] Delegator/coordinator (optional): decompose one request into subtasks fanned out to workers
