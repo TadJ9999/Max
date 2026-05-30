@@ -30,6 +30,13 @@ model on a different task, in parallel.
 - Hardware can be upgraded later if the project proves out ✅
 - **Both local (Ollama) + cloud (Claude) wired from day one** (cloud gated by `allow_cloud`) ✅
 - **Fix/refactor operator = `~`** (`!` is reserved as the cloud sigil) ✅
+- **Beyond coding:** Max grows from coding assistant → **general personal assistant** (reports, music, voice, …) ✅
+- **Two planes:** **control plane** (REST + WS/SSE — the client backbone, kept) vs **capability plane** (**MCP** for skills, added) ✅
+- **Capabilities via MCP:** the engine is an **MCP host**; skills plug in behind an internal **capability registry** (MCP = default adapter, *not* hard-wired) ✅
+- **Intent router:** generalize the delegate from "local vs cloud" → **skill domain + model + locality**; the sigil DSL stays the explicit/manual path ✅
+- **Voice:** orchestration via capabilities, but **audio on a dedicated realtime WS channel** (not MCP) ✅
+- **Home/LAN:** networked engine adds **bearer-token auth**; MCP skills run as local subprocess *or* networked service ✅
+- *(Full layered design in [docs/architecture.md](docs/architecture.md).)*
 
 ---
 
@@ -173,7 +180,7 @@ Parser rules:
 - [ ] Output post-processing (strip fences, match indentation/style) — *prompt-only today; no post-processor yet*
 
 ### Phase 3 — Desktop widget app  🎯 **v1 — floating widget + configure everything** ([UI design](docs/ui.md))
-- [x] **Floating transparent widget** — frameless/transparent/always-on-top/skip-taskbar window, **top-right anchoring**, **global hotkey toggle** (`Ctrl+Alt+M`), and **click-through-when-idle** (Rust cursor-poll). *Live-window behavior needs on-screen confirmation.*
+- [x] **Floating transparent widget** — frameless/transparent/always-on-top/skip-taskbar window, **top-right anchoring**, **global hotkey toggle** (`Ctrl+Shift+M`), and **click-through-when-idle** (Rust cursor-poll). *Live-window behavior needs on-screen confirmation.*
 - [x] **Live vector mascot** ("X") reacting to engine state (idle / thinking / busy / done / error) — built as a **"Jarvis"-style SVG + CSS HUD** (not Rive; same state API)
 - [x] **Task cards** per session (model · provider · state · ☁ marker · cancel/promote) — UI done on **mock data**; live `/sessions` polling pending
 - [~] **SYS INFO** meters (CPU · GPU · **VRAM** · RAM) + **⚙ settings** cog — laid out ✅; **values are mock until a Rust sysinfo/nvidia-smi command lands**
@@ -220,7 +227,17 @@ Parser rules:
 - [ ] Multi-file / repo-wide edits with plan + approval
 - [ ] User-defined custom commands & template library
 - [ ] More providers (OpenAI, local llama.cpp/vLLM) + more clients (CLI, Neovim, LAN)
-- [ ] Voice input, vision models, tool-calling/agents
+- [ ] Vision models  *(voice + tool-calling/agents → **Phase 9** capability platform)*
+
+### Phase 9 — Capability platform & general assistant (beyond coding)  🎯 *add skills, not rewrite the core* ([architecture](docs/architecture.md))
+*Turns Max from a coding assistant into a general personal assistant. Layered so each new ability is a plug-in, not a core change. Builds on the engine/delegate already in place — keeps 100% of current functionality.*
+- [ ] **MCP host** in the engine — discover/load/manage MCP servers (stdio + networked) and expose their tools to models
+- [ ] **Capability registry** — internal `Capability` interface; **MCP is the default adapter**, with native-Python / HTTP adapters possible (no lock-in)
+- [ ] **Intent router** — classify free-form requests into a **skill domain** (code / music / report / Q&A / …) + pick capability + model; tiny resident local model as the classifier; the sigil DSL stays the explicit path
+- [ ] **First skills** (prove the platform): **write reports**, **play music**, **web/search**, **files/calendar** — each an MCP server
+- [ ] **Voice** — wake word + STT + TTS as a capability over a **dedicated low-latency WebSocket audio pipeline** (kept separate from the control plane)
+- [ ] **Auth for home/LAN** — bearer-token on the API once it leaves localhost-only; per-skill placement (local subprocess vs networked)
+- [ ] **Outward MCP façade (optional)** — expose Max *itself* as an MCP server so external agents (Claude Desktop, Cursor) can "ask Max" / use its local models
 
 ---
 

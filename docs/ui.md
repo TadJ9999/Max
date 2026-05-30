@@ -33,7 +33,7 @@ session stack above it; system stats and settings sit along the top.
 ### Window / widget shell
 - **Frameless, transparent background** — no title bar, no chrome; the desktop shows through.
 - **Always-on-top**, **skip taskbar**, **top-right anchored**.
-- **Global hotkey** toggles show/hide — **configurable, default `Ctrl+Alt+M`**.
+- **Global hotkey** toggles show/hide — **configurable, default `Ctrl+Shift+M`** (Ctrl+Alt is avoided: Windows treats it as AltGr, which makes such hotkeys unreliable to register).
 - **Click-through when idle**: the widget ignores mouse events so it never blocks the
   desktop, and becomes interactive **only on hover** (Tauri `setIgnoreCursorEvents`).
 - Optional: drag to reposition; remembers position.
@@ -68,7 +68,7 @@ session stack above it; system stats and settings sit along the top.
 | Need | Approach |
 |------|----------|
 | Transparent, frameless, on-top, top-right | Tauri window: `transparent: true`, `decorations: false`, `alwaysOnTop: true`, `skipTaskbar: true`; position via the window API |
-| Show/hide hotkey | `@tauri-apps/plugin-global-shortcut`; configurable, default `Ctrl+Alt+M` |
+| Show/hide hotkey | `tauri-plugin-global-shortcut` registered in **Rust** (backend handler, reliable); configurable, default `Ctrl+Shift+M` |
 | Click-through when idle | Rust loop polls the global cursor vs window bounds and toggles `set_ignore_cursor_events` (whole-window ignore can't be detected back from the webview) |
 | Live mascot (reacts to state) | **SVG + CSS HUD** — *chosen*. Jarvis-style holographic rings, no deps, transparent; state-machine API mirrors Rive so real `.riv` art can drop in later |
 | SYS INFO meters | Rust command using the `sysinfo` crate (CPU/RAM); GPU/VRAM via parsing `nvidia-smi` (RTX 4070 Ti) |
@@ -84,7 +84,7 @@ session stack above it; system stats and settings sit along the top.
   See [mascot.md](mascot.md).
 - **UI glass:** **Apple dark-mode "vibrancy"** — near-black translucent cards with hairline
   white borders and strong backdrop blur (the desktop tints through the gaps).
-- **Show/hide:** configurable global hotkey, default **`Ctrl+Alt+M`**.
+- **Show/hide:** configurable global hotkey, default **`Ctrl+Shift+M`**.
 - **Interaction:** click-through when idle, interactive on hover.
 
 ## Still open (later)
