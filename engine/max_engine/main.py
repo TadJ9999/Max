@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -30,7 +31,8 @@ from .providers.factory import build_provider
 from .router import resolve
 
 # Load engine/.env (e.g. ANTHROPIC_API_KEY) if present, before providers read it.
-load_dotenv()
+# Explicit path so it works regardless of the launch directory.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 app = FastAPI(title="Max Engine", version=__version__)
 
