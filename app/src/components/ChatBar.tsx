@@ -6,7 +6,13 @@ import { useEffect, useRef, useState } from "react";
 import { getHealth, isDslCommand, streamChat, streamCommand } from "../engine";
 import { MarkdownView } from "./MarkdownView";
 
-export function ChatBar() {
+export function ChatBar({
+  onRequest,
+  onBusyChange,
+}: {
+  onRequest?: () => void;
+  onBusyChange?: (busy: boolean) => void;
+}) {
   const [online, setOnline] = useState<boolean | null>(null);
   const [text, setText] = useState("");
   const [output, setOutput] = useState("");
@@ -34,8 +40,10 @@ export function ChatBar() {
     const q = text.trim();
     if (!q || busy) return;
     setBusy(true);
+    onBusyChange?.(true); // mascot: enter "thinking" until the reply finishes
     setErr(null);
     setOutput("");
+    onRequest?.(); // fire a request comet on the mascot
     const ac = new AbortController();
     abortRef.current = ac;
     // DSL command (`. … .`, `!. … .`, `~ … ~`) → /command; plain text → /chat.
@@ -48,6 +56,7 @@ export function ChatBar() {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
+      onBusyChange?.(false); // mascot: response complete → ripple blast
       abortRef.current = null;
     }
   };

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TopBar, type SysInfo } from "./components/TopBar";
 import { TaskCard } from "./components/TaskCard";
 import { Mascot } from "./components/Mascot";
 import { ChatBar } from "./components/ChatBar";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { OsintButton } from "./osint/OsintButton";
 import { deriveMascotState } from "./mascot/deriveMascotState";
 import { initFloatingWindow } from "./window";
 import { getSystemStats } from "./system";
@@ -45,10 +46,28 @@ function App() {
   const [sessions, setSessions] = useState<Session[]>(MOCK_SESSIONS);
   const [sys, setSys] = useState<SysInfo>(MOCK_SYS);
   const [showSettings, setShowSettings] = useState(false);
+  const [pulse, setPulse] = useState(0); // bump => mascot fires a request comet
+  const ping = useCallback(() => setPulse((p) => p + 1), []);
+  const [systemDown, setSystemDown] = useState(!navigator.onLine);
+  const [chatThinking, setChatThinking] = useState(false);
+  const seenIds = useRef<Set<string>>(new Set());
+  const firstPoll = useRef(true);
 
   // Anchor top-right + register the global hotkey (no-op outside Tauri).
   useEffect(() => {
     void initFloatingWindow();
+  }, []);
+
+  // System status → red core when the host is unreachable. Connectivity is a
+  // stand-in until a real engine health probe is wired (ROADMAP Phase 3/4).
+  useEffect(() => {
+    const sync = () => setSystemDown(!navigator.onLine);
+    window.addEventListener("online", sync);
+    window.addEventListener("offline", sync);
+    return () => {
+      window.removeEventListener("online", sync);
+      window.removeEventListener("offline", sync);
+    };
   }, []);
 
   // Poll real system meters from the backend (~1.5s); keeps placeholders in the
@@ -73,7 +92,13 @@ function App() {
     let alive = true;
     const tick = async () => {
       const real = await getSessions();
-      if (alive && real) setSessions(real);
+      if (!alive || !real) return;
+      setSessions(real);
+      // Fire one comet when new sessions appear (skip the initial load).
+      const fresh = real.some((s) => !seenIds.current.has(s.id));
+      real.forEach((s) => seenIds.current.add(s.id));
+      if (fresh && !firstPoll.current) ping();
+      firstPoll.current = false;
     };
     void tick();
     const id = window.setInterval(() => void tick(), 2000);
@@ -129,9 +154,14 @@ function App() {
         state={mascot.state}
         metrics={{ cpu: sys.cpu, gpu: sys.gpu, vram: sys.vram, ram: sys.ram, gpuTemp: sys.gpuTemp }}
         size={150}
+        signal={pulse}
+        thinking={chatThinking}
+        systemDown={systemDown}
       />
 
-      <ChatBar />
+      <ChatBar onRequest={ping} onBusyChange={setChatThinking} />
+
+      <OsintButton />
     </div>
   );
 }
