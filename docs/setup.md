@@ -34,6 +34,22 @@ $env:ANTHROPIC_API_KEY = "sk-ant-..."   # never commit this
 
 Without a key the `!` cloud path is expected to fail cleanly; everything local still works.
 
+## 3b. Desktop app toolchain (Tauri)
+
+The widget app (`app/`) is Tauri v2 + React + TS + Vite. It needs Node, Rust, and the
+MSVC C++ build tools (WebView2 ships with Windows 11):
+
+```powershell
+winget install OpenJS.NodeJS.LTS
+winget install Rustlang.Rustup
+winget install Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+# new shell, then:
+cd app
+npm install
+npm run dev          # frontend only (browser preview, http://localhost:1420)
+npm run tauri dev    # the real floating widget window (needs Rust + build tools)
+```
+
 ## 4. Verify end-to-end
 
 ```powershell

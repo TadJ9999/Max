@@ -173,11 +173,11 @@ Parser rules:
 - [ ] Output post-processing (strip fences, match indentation/style) — *prompt-only today; no post-processor yet*
 
 ### Phase 3 — Desktop widget app  🎯 **v1 — floating widget + configure everything** ([UI design](docs/ui.md))
-- [ ] **Floating transparent widget** (top-right, always-on-top, frameless) toggled by a **global hotkey**
-- [ ] **Live vector mascot** ("X") reacting to engine state (idle / thinking / busy / done / error) — Rive
-- [ ] **Task cards** per session (model · provider · state · ☁ marker · cancel/promote), transparent gaps between
-- [ ] **SYS INFO** meters (CPU · GPU · **VRAM** · RAM) top-left; **⚙ settings** cog top-right
-- [ ] Chat UI (streaming, markdown, code blocks, copy) with a **cloud indicator** when `!` used
+- [~] **Floating transparent widget** — frameless/transparent/always-on-top/skip-taskbar window ✅; **top-right anchoring + global hotkey toggle pending**
+- [x] **Live vector mascot** ("X") reacting to engine state (idle / thinking / busy / done / error) — built as a **canvas particle cloud** (not Rive; same state API)
+- [x] **Task cards** per session (model · provider · state · ☁ marker · cancel/promote) — UI done on **mock data**; live `/sessions` polling pending
+- [~] **SYS INFO** meters (CPU · GPU · **VRAM** · RAM) + **⚙ settings** cog — laid out ✅; **values are mock until a Rust sysinfo/nvidia-smi command lands**
+- [~] Chat UI with a **cloud indicator** when `!` used ✅ + SSE streaming + `/health` dot; **markdown/code-blocks/copy pending**
 - [ ] **Model manager**: list / download / switch / params (temp, ctx, quant)
 - [ ] **Routing config**: map sigils → providers/models, set **per-task defaults**, assign **hotkeys**
 - [ ] **Provider/key management** (add Claude key, toggle cloud on/off)
