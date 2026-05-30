@@ -155,14 +155,14 @@ Parser rules:
 - [x] Engine language = Python/FastAPI
 - [x] Desktop UI shell decision — **Tauri** (locked)
 - [x] Monorepo structure (`/engine`, `/app`, `/docs` exist; `/extension` lands in Phase 5)
-- [ ] Install + smoke-test Ollama; set up Anthropic API access for `!` — *next milestone (engine end-to-end)*
+- [~] Install + smoke-test Ollama ✅ (0.24; `qwen2.5-coder:3b`+`:14b`, smoke all PASS); Anthropic API access for `!` still pending
 - [ ] **Benchmark local models on the 4070 Ti** (tokens/s, VRAM, quality) → shortlist
 - [~] Dev tooling: lint/format/test done (**ruff + pytest, 29 passing**); **CI** + SessionStart hook pending
 - [x] Lock the DSL grammar (sigils + operators + escaping) — parser implemented + tested
 
 ### Phase 1 — Engine MVP (the brain)  🎯 *`curl` can chat with Max via any provider*
 - [x] Provider adapter interface
-- [x] Ollama (local) adapter (streaming; mock-tested) — *needs live Ollama to verify end-to-end*
+- [x] Ollama (local) adapter (streaming) — **verified end-to-end** against live Ollama (`/command` + `/v1/chat/completions` stream real tokens; sessions run → done)
 - [x] Anthropic/Claude (cloud) adapter (streaming; mock-tested) — *needs API key to verify end-to-end*
 - [x] OpenAI-compatible `/v1/chat/completions` with **streaming** (SSE); `provider` selectable
 - [x] `/command` endpoint: full DSL → router → provider stream (sigil picks local/cloud)

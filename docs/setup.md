@@ -64,5 +64,5 @@ that already confirms the HTTP + SSE plumbing and routing work.
 ## Status of this milestone
 
 - [x] Stage A — HTTP/SSE plumbing verified (engine boots, `/health` + `/parse` pass, inference path SKIPs cleanly)
-- [ ] Stage B — real local inference (needs Ollama + a pulled model)
+- [x] Stage B — real local inference ✅ (Ollama 0.24 + `qwen2.5-coder:3b` & `:14b`; smoke test all PASS, `/command` streams real code, delegate sessions run → done)
 - [ ] Stage C — cloud `!` path (needs `ANTHROPIC_API_KEY`)
