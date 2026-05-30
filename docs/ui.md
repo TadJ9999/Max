@@ -33,7 +33,9 @@ session stack above it; system stats and settings sit along the top.
 ### Window / widget shell
 - **Frameless, transparent background** — no title bar, no chrome; the desktop shows through.
 - **Always-on-top**, **skip taskbar**, **top-right anchored**.
-- **Global hotkey** toggles show/hide (e.g. `Ctrl+Alt+M`, user-configurable).
+- **Global hotkey** toggles show/hide — **configurable, default `Ctrl+Alt+M`**.
+- **Click-through when idle**: the widget ignores mouse events so it never blocks the
+  desktop, and becomes interactive **only on hover** (Tauri `setIgnoreCursorEvents`).
 - Optional: drag to reposition; remembers position.
 
 ### Top bar
@@ -66,14 +68,18 @@ session stack above it; system stats and settings sit along the top.
 | Need | Approach |
 |------|----------|
 | Transparent, frameless, on-top, top-right | Tauri window: `transparent: true`, `decorations: false`, `alwaysOnTop: true`, `skipTaskbar: true`; position via the window API |
-| Show/hide hotkey | `@tauri-apps/plugin-global-shortcut` |
-| Live mascot (reacts to state) | **Rive** (state-machine vector animation, driven by engine status inputs) — ideal for "reacts/thinks". Lottie is the simpler fallback |
+| Show/hide hotkey | `@tauri-apps/plugin-global-shortcut`; configurable, default `Ctrl+Alt+M` |
+| Click-through when idle | Tauri `setIgnoreCursorEvents(true)`; toggle off on hover |
+| Live mascot (reacts to state) | **Rive** — *chosen*. Free & open-source runtime (MIT) + free editor; state-machine vector animation driven by engine status. Lottie = free fallback |
 | SYS INFO meters | Rust command using the `sysinfo` crate (CPU/RAM); GPU/VRAM via parsing `nvidia-smi` (RTX 4070 Ti) |
 | Task cards + streaming | React frontend; subscribe to `/sessions` + per-session output stream (SSE/WebSocket) |
 | Glass look | CSS `backdrop-filter: blur()`, low-alpha backgrounds, rounded corners, soft shadows |
 
-## Open UI questions
-- Mascot art style + source — commission a Rive piece, or start with a placeholder rig?
-- Default hotkey for show/hide?
-- Click-through when idle (so the widget never blocks clicks), and only interactive on hover?
-- Card cap / scroll when many sessions are active?
+## Decisions
+- **Mascot:** Rive (free/open-source runtime + free editor), state-machine driven by engine state.
+- **Show/hide:** configurable global hotkey, default **`Ctrl+Alt+M`**.
+- **Interaction:** click-through when idle, interactive on hover.
+
+## Still open (later)
+- Mascot art style + source — commission a Rive piece, or start with a placeholder rig.
+- Card cap / scroll behavior when many sessions are active.
