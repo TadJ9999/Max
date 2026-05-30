@@ -1,6 +1,8 @@
 # Max — Local-First AI Engine · Roadmap & Brainstorm
 
-> Status: **DRAFT / living document** — still brainstorming. Nothing is locked.
+> Status: **living document** — core decisions locked and the engine MVP is scaffolded
+> (DSL parser, router, Ollama/Claude adapters, delegate engine + `/sessions` API; 29 tests).
+> The phase checklists below track real, code-verified status.
 
 A **local-first**, private AI engine for a powerful workstation, with an **explicit
 opt-in cloud escape hatch**. One always-on **engine** (daemon) does the thinking;
@@ -26,6 +28,8 @@ model on a different task, in parallel.
 - **Workspace access:** a **folder allowlist** set in the UI; anything inside listed paths is in-scope ✅
 - VS Code integration is a **later phase** (after the chat app) ✅
 - Hardware can be upgraded later if the project proves out ✅
+- **Both local (Ollama) + cloud (Claude) wired from day one** (cloud gated by `allow_cloud`) ✅
+- **Fix/refactor operator = `~`** (`!` is reserved as the cloud sigil) ✅
 
 ---
 
@@ -92,7 +96,7 @@ work against Max for free; the DSL + routing is the value-add on top.
 | Engine | **Python + FastAPI** ✅ |
 | Local inference | **Ollama** first; adapter to swap → llama.cpp / vLLM |
 | Cloud inference | **Anthropic (Claude)** adapter; pattern reusable for others |
-| Desktop UI | Tauri (light) or Electron — decide in Phase 0 |
+| Desktop UI | **Tauri** ✅ (locked) |
 | VS Code ext | TypeScript |
 | Vector store | sqlite-vec or LanceDB (embedded) |
 
@@ -138,14 +142,16 @@ Parser rules:
 
 ## 3. Phases, milestones & checklist
 
+> Legend: `[x]` done · `[~]` partial (note explains what's left) · `[ ]` not started.
+
 ### Phase 0 — Foundations & decisions  🎯 *stack locked, models benchmarked*
 - [x] Engine language = Python/FastAPI
-- [ ] Desktop UI shell decision (Tauri vs Electron)
-- [ ] Monorepo structure (`/engine`, `/app`, `/extension`, `/docs`)
-- [ ] Install + smoke-test Ollama; set up Anthropic API access for `!`
+- [x] Desktop UI shell decision — **Tauri** (locked)
+- [x] Monorepo structure (`/engine`, `/app`, `/docs` exist; `/extension` lands in Phase 5)
+- [ ] Install + smoke-test Ollama; set up Anthropic API access for `!` — *next milestone (engine end-to-end)*
 - [ ] **Benchmark local models on the 4070 Ti** (tokens/s, VRAM, quality) → shortlist
-- [ ] Dev tooling: lint/format/test/CI; SessionStart hook for web sessions
-- [ ] Lock the DSL grammar (sigils + operators + escaping)
+- [~] Dev tooling: lint/format/test done (**ruff + pytest, 29 passing**); **CI** + SessionStart hook pending
+- [x] Lock the DSL grammar (sigils + operators + escaping) — parser implemented + tested
 
 ### Phase 1 — Engine MVP (the brain)  🎯 *`curl` can chat with Max via any provider*
 - [x] Provider adapter interface
@@ -154,17 +160,17 @@ Parser rules:
 - [x] OpenAI-compatible `/v1/chat/completions` with **streaming** (SSE); `provider` selectable
 - [x] `/command` endpoint: full DSL → router → provider stream (sigil picks local/cloud)
 - [x] Per-provider model overrides (cloud `!` → Claude model, local → coder model)
-- [ ] Provider router (sigil → adapter+model) + per-task default model config
-- [ ] Config system (models, sigils, params, API keys) — file-based, hot-reload
-- [ ] **Privacy guard**: detect + mark cloud egress; secure API-key storage
-- [ ] Health/status endpoint; run as background daemon
+- [x] Provider router (sigil → adapter+model) + per-task default model config (`router.py`; per-task default *provider* still TODO)
+- [~] Config system (models, sigils, params, API keys) — in-memory defaults exist (`config.py`); **file-backed + hot-reload pending**
+- [~] **Privacy guard** — cloud routes flagged (`is_cloud`) + `allow_cloud` gate + keys from env; **egress audit log + secure key store pending**
+- [~] Health/status endpoint (`/health` ✅); **background daemon mode pending**
 
 ### Phase 2 — Command DSL & routing  🎯 *send `!.`/`@..`/`#.` strings → correct provider + behavior*
-- [ ] DSL parser (sigils + `.`/`..`, escaping, nested code)
-- [ ] Wire parser → router → adapter
-- [ ] `.` → code generation (insertable code, not chatty prose)
-- [ ] `..` → docstring / README generation
-- [ ] Output post-processing (strip fences, match indentation/style)
+- [x] DSL parser (sigils + `.`/`..`, escaping, nested code) — `dsl/parser.py`, tested
+- [x] Wire parser → router → adapter — the `/command` endpoint
+- [x] `.` → code generation — `generate` system prompt (output quality to tune post-benchmark)
+- [x] `..` → docstring / README generation — `summarize` system prompt
+- [ ] Output post-processing (strip fences, match indentation/style) — *prompt-only today; no post-processor yet*
 
 ### Phase 3 — Desktop widget app  🎯 **v1 — floating widget + configure everything** ([UI design](docs/ui.md))
 - [ ] **Floating transparent widget** (top-right, always-on-top, frameless) toggled by a **global hotkey**
@@ -228,8 +234,7 @@ Parser rules:
 6. **Everything configurable** (sigils, operators, per-task models, hotkeys, templates) — your core ask.
 
 ## 5. Open questions (next round)
-- Desktop shell: **Tauri** (light, Rust+web) or **Electron** (familiar, heavier)?
-- For chat-app v1, do we wire **both** local (Ollama) and cloud (Claude) from day one, or local-only first then add `!`?
-- Operator collision: `!` is the cloud sigil — keep `!` for fix/refactor, or pick a different operator (e.g. `~`)?
+*(Resolved: Tauri shell, `~` fix operator, and both local+cloud from day one — now under "Decisions locked".)*
 - Does v1 chat app need **codebase RAG**, or is plain chat + model config enough to start?
-- Default per-task models — want me to propose a concrete default mapping after the Phase 0 benchmark?
+- Default per-task models — propose a concrete default mapping after the Phase 0 benchmark?
+- **Engine end-to-end verification** (next milestone): which local model(s) to pull first for the smoke test, and do we test the `!` cloud path now or after a key is set up?
