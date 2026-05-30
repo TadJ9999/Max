@@ -58,9 +58,7 @@ class SessionManager:
         action: str = "generate",
         is_cloud: bool = False,
     ) -> Session:
-        s = Session(
-            task=task, provider=provider, model=model, action=action, is_cloud=is_cloud
-        )
+        s = Session(task=task, provider=provider, model=model, action=action, is_cloud=is_cloud)
         self._sessions[s.id] = s
         return s
 

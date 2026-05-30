@@ -24,8 +24,6 @@ class Provider(ABC):
     kind: str  # "local" | "cloud"
 
     @abstractmethod
-    async def chat(
-        self, model: str, messages: list[dict], **params
-    ) -> AsyncIterator[ChatChunk]:
+    async def chat(self, model: str, messages: list[dict], **params) -> AsyncIterator[ChatChunk]:
         """Stream a chat completion as :class:`ChatChunk` objects."""
         raise NotImplementedError

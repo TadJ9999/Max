@@ -1,6 +1,6 @@
-from max_engine.dsl import parse_command, ParseError
-
 import pytest
+
+from max_engine.dsl import ParseError, parse_command
 
 
 def test_generate_default():

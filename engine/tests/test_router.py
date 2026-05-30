@@ -1,8 +1,8 @@
+import pytest
+
 from max_engine.config import EngineConfig
 from max_engine.dsl import parse_command
 from max_engine.router import resolve
-
-import pytest
 
 
 def _route(text: str, **overrides):

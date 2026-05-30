@@ -21,15 +21,10 @@ def test_ollama_streams_and_joins_chunks():
         return httpx.Response(200, text=body)
 
     async def run():
-        client = httpx.AsyncClient(
-            transport=httpx.MockTransport(handler), base_url="http://test"
-        )
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://test")
         provider = OllamaProvider(base_url="http://test", client=client)
         chunks = [
-            c
-            async for c in provider.chat(
-                "qwen2.5-coder:14b", [{"role": "user", "content": "hi"}]
-            )
+            c async for c in provider.chat("qwen2.5-coder:14b", [{"role": "user", "content": "hi"}])
         ]
         await client.aclose()
         return chunks

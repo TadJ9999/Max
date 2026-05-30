@@ -120,8 +120,7 @@ async def chat_completions(req: ChatRequest):
         "object": "chat.completion",
         "model": req.model,
         "choices": [
-            {"index": 0, "message": {"role": "assistant", "content": text},
-             "finish_reason": "stop"}
+            {"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}
         ],
     }
 
@@ -157,7 +156,7 @@ class TaskSpec(BaseModel):
     task: str
     action: str = "generate"
     provider: str | None = None  # None => decided by delegate mode (Manual/Smart-Auto)
-    complexity: float = 0.5      # Smart-Auto hint (0..1); higher => more likely cloud
+    complexity: float = 0.5  # Smart-Auto hint (0..1); higher => more likely cloud
 
 
 class SubmitRequest(BaseModel):

@@ -18,8 +18,8 @@ class ProviderConfig(BaseModel):
 
 
 class DelegateConfig(BaseModel):
-    mode: str = "smart-auto"          # "manual" | "smart-auto"
-    max_parallel_local: int = 1       # heavy local models queue past this (12 GB VRAM)
+    mode: str = "smart-auto"  # "manual" | "smart-auto"
+    max_parallel_local: int = 1  # heavy local models queue past this (12 GB VRAM)
     max_parallel_cloud: int = 8
 
 

@@ -50,11 +50,11 @@ class ParseError(ValueError):
 class Command:
     """A parsed Max command."""
 
-    action: str          # "generate" | "summarize" | "fix"
-    body: str            # the instruction or code, trimmed
-    sigil: str | None    # the raw sigil char, or None for default
-    provider: str        # resolved provider name (e.g. "ollama", "claude", "default")
-    is_cloud: bool       # True when this routes off-machine
+    action: str  # "generate" | "summarize" | "fix"
+    body: str  # the instruction or code, trimmed
+    sigil: str | None  # the raw sigil char, or None for default
+    provider: str  # resolved provider name (e.g. "ollama", "claude", "default")
+    is_cloud: bool  # True when this routes off-machine
 
 
 def parse_command(text: str, sigils: dict[str, str] | None = None) -> Command:
@@ -89,7 +89,7 @@ def parse_command(text: str, sigils: dict[str, str] | None = None) -> Command:
         raise ParseError(f"no operator found at start of {text!r}")
 
     # 3. Body must be closed by the same operator token.
-    rest = s[len(open_tok):]
+    rest = s[len(open_tok) :]
     if not rest.endswith(open_tok):
         raise ParseError(f"command not closed with {open_tok!r}: {text!r}")
     body = rest[: -len(open_tok)].strip()

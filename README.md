@@ -32,5 +32,7 @@ uvicorn max_engine.main:app --reload
 # health check:  curl http://127.0.0.1:8000/health
 ```
 
-> Status: early scaffold. The DSL parser is implemented and tested; provider adapters
-> and the delegate scheduler are stubs that map directly to the roadmap phases.
+> Status: early scaffold. The DSL parser, provider router, Ollama/Claude adapters, and the
+> delegate engine + `/sessions` API are implemented and tested (mock-tested; live Ollama and an
+> Anthropic key are still needed for end-to-end verification). The desktop app is not yet scaffolded.
+> See [ROADMAP.md](./ROADMAP.md) for phase-by-phase status.

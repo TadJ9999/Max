@@ -50,9 +50,7 @@ class AnthropicProvider(Provider):
         self._client = client
         self.max_tokens = max_tokens
 
-    async def chat(
-        self, model: str, messages: list[dict], **params
-    ) -> AsyncIterator[ChatChunk]:
+    async def chat(self, model: str, messages: list[dict], **params) -> AsyncIterator[ChatChunk]:
         if not self.api_key:
             raise RuntimeError(
                 "ANTHROPIC_API_KEY is not set; the cloud (!) provider is unavailable"
@@ -87,7 +85,7 @@ class AnthropicProvider(Provider):
                 async for line in resp.aiter_lines():
                     if not line.startswith("data:"):
                         continue
-                    data = line[len("data:"):].strip()
+                    data = line[len("data:") :].strip()
                     if not data:
                         continue
                     event = json.loads(data)

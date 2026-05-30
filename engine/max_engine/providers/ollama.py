@@ -30,9 +30,7 @@ class OllamaProvider(Provider):
         self.base_url = base_url.rstrip("/")
         self._client = client  # injectable; if None we own a per-call client
 
-    async def chat(
-        self, model: str, messages: list[dict], **params
-    ) -> AsyncIterator[ChatChunk]:
+    async def chat(self, model: str, messages: list[dict], **params) -> AsyncIterator[ChatChunk]:
         payload: dict = {"model": model, "messages": messages, "stream": True}
         options = {k: v for k, v in params.items() if v is not None}
         if options:
@@ -41,9 +39,7 @@ class OllamaProvider(Provider):
         client = self._client or httpx.AsyncClient(timeout=None)
         owns_client = self._client is None
         try:
-            async with client.stream(
-                "POST", f"{self.base_url}/api/chat", json=payload
-            ) as resp:
+            async with client.stream("POST", f"{self.base_url}/api/chat", json=payload) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
                     if not line.strip():
