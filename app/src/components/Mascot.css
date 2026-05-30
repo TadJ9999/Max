@@ -16,20 +16,20 @@
   display: grid;
   place-items: center;
   background: transparent;
-  /* default (idle / thinking / busy): Iron-Man cyan + amber + white */
-  --c1: #38bdf8;
-  --c2: #f5a524;
-  --c3: #e8f6ff;
+  /* default (idle / thinking / busy): J.A.R.V.I.S palette — cyan + magenta + violet */
+  --c1: #22d3ee;
+  --c2: #f24fd6;
+  --c3: #a78bfa;
 }
 .hud[data-state="done"] {
   --c1: #34d399;
-  --c2: #a7f3d0;
-  --c3: #ecfdf5;
+  --c2: #6ee7b7;
+  --c3: #a7f3d0;
 }
 .hud[data-state="error"] {
   --c1: #fb7185;
-  --c2: #f5a524;
-  --c3: #ffe4e6;
+  --c2: #f472b6;
+  --c3: #fda4af;
 }
 
 /* color groups — children inherit via currentColor */
@@ -148,10 +148,11 @@
   animation: hud-pulse 2.4s ease-in-out infinite;
 }
 .hud__sigil line {
-  stroke: currentColor;
+  stroke: #eaf6ff;
   stroke-width: 2.4;
   stroke-linecap: round;
   opacity: 0.95;
+  filter: drop-shadow(0 0 3px #eaf6ff);
 }
 
 /* rotation — each ring spins around its own center at a different rate/dir */

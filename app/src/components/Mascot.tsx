@@ -163,8 +163,8 @@ export function Mascot({
           ))}
         </g>
 
-        {/* fixed crosshair notches (amber) */}
-        <g className="hud__cross hud__c2">
+        {/* fixed crosshair notches (cyan) */}
+        <g className="hud__cross hud__c1">
           <line x1="100" y1="26" x2="100" y2="42" />
           <line x1="100" y1="158" x2="100" y2="174" />
           <line x1="26" y1="100" x2="42" y2="100" />
@@ -180,7 +180,7 @@ export function Mascot({
         </g>
         <circle cx="100" cy="100" r="13" className="hud__core hud__c1" />
         {/* core "X" sigil (white) */}
-        <g className="hud__sigil hud__c3">
+        <g className="hud__sigil">
           <line x1="93" y1="93" x2="107" y2="107" />
           <line x1="107" y1="93" x2="93" y2="107" />
         </g>

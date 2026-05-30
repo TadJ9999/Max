@@ -3,15 +3,15 @@
    transparent, so the desktop shows through the gaps between cards. */
 
 :root {
-  /* accent aligned to the HUD (cyan primary, amber secondary) */
-  --accent: #38bdf8;
-  --accent-soft: #7dd3fc;
-  --amber: #f5a524;
+  /* accent aligned to the HUD (cyan primary, magenta secondary) */
+  --accent: #22d3ee;
+  --accent-soft: #67e8f9;
+  --magenta: #f24fd6;
   --text: #f2f5f7;
   --muted: #aab4bd;
   --muted-2: #7e8a93;
   /* Apple dark-mode "vibrancy" glass — near-black, hairline white border */
-  --glass-bg: rgba(18, 19, 22, 0.55);
+  --glass-bg: rgba(11, 11, 13, 0.62);
   --glass-border: rgba(255, 255, 255, 0.1);
   --rose: #fb7185;
   --green: #34d399;
@@ -272,7 +272,7 @@ body {
   color: var(--muted-2);
 }
 .chat__cloud {
-  color: var(--amber);
+  color: var(--magenta);
 }
 .chat__send {
   background: var(--accent);

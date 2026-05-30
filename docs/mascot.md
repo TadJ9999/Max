@@ -3,8 +3,8 @@
 The live vector mascot from [ui.md](ui.md), implemented as a **"Jarvis"-style holographic
 HUD** in pure **SVG + CSS** (no Rive editor, no `.riv` binary, no runtime dependency, fully
 transparent background). Several counter-rotating rings of tick marks and traveling dashed
-arcs, a rotating radar sweep, and a pulsing reactor core with an "X" sigil — in a **multi-color
-Iron-Man palette (cyan + amber + white)** that reacts to engine state. The component's
+arcs, a rotating radar sweep, and a pulsing reactor core with an "X" sigil — in the **J.A.R.V.I.S
+palette (cyan + magenta + violet)** that reacts to engine state. The component's
 interface deliberately mirrors a Rive state-machine, so a commissioned `.riv` rig can
 replace it later behind the identical API.
 
