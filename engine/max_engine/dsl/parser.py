@@ -19,6 +19,7 @@ Examples::
     !. add a function .                       -> generate via Claude (cloud)
     @.. def foo(): pass ..                     -> document via Ollama (local)
     #. refactor this loop .                    -> generate via Qwen (local)
+    ~ tidy this messy block ~                  -> fix / refactor (default provider)
 """
 
 from __future__ import annotations
@@ -32,10 +33,12 @@ DEFAULT_SIGILS: dict[str, str] = {
     "!": "claude",
 }
 
-# Operator token -> action name. Longest token is matched first.
+# Operator token -> action name. Longest token is matched first, so ".." is
+# tried before ".". ("!" is reserved as the cloud sigil, so fix/refactor uses "~".)
 OPERATORS: dict[str, str] = {
     "..": "summarize",
     ".": "generate",
+    "~": "fix",
 }
 
 
@@ -47,7 +50,7 @@ class ParseError(ValueError):
 class Command:
     """A parsed Max command."""
 
-    action: str          # "generate" | "summarize"
+    action: str          # "generate" | "summarize" | "fix"
     body: str            # the instruction or code, trimmed
     sigil: str | None    # the raw sigil char, or None for default
     provider: str        # resolved provider name (e.g. "ollama", "claude", "default")

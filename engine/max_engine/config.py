@@ -33,6 +33,7 @@ class EngineConfig(BaseModel):
         default_factory=lambda: {
             "generate": "qwen2.5-coder:14b",
             "summarize": "qwen2.5-coder:14b",
+            "fix": "qwen2.5-coder:14b",
             "chat": "qwen2.5:14b",
             "completion": "qwen2.5-coder:3b",
         }

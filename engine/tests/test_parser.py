@@ -38,6 +38,20 @@ def test_qwen_sigil():
     assert cmd.provider == "qwen"
 
 
+def test_fix_operator():
+    cmd = parse_command("~ tidy this messy block ~")
+    assert cmd.action == "fix"
+    assert cmd.body == "tidy this messy block"
+    assert cmd.provider == "default"
+
+
+def test_cloud_sigil_with_fix():
+    cmd = parse_command("!~ refactor for speed ~")
+    assert cmd.action == "fix"
+    assert cmd.provider == "claude"
+    assert cmd.is_cloud is True
+
+
 def test_summarize_takes_priority_over_generate():
     # ".." must be matched before "."
     cmd = parse_command(".. body ..")

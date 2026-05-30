@@ -25,8 +25,10 @@ Max may read/operate on.
 |-------|----------|----------|--|----------|--------|
 | (none) | per-task default | local |  | `. … .` | generate code |
 | `@` | Ollama | local |  | `.. … ..` | summarize / document |
-| `#` | Qwen | local |  | | |
+| `#` | Qwen | local |  | `~ … ~` | fix / refactor |
 | `!` | Claude | ☁ cloud |  | | |
+
+(`!` is reserved as the cloud sigil, so fix/refactor uses `~`.)
 
 ## Delegate system
 
