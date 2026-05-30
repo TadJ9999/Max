@@ -76,6 +76,113 @@ export function Mascot({
     };
   }, [state, autoRelaxDone]);
 
+  // ---- canvas FX: circular waveform + drifting particles -----------------
+  // Latest inputs, read by the loop without restarting it.
+  const stateRef = useRef<MascotState>(active);
+  const vramRef = useRef<number>(vramLoad);
+  stateRef.current = active;
+  vramRef.current = clamp01(vramLoad);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    ctx.scale(dpr, dpr);
+
+    const cx = size / 2;
+    const cy = size / 2;
+    const maxR = size * 0.46;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const particles = Array.from({ length: Math.round(size * 0.5) }, () => ({
+      a: Math.random() * Math.PI * 2,
+      r: 0.46 + Math.random() * 0.56,
+      sp: 0.1 + Math.random() * 0.5,
+      sz: 0.6 + Math.random() * 1.6,
+      tw: Math.random() * Math.PI * 2,
+      drift: (Math.random() - 0.5) * 0.0009,
+      c: Math.random() < 0.5,
+    }));
+
+    const start = performance.now();
+    let raf = 0;
+    let cancelled = false;
+
+    const frame = (now: number) => {
+      if (cancelled) return;
+      const t = (now - start) / 1000;
+      const st = stateRef.current;
+      const v = clamp01(vramRef.current);
+      const pal = paletteFor(st);
+      const amp =
+        st === "busy" ? 0.5 + v * 0.6 : st === "thinking" ? 0.55 : st === "error" ? 0.7 : st === "done" ? 0.5 : 0.34;
+      const spd = st === "busy" ? 1.3 + v : st === "error" ? 1.8 : st === "thinking" ? 1.1 : 0.6;
+
+      ctx.clearRect(0, 0, size, size);
+      ctx.globalCompositeOperation = "lighter";
+
+      // circular waveform blob (layered sines → organic audio look)
+      const N = 140;
+      const baseR = maxR * 0.42;
+      const grad = ctx.createLinearGradient(cx - baseR, cy - baseR, cx + baseR, cy + baseR);
+      grad.addColorStop(0, pal.c1);
+      grad.addColorStop(1, pal.c2);
+      ctx.beginPath();
+      for (let i = 0; i <= N; i++) {
+        const ang = (i / N) * Math.PI * 2;
+        const wave =
+          Math.sin(ang * 6 + t * spd * 2) * 0.5 +
+          Math.sin(ang * 11 - t * spd * 1.3) * 0.3 +
+          Math.sin(ang * 3 + t * spd) * 0.2;
+        const rr = baseR * (1 + wave * amp * 0.5);
+        const x = cx + Math.cos(ang) * rr;
+        const y = cy + Math.sin(ang) * rr;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.shadowColor = pal.c1;
+      ctx.shadowBlur = 8;
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = grad;
+      ctx.globalAlpha = 0.45 + amp * 0.3;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 0.08;
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // drifting, twinkling particles
+      for (const p of particles) {
+        p.a += p.sp * 0.01 * spd;
+        p.r += p.drift;
+        if (p.r > 1.04 || p.r < 0.44) p.drift *= -1;
+        const rr = p.r * maxR;
+        const x = cx + Math.cos(p.a) * rr;
+        const y = cy + Math.sin(p.a) * rr;
+        const tw = 0.35 + 0.65 * Math.abs(Math.sin(t * 1.5 + p.tw));
+        ctx.globalAlpha = tw * 0.8;
+        ctx.fillStyle = p.c ? pal.c1 : pal.c2;
+        ctx.beginPath();
+        ctx.arc(x, y, p.sz, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      if (!reduced) raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
+  }, [size]);
+
   const v = clamp01(vramLoad);
   // Base rotation period (seconds): lower = faster.
   const spin =
@@ -115,6 +222,15 @@ export function Mascot({
     >
       {/* rotating radar sweep behind the rings */}
       <div className="hud__sweep" />
+
+      {/* canvas FX: waveform + particles, behind the crisp SVG rings */}
+      <canvas
+        ref={canvasRef}
+        className="hud__fx"
+        width={size}
+        height={size}
+        style={{ width: size, height: size }}
+      />
 
       <svg viewBox="0 0 200 200" width={size} height={size} className="hud__svg" aria-hidden="true">
         {/* outer tick ring (cyan, slow) */}
@@ -178,12 +294,9 @@ export function Mascot({
         <g className="hud__spin-fast hud__c1">
           <circle cx="100" cy="100" r="22" className="hud__core-ring hud__arc--dash" pathLength={100} />
         </g>
+        {/* pulsing reactor core */}
         <circle cx="100" cy="100" r="13" className="hud__core hud__c1" />
-        {/* core "X" sigil (white) */}
-        <g className="hud__sigil">
-          <line x1="93" y1="93" x2="107" y2="107" />
-          <line x1="107" y1="93" x2="93" y2="107" />
-        </g>
+        <circle cx="100" cy="100" r="5" className="hud__core-hot" />
       </svg>
     </div>
   );
@@ -191,6 +304,18 @@ export function Mascot({
 
 function clamp01(n: number): number {
   return Math.min(1, Math.max(0, Number.isFinite(n) ? n : 0));
+}
+
+/** Canvas FX palette (hex) per state — matches the CSS ring palette. */
+function paletteFor(s: MascotState): { c1: string; c2: string } {
+  switch (s) {
+    case "done":
+      return { c1: "#34d399", c2: "#6ee7b7" };
+    case "error":
+      return { c1: "#fb7185", c2: "#f472b6" };
+    default:
+      return { c1: "#22d3ee", c2: "#f24fd6" };
+  }
 }
 
 function ariaFor(s: MascotState): string {

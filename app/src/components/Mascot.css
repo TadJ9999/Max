@@ -73,9 +73,18 @@
   animation: hud-spin calc(var(--spin, 18s) * 0.9) linear infinite;
 }
 
+/* canvas FX (waveform + particles) sits behind the crisp SVG rings */
+.hud__fx {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  z-index: 1;
+  pointer-events: none;
+}
+
 .hud__svg {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   display: block;
   overflow: visible;
 }
@@ -142,17 +151,17 @@
 }
 .hud__core {
   fill: currentColor;
-  filter: drop-shadow(0 0 7px currentColor);
+  filter: drop-shadow(0 0 8px currentColor);
   transform-box: fill-box;
   transform-origin: center;
   animation: hud-pulse 2.4s ease-in-out infinite;
 }
-.hud__sigil line {
-  stroke: #eaf6ff;
-  stroke-width: 2.4;
-  stroke-linecap: round;
-  opacity: 0.95;
-  filter: drop-shadow(0 0 3px #eaf6ff);
+.hud__core-hot {
+  fill: #eaf6ff;
+  filter: drop-shadow(0 0 6px #eaf6ff);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hud-pulse 2.4s ease-in-out infinite;
 }
 
 /* rotation — each ring spins around its own center at a different rate/dir */
