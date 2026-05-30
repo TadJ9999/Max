@@ -69,7 +69,7 @@ session stack above it; system stats and settings sit along the top.
 |------|----------|
 | Transparent, frameless, on-top, top-right | Tauri window: `transparent: true`, `decorations: false`, `alwaysOnTop: true`, `skipTaskbar: true`; position via the window API |
 | Show/hide hotkey | `@tauri-apps/plugin-global-shortcut`; configurable, default `Ctrl+Alt+M` |
-| Click-through when idle | Tauri `setIgnoreCursorEvents(true)`; toggle off on hover |
+| Click-through when idle | Rust loop polls the global cursor vs window bounds and toggles `set_ignore_cursor_events` (whole-window ignore can't be detected back from the webview) |
 | Live mascot (reacts to state) | **SVG + CSS HUD** — *chosen*. Jarvis-style holographic rings, no deps, transparent; state-machine API mirrors Rive so real `.riv` art can drop in later |
 | SYS INFO meters | Rust command using the `sysinfo` crate (CPU/RAM); GPU/VRAM via parsing `nvidia-smi` (RTX 4070 Ti) |
 | Task cards + streaming | React frontend; subscribe to `/sessions` + per-session output stream (SSE/WebSocket) |

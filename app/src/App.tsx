@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { TopBar, type SysInfo } from "./components/TopBar";
 import { TaskCard } from "./components/TaskCard";
 import { Mascot } from "./components/Mascot";
 import { ChatBar } from "./components/ChatBar";
 import { deriveMascotState } from "./mascot/deriveMascotState";
+import { initFloatingWindow } from "./window";
 import { type Session } from "./types";
 import "./App.css";
 
@@ -41,6 +42,11 @@ function App() {
   const [sessions, setSessions] = useState<Session[]>(MOCK_SESSIONS);
   const [sys] = useState<SysInfo>(MOCK_SYS);
   const [showSettings, setShowSettings] = useState(false);
+
+  // Anchor top-right + register the global hotkey (no-op outside Tauri).
+  useEffect(() => {
+    void initFloatingWindow();
+  }, []);
 
   // Collapse sessions (+ measured VRAM) into the single mascot signal.
   const mascot = useMemo(

@@ -173,7 +173,7 @@ Parser rules:
 - [ ] Output post-processing (strip fences, match indentation/style) — *prompt-only today; no post-processor yet*
 
 ### Phase 3 — Desktop widget app  🎯 **v1 — floating widget + configure everything** ([UI design](docs/ui.md))
-- [~] **Floating transparent widget** — frameless/transparent/always-on-top/skip-taskbar window ✅; **top-right anchoring + global hotkey toggle pending**
+- [x] **Floating transparent widget** — frameless/transparent/always-on-top/skip-taskbar window, **top-right anchoring**, **global hotkey toggle** (`Ctrl+Alt+M`), and **click-through-when-idle** (Rust cursor-poll). *Live-window behavior needs on-screen confirmation.*
 - [x] **Live vector mascot** ("X") reacting to engine state (idle / thinking / busy / done / error) — built as a **"Jarvis"-style SVG + CSS HUD** (not Rive; same state API)
 - [x] **Task cards** per session (model · provider · state · ☁ marker · cancel/promote) — UI done on **mock data**; live `/sessions` polling pending
 - [~] **SYS INFO** meters (CPU · GPU · **VRAM** · RAM) + **⚙ settings** cog — laid out ✅; **values are mock until a Rust sysinfo/nvidia-smi command lands**
