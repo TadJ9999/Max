@@ -32,6 +32,9 @@ uvicorn max_engine.main:app --reload
 # health check:  curl http://127.0.0.1:8000/health
 ```
 
+For a full end-to-end check (engine + local models + cloud), see
+**[docs/setup.md](./docs/setup.md)** and run `./scripts/smoke.ps1 -Start`.
+
 > Status: early scaffold. The DSL parser, provider router, Ollama/Claude adapters, and the
 > delegate engine + `/sessions` API are implemented and tested (mock-tested; live Ollama and an
 > Anthropic key are still needed for end-to-end verification). The desktop app is not yet scaffolded.
