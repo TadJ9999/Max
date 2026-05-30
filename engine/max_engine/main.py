@@ -15,6 +15,7 @@ import json
 from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -28,6 +29,17 @@ from .providers.factory import build_provider
 from .router import resolve
 
 app = FastAPI(title="Max Engine", version=__version__)
+
+# The engine binds to localhost and is consumed by local clients (the Tauri
+# widget's webview, browser previews, VS Code). Allow any local origin so those
+# clients can call it; tighten if the engine is ever exposed on the network.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 config = load_config()
 delegate = DelegateEngine(config)
 

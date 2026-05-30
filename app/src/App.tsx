@@ -6,6 +6,7 @@ import { ChatBar } from "./components/ChatBar";
 import { deriveMascotState } from "./mascot/deriveMascotState";
 import { initFloatingWindow } from "./window";
 import { getSystemStats } from "./system";
+import { getSessions, cancelSession, promoteSession } from "./engine";
 import { type Session } from "./types";
 import "./App.css";
 
@@ -65,6 +66,22 @@ function App() {
     };
   }, []);
 
+  // Poll the engine's sessions (~2s). When the engine is unreachable, keep the
+  // current cards (placeholder until first successful connect).
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      const real = await getSessions();
+      if (alive && real) setSessions(real);
+    };
+    void tick();
+    const id = window.setInterval(() => void tick(), 2000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, []);
+
   // Collapse sessions (+ measured VRAM) into the single mascot signal.
   const mascot = useMemo(
     () =>
@@ -75,15 +92,21 @@ function App() {
     [sessions, sys.vram],
   );
 
-  const cancel = (id: string) =>
+  // Optimistic local update + tell the engine (a no-op for offline/mock cards);
+  // the next /sessions poll reconciles with the engine's truth.
+  const cancel = (id: string) => {
     setSessions((xs) => xs.map((s) => (s.id === id ? { ...s, state: "done" } : s)));
+    void cancelSession(id);
+  };
 
-  const promote = (id: string) =>
+  const promote = (id: string) => {
     setSessions((xs) =>
       xs.map((s) =>
         s.id === id ? { ...s, provider: "claude", isCloud: true, state: "running" } : s,
       ),
     );
+    void promoteSession(id);
+  };
 
   return (
     <div className="widget">

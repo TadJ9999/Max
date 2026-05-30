@@ -2,6 +2,8 @@
 // The engine runs locally (see ../../engine). Streaming endpoints return
 // OpenAI-compatible SSE; we parse `data:` lines into text deltas.
 
+import type { Session, SessionState } from "./types";
+
 export const ENGINE_URL = "http://127.0.0.1:8000";
 
 export type Health = { status: string; version: string };
@@ -54,5 +56,67 @@ export async function* streamCommand(
       const delta: string | undefined = obj.choices?.[0]?.delta?.content;
       if (delta) yield delta;
     }
+  }
+}
+
+// ---- Sessions (delegate) ------------------------------------------------
+
+type RawSession = {
+  id: string;
+  task: string;
+  provider: string;
+  model: string;
+  is_cloud: boolean;
+  state: string;
+};
+
+// Engine has a "cancelled" state the widget renders as "done".
+const STATE_MAP: Record<string, SessionState> = {
+  queued: "queued",
+  running: "running",
+  done: "done",
+  error: "error",
+  cancelled: "done",
+};
+
+function titleFor(task: string, i: number): string {
+  const t = task.trim();
+  if (!t) return `TASK #${i + 1}`;
+  return t.length > 28 ? `${t.slice(0, 27)}…` : t;
+}
+
+// Fetch the engine's sessions, mapped to the widget's Session shape.
+// Returns null when the engine is unreachable (caller keeps prior state).
+export async function getSessions(): Promise<Session[] | null> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/sessions`, { method: "GET" });
+    if (!r.ok) return null;
+    const data = (await r.json()) as { sessions: RawSession[] };
+    return data.sessions.map((s, i) => ({
+      id: s.id,
+      title: titleFor(s.task, i),
+      provider: s.provider,
+      model: s.model,
+      state: STATE_MAP[s.state] ?? "queued",
+      isCloud: s.is_cloud,
+    }));
+  } catch {
+    return null;
+  }
+}
+
+export async function cancelSession(id: string): Promise<void> {
+  try {
+    await fetch(`${ENGINE_URL}/sessions/${id}/cancel`, { method: "POST" });
+  } catch {
+    /* offline / mock session — local optimistic update stands */
+  }
+}
+
+export async function promoteSession(id: string): Promise<void> {
+  try {
+    await fetch(`${ENGINE_URL}/sessions/${id}/promote`, { method: "POST" });
+  } catch {
+    /* offline / mock session — local optimistic update stands */
   }
 }
