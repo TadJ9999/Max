@@ -17,6 +17,10 @@ model on a different task, in parallel.
   provider/model per-invocation; sigils + hotkeys set in the UI ✅
 - **Not fully local:** `!` may call a cloud LLM (e.g. Claude). Cloud = opt-in + marked ✅
 - **Delegate system:** run multiple sessions in parallel, each on a different model/task ✅
+- **Delegate modes:** **Manual** + **Smart-Auto** (AI decides local vs cloud), toggle in settings ✅
+- **Scheduling:** smart scheduler + UI to **manually push queued tasks to cloud** when local is backed up ✅
+- **Session results:** **isolated** — each viewed separately in its own pane ✅
+- **Desktop shell:** **Tauri** ✅
 - VS Code integration is a **later phase** (after the chat app) ✅
 - Hardware can be upgraded later if the project proves out ✅
 
@@ -161,13 +165,16 @@ Parser rules:
 - [ ] **Routing config**: map sigils → providers/models, set **per-task defaults**, assign **hotkeys**
 - [ ] **Provider/key management** (add Claude key, toggle cloud on/off)
 - [ ] Engine start/stop/restart + live VRAM/RAM meters
+- [ ] Settings: **auto-delegate toggle (Manual / Smart-Auto)**, cloud on/off, privacy rules
 
 ### Phase 4 — Delegate system: parallel sessions & multi-model orchestration  🎯 *run many tasks at once, each on its own model*
 - [ ] Session manager: spawn / track / cancel concurrent sessions, each bound to a provider+model
+- [ ] **Mode toggle (settings): Manual** (you assign model+task) **and Smart-Auto** (AI decides local vs cloud)
+- [ ] Smart-Auto router: choose local vs cloud per task from capability / queue depth / (later) privacy rules
 - [ ] Task scheduler aware of the **12 GB VRAM limit** (cloud + small-local run in parallel; heavy local models queue)
-- [ ] Delegator/coordinator: optionally decompose one request into subtasks fanned out to workers
-- [ ] Per-session context isolation + optional **result aggregation** back to a parent
-- [ ] UI dashboard: live view of running sessions (model, task, progress, cancel/retry), all streaming at once
+- [ ] **Queue dashboard** with manual override: push a queued task to cloud when local is backed up
+- [ ] Delegator/coordinator (optional): decompose one request into subtasks fanned out to workers
+- [ ] **Isolated sessions** — each result in its own pane/view, all streaming concurrently
 
 ### Phase 5 — VS Code extension  🎯 *type `. … .` live → code appears; `!.` routes to cloud*
 - [ ] **Live-as-you-type** detection (fire on closing delimiter) + debounce/cancel
