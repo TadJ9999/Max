@@ -166,7 +166,11 @@ Parser rules:
 - [ ] `..` → docstring / README generation
 - [ ] Output post-processing (strip fences, match indentation/style)
 
-### Phase 3 — Desktop chat app  🎯 **v1 — chat + configure everything from the app**
+### Phase 3 — Desktop widget app  🎯 **v1 — floating widget + configure everything** ([UI design](docs/ui.md))
+- [ ] **Floating transparent widget** (top-right, always-on-top, frameless) toggled by a **global hotkey**
+- [ ] **Live vector mascot** ("X") reacting to engine state (idle / thinking / busy / done / error) — Rive
+- [ ] **Task cards** per session (model · provider · state · ☁ marker · cancel/promote), transparent gaps between
+- [ ] **SYS INFO** meters (CPU · GPU · **VRAM** · RAM) top-left; **⚙ settings** cog top-right
 - [ ] Chat UI (streaming, markdown, code blocks, copy) with a **cloud indicator** when `!` used
 - [ ] **Model manager**: list / download / switch / params (temp, ctx, quant)
 - [ ] **Routing config**: map sigils → providers/models, set **per-task defaults**, assign **hotkeys**

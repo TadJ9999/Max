@@ -1,7 +1,10 @@
-# Max App (Tauri desktop chat client)
+# Max App (Tauri desktop widget)
 
-The v1 client: a chat UI plus full configuration (models, sigils, hotkeys,
-provider keys, the workspace folder allowlist, and the delegate dashboard).
+The v1 client is a **floating, transparent desktop widget** (top-right, always-on-top,
+toggle with a global hotkey) featuring a **live vector mascot**, stacked **task cards**
+for each session, live **system stats**, and a settings cog. Full design:
+**[../docs/ui.md](../docs/ui.md)**.
+
 It talks to the engine's HTTP/WebSocket API — it holds **no** model logic itself.
 
 > Not scaffolded yet — needs the Node + Rust toolchain. Initialize with:
