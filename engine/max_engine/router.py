@@ -19,6 +19,17 @@ class Route:
     is_cloud: bool
 
 
+def model_for(provider: str, action: str, config: EngineConfig) -> str:
+    """Pick the model for a provider+action: per-provider override, else per-task."""
+    return config.provider_models.get(provider, {}).get(action) or config.task_models.get(
+        action, "qwen2.5-coder:14b"
+    )
+
+
+def is_cloud_provider(provider: str, config: EngineConfig) -> bool:
+    return any(p.name == provider and p.kind == "cloud" for p in config.providers)
+
+
 def resolve(command: Command, config: EngineConfig) -> Route:
     """Pick the provider + model for a parsed command."""
     # Sigil wins for provider selection; otherwise the per-task default provider.
@@ -28,10 +39,8 @@ def resolve(command: Command, config: EngineConfig) -> Route:
         provider = "ollama"
 
     # Per-provider model override wins; otherwise the per-task default.
-    model = config.provider_models.get(provider, {}).get(
-        command.action
-    ) or config.task_models.get(command.action, "qwen2.5-coder:14b")
-    is_cloud = any(p.name == provider and p.kind == "cloud" for p in config.providers)
+    model = model_for(provider, command.action, config)
+    is_cloud = is_cloud_provider(provider, config)
 
     if is_cloud and not config.allow_cloud:
         raise PermissionError(
