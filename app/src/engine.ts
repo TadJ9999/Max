@@ -18,16 +18,17 @@ export async function getHealth(): Promise<Health | null> {
   }
 }
 
-// Stream a full DSL command via /command, yielding text deltas as they arrive.
+// POST a JSON body to an SSE endpoint and yield text deltas as they arrive.
 // Throws if the engine reports an error event in the stream.
-export async function* streamCommand(
-  text: string,
+async function* streamSSE(
+  path: string,
+  body: unknown,
   signal?: AbortSignal,
 ): AsyncGenerator<string> {
-  const r = await fetch(`${ENGINE_URL}/command`, {
+  const r = await fetch(`${ENGINE_URL}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(body),
     signal,
   });
   if (!r.ok || !r.body) {
@@ -57,6 +58,25 @@ export async function* streamCommand(
       if (delta) yield delta;
     }
   }
+}
+
+// A DSL command starts with an operator (`.`/`..`/`~`), optionally after a
+// provider sigil (`@`/`#`/`!`). Anything else is treated as plain chat.
+export function isDslCommand(text: string): boolean {
+  let s = text.trim();
+  if (!s) return false;
+  if ("@#!".includes(s[0])) s = s.slice(1);
+  return s.startsWith(".") || s.startsWith("~");
+}
+
+// Stream a full DSL command via /command.
+export function streamCommand(text: string, signal?: AbortSignal): AsyncGenerator<string> {
+  return streamSSE("/command", { text }, signal);
+}
+
+// Stream a plain conversational reply via /chat (no DSL operators needed).
+export function streamChat(text: string, signal?: AbortSignal): AsyncGenerator<string> {
+  return streamSSE("/chat", { text }, signal);
 }
 
 // ---- Sessions (delegate) ------------------------------------------------

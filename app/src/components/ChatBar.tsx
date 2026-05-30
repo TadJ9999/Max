@@ -3,7 +3,8 @@
 // the line starts with the cloud sigil `!`. A status dot polls /health.
 
 import { useEffect, useRef, useState } from "react";
-import { getHealth, streamCommand } from "../engine";
+import { getHealth, isDslCommand, streamChat, streamCommand } from "../engine";
+import { MarkdownView } from "./MarkdownView";
 
 export function ChatBar() {
   const [online, setOnline] = useState<boolean | null>(null);
@@ -37,8 +38,10 @@ export function ChatBar() {
     setOutput("");
     const ac = new AbortController();
     abortRef.current = ac;
+    // DSL command (`. … .`, `!. … .`, `~ … ~`) → /command; plain text → /chat.
+    const stream = isDslCommand(q) ? streamCommand : streamChat;
     try {
-      for await (const delta of streamCommand(q, ac.signal)) {
+      for await (const delta of stream(q, ac.signal)) {
         setOutput((o) => o + delta);
       }
     } catch (e) {
@@ -63,7 +66,7 @@ export function ChatBar() {
           {err ? (
             <span className="chat__err">⚠ {err}</span>
           ) : output ? (
-            output
+            <MarkdownView source={output} />
           ) : (
             <span className="chat__hint">…</span>
           )}

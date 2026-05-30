@@ -184,7 +184,7 @@ Parser rules:
 - [x] **Live vector mascot** ("X") reacting to engine state (idle / thinking / busy / done / error) — built as a **"Jarvis"-style SVG + CSS HUD** (not Rive; same state API)
 - [x] **Task cards** per session (model · provider · state · ☁ marker · cancel/promote) — **live**: polls the engine's `/sessions` (~2s), cancel/promote call the engine; mascot reacts to real session states. Falls back to placeholders when the engine is offline.
 - [x] **SYS INFO** meters (CPU · GPU · **VRAM** · RAM) + **⚙ settings** cog — **live** values (Rust `sysinfo` for CPU/RAM, `nvidia-smi` for GPU/VRAM, polled ~1.5s); mascot reacts to real VRAM
-- [~] Chat UI with a **cloud indicator** when `!` used ✅ + SSE streaming + `/health` dot; **markdown/code-blocks/copy pending**
+- [x] Chat UI — plain chat (`/chat`) + DSL commands (`/command`), **markdown with code blocks + copy button**, cloud (`!`) indicator, SSE streaming, `/health` status dot
 - [ ] **Model manager**: list / download / switch / params (temp, ctx, quant)
 - [ ] **Routing config**: map sigils → providers/models, set **per-task defaults**, assign **hotkeys**
 - [ ] **Provider/key management** (add Claude key, toggle cloud on/off)

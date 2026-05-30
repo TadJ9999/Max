@@ -7,7 +7,7 @@ Python + FastAPI.
 
 ```
 max_engine/
-├── main.py            # FastAPI app (/health, /parse, /command, /v1/chat/completions, /sessions)
+├── main.py            # FastAPI app (/health, /parse, /command, /chat, /v1/chat/completions, /sessions)
 ├── config.py          # sigils, per-task models, providers, allowlist, delegate cfg
 ├── dsl/parser.py      # the . / .. + sigil grammar  (implemented + tested)
 ├── router.py          # parsed command -> (provider, model)

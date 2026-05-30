@@ -161,6 +161,21 @@ async def command(req: CommandRequest):
     return _sse_stream(provider, route.model, messages)
 
 
+class ChatTextRequest(BaseModel):
+    text: str
+
+
+@app.post("/chat")
+async def chat(req: ChatTextRequest):
+    """Plain conversational chat (no DSL operators required). Routes to the
+    default local provider with the configured chat model and streams the reply.
+    Use the ``/command`` endpoint for DSL commands (``.``/``..``/``~`` + sigils)."""
+    provider = build_provider("ollama", config)
+    model = config.task_models.get("chat", "qwen2.5-coder:14b")
+    messages = messages_for("chat", req.text)
+    return _sse_stream(provider, model, messages)
+
+
 # ---- Delegate system: parallel sessions --------------------------------
 
 
