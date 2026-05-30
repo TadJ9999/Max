@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Node / Tauri
+node_modules/
+dist/
+app/src-tauri/target/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+
+# Max local data
+*.sqlite
+*.db
+models/
+data/
+secrets/
