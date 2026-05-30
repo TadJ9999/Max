@@ -76,10 +76,14 @@ session stack above it; system stats and settings sit along the top.
 | Glass look | CSS `backdrop-filter: blur()`, low-alpha backgrounds, rounded corners, soft shadows |
 
 ## Decisions
-- **Mascot:** Rive (free/open-source runtime + free editor), state-machine driven by engine state.
+- **Mascot:** built as a **canvas particle cloud** (no Rive editor / `.riv` binary, no
+  runtime dep) — an Apple-Watch-pairing-style cyan/teal **swirling dust cloud** driven by
+  engine state. The component API mirrors a Rive state-machine, so a commissioned `.riv`
+  can drop in later with no other code changes. See [mascot.md](mascot.md).
 - **Show/hide:** configurable global hotkey, default **`Ctrl+Alt+M`**.
 - **Interaction:** click-through when idle, interactive on hover.
 
 ## Still open (later)
-- Mascot art style + source — commission a Rive piece, or start with a placeholder rig.
+- Whether to upgrade the code mascot to commissioned Rive art (optional — current rig
+  covers all five states).
 - Card cap / scroll behavior when many sessions are active.

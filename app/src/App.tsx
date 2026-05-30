@@ -1,50 +1,95 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+import { useMemo, useState } from "react";
+import { TopBar, type SysInfo } from "./components/TopBar";
+import { TaskCard } from "./components/TaskCard";
+import { Mascot } from "./components/Mascot";
+import { ChatBar } from "./components/ChatBar";
+import { deriveMascotState } from "./mascot/deriveMascotState";
+import { type Session } from "./types";
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+// Mock data until Rust sysinfo + /sessions polling are wired (ROADMAP Phase 3/4).
+const MOCK_SYS: SysInfo = { cpu: 37, gpu: 64, vram: 78, ram: 52 };
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+const MOCK_SESSIONS: Session[] = [
+  {
+    id: "s1",
+    title: "TASK #1",
+    provider: "claude",
+    model: "claude-sonnet-4-6",
+    state: "running",
+    isCloud: true,
+  },
+  {
+    id: "s2",
+    title: "TASK #2",
+    provider: "ollama",
+    model: "qwen2.5-coder:14b",
+    state: "queued",
+    isCloud: false,
+  },
+  {
+    id: "s3",
+    title: "TASK #3",
+    provider: "ollama",
+    model: "qwen2.5-coder:3b",
+    state: "done",
+    isCloud: false,
+  },
+];
+
+function App() {
+  const [sessions, setSessions] = useState<Session[]>(MOCK_SESSIONS);
+  const [sys] = useState<SysInfo>(MOCK_SYS);
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Collapse sessions (+ measured VRAM) into the single mascot signal.
+  const mascot = useMemo(
+    () =>
+      deriveMascotState(
+        sessions.map((s) => ({ id: s.id, state: s.state, cloud: s.isCloud })),
+        sys.vram / 100,
+      ),
+    [sessions, sys.vram],
+  );
+
+  const cancel = (id: string) =>
+    setSessions((xs) => xs.map((s) => (s.id === id ? { ...s, state: "done" } : s)));
+
+  const promote = (id: string) =>
+    setSessions((xs) =>
+      xs.map((s) =>
+        s.id === id ? { ...s, provider: "claude", isCloud: true, state: "running" } : s,
+      ),
+    );
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+    <div className="widget">
+      <TopBar sys={sys} onSettings={() => setShowSettings((v) => !v)} />
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+      {showSettings && (
+        <div className="panel">
+          <div className="panel__title">Settings</div>
+          <p className="panel__hint">
+            Models, sigils, hotkeys, provider keys, cloud on/off, delegate mode, and the
+            workspace allowlist will live here (ROADMAP Phase 3).
+          </p>
+        </div>
+      )}
+
+      <div className="cards">
+        {sessions.length === 0 ? (
+          <div className="cards__empty">No active sessions</div>
+        ) : (
+          sessions.map((s) => (
+            <TaskCard key={s.id} session={s} onCancel={cancel} onPromote={promote} />
+          ))
+        )}
       </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+      <Mascot state={mascot.state} vramLoad={mascot.vramLoad} size={150} />
+
+      <ChatBar />
+    </div>
   );
 }
 
