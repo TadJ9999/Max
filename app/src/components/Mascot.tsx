@@ -4,17 +4,17 @@ import "./Mascot.css";
 /**
  * The five engine-reactive states of the mascot.
  * Mirrors the state-machine contract in docs/ui.md, so the rendering tech can
- * change (here: a canvas particle cloud) without touching callers.
+ * change without touching callers.
  */
 export type MascotState = "idle" | "thinking" | "busy" | "done" | "error";
 
 export interface MascotProps {
-  /** Current engine state. Drives the cloud's motion, spread and color. */
+  /** Current engine state. Drives color + spin speed + glow. */
   state?: MascotState;
   /**
    * VRAM pressure, 0..1. When `state === "busy"` this scales the intensity
-   * (swirl speed, spread, brightness) — the deeper the local queue, the more
-   * agitated the cloud. Ignored in other states.
+   * (spin speed + glow) — the deeper the local queue, the faster the HUD spins.
+   * Ignored in other states.
    */
   vramLoad?: number;
   /** Rendered pixel size (square). Default 160. */
@@ -26,74 +26,32 @@ export interface MascotProps {
 
 const DONE_BEAT_MS = 1300;
 
-/** Tuning per state. Targets are smoothly approached each frame. */
-interface StateProfile {
-  speed: number; // swirl rate
-  spread: number; // radius scale
-  brightness: number; // particle alpha multiplier
-  turbulence: number; // random per-frame jitter (error)
-  palette: string[]; // center → edge colors
+type Tick = { x1: number; y1: number; x2: number; y2: number; major: boolean };
+
+/** Evenly spaced radial tick marks around the center (100,100). */
+function ticks(count: number, rIn: number, rOut: number, majorEvery = 6): Tick[] {
+  return Array.from({ length: count }, (_, i) => {
+    const a = (i / count) * Math.PI * 2 - Math.PI / 2;
+    const major = i % majorEvery === 0;
+    const ri = major ? rIn - 3 : rIn;
+    return {
+      x1: 100 + Math.cos(a) * ri,
+      y1: 100 + Math.sin(a) * ri,
+      x2: 100 + Math.cos(a) * rOut,
+      y2: 100 + Math.sin(a) * rOut,
+      major,
+    };
+  });
 }
 
-const CYAN = ["#bff5ff", "#67e8f9", "#22d3ee", "#2dd4bf"];
-const GREEN = ["#d1fae5", "#6ee7b7", "#34d399", "#10b981"];
-const RED = ["#ffe4e6", "#fda4af", "#fb7185", "#f43f5e"];
-
-function profileFor(state: MascotState, vram: number): StateProfile {
-  switch (state) {
-    case "thinking":
-      return { speed: 0.55, spread: 1.0, brightness: 0.85, turbulence: 0, palette: CYAN };
-    case "busy":
-      return {
-        speed: 0.7 + vram * 1.0,
-        spread: 1.04 + vram * 0.12,
-        brightness: 1.0,
-        turbulence: vram * 0.6,
-        palette: CYAN,
-      };
-    case "done":
-      return { speed: 0.35, spread: 1.0, brightness: 1.0, turbulence: 0, palette: GREEN };
-    case "error":
-      return { speed: 0.85, spread: 1.08, brightness: 0.95, turbulence: 2.4, palette: RED };
-    default:
-      return { speed: 0.16, spread: 0.9, brightness: 0.5, turbulence: 0, palette: CYAN };
-  }
-}
-
-interface Particle {
-  r0: number; // base radius fraction 0..1
-  a0: number; // base angle
-  ci: number; // palette color index
-  size: number; // dot radius (css px)
-  alpha: number; // base alpha
-  wobAmp: number; // radial wobble amplitude
-  wobFreq: number;
-  wobPhase: number;
-}
-
-/** A soft round glow sprite, cached per color. */
-function makeSprite(color: string): HTMLCanvasElement {
-  const s = 64;
-  const c = document.createElement("canvas");
-  c.width = c.height = s;
-  const ctx = c.getContext("2d")!;
-  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
-  g.addColorStop(0, color);
-  g.addColorStop(0.4, hexA(color, 0.45));
-  g.addColorStop(1, hexA(color, 0));
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, s, s);
-  return c;
-}
-
-function hexA(hex: string, a: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
-}
+const OUTER = ticks(72, 84, 92);
+const INNER = ticks(48, 44, 50);
 
 /**
- * Max's mascot — an Apple-Watch-pairing-style swirling dust cloud, rendered on
- * a canvas with additive blending. Pure browser APIs, no runtime deps.
+ * Max's mascot — a "Jarvis"-style holographic HUD: concentric rings of tick
+ * marks and dashed arcs counter-rotating around a pulsing reactor core. Pure
+ * SVG + CSS (transparent background), no runtime deps. State drives the accent
+ * color, spin speed and glow.
  */
 export function Mascot({
   state = "idle",
@@ -106,140 +64,105 @@ export function Mascot({
   const [active, setActive] = useState<MascotState>(state);
   const relaxTimer = useRef<number | null>(null);
 
-  // Latest inputs, read by the animation loop without restarting it.
-  const stateRef = useRef(active);
-  const vramRef = useRef(vramLoad);
-  const doneAtRef = useRef<number>(-Infinity);
-  stateRef.current = active;
-  vramRef.current = clamp01(vramLoad);
-
   useEffect(() => {
     if (relaxTimer.current) window.clearTimeout(relaxTimer.current);
     setActive(state);
-    if (state === "done") {
-      doneAtRef.current = performance.now();
-      if (autoRelaxDone) {
-        relaxTimer.current = window.setTimeout(() => setActive("idle"), DONE_BEAT_MS);
-      }
+    if (state === "done" && autoRelaxDone) {
+      relaxTimer.current = window.setTimeout(() => setActive("idle"), DONE_BEAT_MS);
     }
     return () => {
       if (relaxTimer.current) window.clearTimeout(relaxTimer.current);
     };
   }, [state, autoRelaxDone]);
 
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d")!;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = size * dpr;
-    canvas.height = size * dpr;
-    ctx.scale(dpr, dpr);
-
-    const cx = size / 2;
-    const cy = size / 2;
-    const maxR = size * 0.42;
-    const count = Math.round(size * 2.4);
-
-    // Build the cloud: denser toward the center (radius biased), brighter core.
-    const particles: Particle[] = Array.from({ length: count }, () => {
-      const r0 = Math.pow(Math.random(), 0.7);
-      return {
-        r0,
-        a0: Math.random() * Math.PI * 2,
-        ci: r0 < 0.35 ? 0 : r0 < 0.6 ? 1 : r0 < 0.85 ? 2 : 3,
-        size: 1.2 + Math.random() * 1.8,
-        alpha: 0.22 + (1 - r0) * 0.22,
-        wobAmp: 0.02 + Math.random() * 0.06,
-        wobFreq: 0.6 + Math.random() * 1.4,
-        wobPhase: Math.random() * Math.PI * 2,
-      };
-    });
-
-    const sprites = new Map<string, HTMLCanvasElement>();
-    const sprite = (color: string) => {
-      let s = sprites.get(color);
-      if (!s) sprites.set(color, (s = makeSprite(color)));
-      return s;
-    };
-
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    // Smoothed running values + phase accumulators.
-    let speed = 0.16;
-    let spread = 0.9;
-    let bright = 0.5;
-    let turb = 0;
-    let swirl = 0; // accumulated swirl phase (advances by speed)
-    let last = performance.now();
-    let raf = 0;
-    let cancelled = false;
-
-    const frame = (now: number) => {
-      if (cancelled) return;
-      const dt = Math.min((now - last) / 1000, 0.05);
-      last = now;
-
-      const target = profileFor(stateRef.current, vramRef.current);
-
-      // Done bloom: a radial pop that eases out over the beat window.
-      let bloom = 0;
-      const sinceDone = now - doneAtRef.current;
-      if (sinceDone >= 0 && sinceDone < DONE_BEAT_MS) {
-        const t = sinceDone / DONE_BEAT_MS;
-        bloom = Math.sin(Math.min(t * 3.0, Math.PI)) * 0.35 * (1 - t);
-      }
-
-      // Ease toward targets for buttery state transitions.
-      const k = 1 - Math.pow(0.001, dt); // frame-rate independent smoothing
-      speed += (target.speed - speed) * k;
-      spread += (target.spread + bloom - spread) * k;
-      bright += (target.brightness - bright) * k;
-      turb += (target.turbulence - turb) * k;
-      swirl += dt * speed;
-
-      const clock = now / 1000;
-      ctx.clearRect(0, 0, size, size);
-      ctx.globalCompositeOperation = "lighter";
-
-      for (const p of particles) {
-        // Differential rotation (inner faster) → continuous nebula swirl.
-        const ang = p.a0 + swirl * (1.6 - p.r0 * 0.9);
-        const wob = p.r0 + p.wobAmp * Math.sin(clock * p.wobFreq + p.wobPhase);
-        const R = wob * maxR * spread;
-        let x = cx + Math.cos(ang) * R;
-        let y = cy + Math.sin(ang) * R;
-        if (turb > 0.001) {
-          x += (Math.random() - 0.5) * turb;
-          y += (Math.random() - 0.5) * turb;
-        }
-        const d = p.size * 5;
-        ctx.globalAlpha = Math.min(p.alpha * bright, 1);
-        ctx.drawImage(sprite(target.palette[p.ci]), x - d / 2, y - d / 2, d, d);
-      }
-      ctx.globalAlpha = 1;
-
-      if (!reduced) raf = requestAnimationFrame(frame);
-    };
-
-    raf = requestAnimationFrame(frame);
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(raf);
-    };
-  }, [size]);
+  const v = clamp01(vramLoad);
+  // Base rotation period (seconds): lower = faster.
+  const spin =
+    active === "busy"
+      ? 9 - v * 5
+      : active === "error"
+        ? 4
+        : active === "thinking"
+          ? 9
+          : active === "done"
+            ? 14
+            : 18;
+  const glow =
+    active === "busy"
+      ? 0.7 + v * 0.3
+      : active === "thinking"
+        ? 0.7
+        : active === "error"
+          ? 0.9
+          : active === "done"
+            ? 0.85
+            : 0.4;
 
   return (
     <div
-      className={`mascot ${className}`.trim()}
+      className={`hud ${className}`.trim()}
       data-state={active}
-      style={{ "--mascot-size": `${size}px` } as React.CSSProperties}
+      style={
+        {
+          "--hud-size": `${size}px`,
+          "--spin": `${spin.toFixed(2)}s`,
+          "--glow": glow.toFixed(2),
+        } as React.CSSProperties
+      }
       role="img"
       aria-label={`Max is ${ariaFor(active)}`}
     >
-      <canvas ref={canvasRef} className="mascot__canvas" style={{ width: size, height: size }} />
+      <svg viewBox="0 0 200 200" width={size} height={size} className="hud__svg" aria-hidden="true">
+        {/* outer tick ring (slow) */}
+        <g className="hud__spin-slow">
+          {OUTER.map((t, i) => (
+            <line
+              key={i}
+              x1={t.x1}
+              y1={t.y1}
+              x2={t.x2}
+              y2={t.y2}
+              className={t.major ? "hud__tick hud__tick--major" : "hud__tick"}
+            />
+          ))}
+        </g>
+
+        {/* dashed arc ring (reverse) */}
+        <g className="hud__spin-rev">
+          <circle cx="100" cy="100" r="74" className="hud__arc" pathLength={100} />
+        </g>
+
+        {/* gapped ring (fast) */}
+        <g className="hud__spin-fast">
+          <circle cx="100" cy="100" r="62" className="hud__ring-gapped" pathLength={100} />
+        </g>
+
+        {/* inner tick ring (slow reverse) */}
+        <g className="hud__spin-rev-slow">
+          {INNER.map((t, i) => (
+            <line
+              key={i}
+              x1={t.x1}
+              y1={t.y1}
+              x2={t.x2}
+              y2={t.y2}
+              className="hud__tick hud__tick--inner"
+            />
+          ))}
+        </g>
+
+        {/* fixed crosshair notches */}
+        <g className="hud__cross">
+          <line x1="100" y1="28" x2="100" y2="44" />
+          <line x1="100" y1="156" x2="100" y2="172" />
+          <line x1="28" y1="100" x2="44" y2="100" />
+          <line x1="156" y1="100" x2="172" y2="100" />
+        </g>
+
+        {/* reactor core */}
+        <circle cx="100" cy="100" r="26" className="hud__core-ring" />
+        <circle cx="100" cy="100" r="14" className="hud__core" />
+      </svg>
     </div>
   );
 }

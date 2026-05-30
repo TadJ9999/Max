@@ -1,17 +1,18 @@
 # Max — Mascot "X"
 
-The live vector mascot from [ui.md](ui.md), implemented as a **canvas particle cloud**
-(no Rive editor, no `.riv` binary, no runtime dependency). It renders an Apple-Watch-
-pairing-style **swirling dust cloud** in cyan/teal that reacts to engine state. The
-component's interface deliberately mirrors a Rive state-machine, so a commissioned
-`.riv` rig can replace it later behind the identical API.
+The live vector mascot from [ui.md](ui.md), implemented as a **"Jarvis"-style holographic
+HUD** in pure **SVG + CSS** (no Rive editor, no `.riv` binary, no runtime dependency, fully
+transparent background). Concentric counter-rotating rings of tick marks and dashed arcs
+orbit a pulsing reactor core, in cyan/teal, reacting to engine state. The component's
+interface deliberately mirrors a Rive state-machine, so a commissioned `.riv` rig can
+replace it later behind the identical API.
 
 ## Files
 - [`app/src/components/Mascot.tsx`](../app/src/components/Mascot.tsx) — the component.
 - [`app/src/components/Mascot.css`](../app/src/components/Mascot.css) — animations / palette.
 - [`app/src/mascot/deriveMascotState.ts`](../app/src/mascot/deriveMascotState.ts) — maps
   the engine's `GET /sessions` into the single mascot signal.
-- [`app/src/App.tsx`](../app/src/App.tsx) — a demo playground (state buttons + VRAM slider).
+- [`app/src/App.tsx`](../app/src/App.tsx) — the widget; derives the signal and renders `<Mascot>`.
 
 ## The contract
 ```ts
@@ -21,11 +22,11 @@ type MascotState = "idle" | "thinking" | "busy" | "done" | "error";
 
 | State    | Look                                                          |
 |----------|---------------------------------------------------------------|
-| idle     | slow drifting swirl, dim, tight                               |
-| thinking | faster swirl, brighter cloud                                  |
-| busy     | swirl speed / spread / brightness scale with `vramLoad`       |
-| done     | green radial bloom, then auto-relaxes to idle (~1.3s)         |
-| error    | red retint, turbulent scatter                                 |
+| idle     | slow rotation, dim glow                                        |
+| thinking | faster rotation, brighter cyan glow                           |
+| busy     | spin speed + glow scale with `vramLoad` (deeper queue = faster)|
+| done     | green retint + bloom, then auto-relaxes to idle (~1.3s)        |
+| error    | red retint, fastest/agitated spin                             |
 
 Reduced-motion users get a calm static pose (`prefers-reduced-motion`).
 
@@ -42,5 +43,5 @@ have it; otherwise it estimates pressure from local queue depth.
 ## Swapping in real Rive later (optional)
 If you ever commission Rive art: add `@rive-app/react-canvas`, build a state machine
 with one number input `state` (0–4) plus a number input `vramLoad` (0–1), and replace
-`Mascot.tsx`'s canvas with the Rive canvas while keeping the same props. Nothing else
+`Mascot.tsx`'s SVG with the Rive canvas while keeping the same props. Nothing else
 in the app changes.

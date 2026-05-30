@@ -224,9 +224,9 @@ body {
   margin: 6px 0 0;
 }
 
-/* mascot */
-.mascot {
-  margin: 0 auto;
+/* mascot (HUD) */
+.hud {
+  margin: 4px auto;
 }
 
 /* ---- chat ---- */

@@ -70,16 +70,17 @@ session stack above it; system stats and settings sit along the top.
 | Transparent, frameless, on-top, top-right | Tauri window: `transparent: true`, `decorations: false`, `alwaysOnTop: true`, `skipTaskbar: true`; position via the window API |
 | Show/hide hotkey | `@tauri-apps/plugin-global-shortcut`; configurable, default `Ctrl+Alt+M` |
 | Click-through when idle | Tauri `setIgnoreCursorEvents(true)`; toggle off on hover |
-| Live mascot (reacts to state) | **Rive** — *chosen*. Free & open-source runtime (MIT) + free editor; state-machine vector animation driven by engine status. Lottie = free fallback |
+| Live mascot (reacts to state) | **SVG + CSS HUD** — *chosen*. Jarvis-style holographic rings, no deps, transparent; state-machine API mirrors Rive so real `.riv` art can drop in later |
 | SYS INFO meters | Rust command using the `sysinfo` crate (CPU/RAM); GPU/VRAM via parsing `nvidia-smi` (RTX 4070 Ti) |
 | Task cards + streaming | React frontend; subscribe to `/sessions` + per-session output stream (SSE/WebSocket) |
 | Glass look | CSS `backdrop-filter: blur()`, low-alpha backgrounds, rounded corners, soft shadows |
 
 ## Decisions
-- **Mascot:** built as a **canvas particle cloud** (no Rive editor / `.riv` binary, no
-  runtime dep) — an Apple-Watch-pairing-style cyan/teal **swirling dust cloud** driven by
-  engine state. The component API mirrors a Rive state-machine, so a commissioned `.riv`
-  can drop in later with no other code changes. See [mascot.md](mascot.md).
+- **Mascot:** built as a **"Jarvis"-style holographic HUD** in pure **SVG + CSS** (no Rive
+  editor / `.riv` binary, no runtime dep, transparent background) — concentric counter-rotating
+  cyan/teal rings + a pulsing core driven by engine state. The component API mirrors a Rive
+  state-machine, so a commissioned `.riv` can drop in later with no other code changes.
+  See [mascot.md](mascot.md).
 - **Show/hide:** configurable global hotkey, default **`Ctrl+Alt+M`**.
 - **Interaction:** click-through when idle, interactive on hover.
 

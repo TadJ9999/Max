@@ -174,7 +174,7 @@ Parser rules:
 
 ### Phase 3 — Desktop widget app  🎯 **v1 — floating widget + configure everything** ([UI design](docs/ui.md))
 - [~] **Floating transparent widget** — frameless/transparent/always-on-top/skip-taskbar window ✅; **top-right anchoring + global hotkey toggle pending**
-- [x] **Live vector mascot** ("X") reacting to engine state (idle / thinking / busy / done / error) — built as a **canvas particle cloud** (not Rive; same state API)
+- [x] **Live vector mascot** ("X") reacting to engine state (idle / thinking / busy / done / error) — built as a **"Jarvis"-style SVG + CSS HUD** (not Rive; same state API)
 - [x] **Task cards** per session (model · provider · state · ☁ marker · cancel/promote) — UI done on **mock data**; live `/sessions` polling pending
 - [~] **SYS INFO** meters (CPU · GPU · **VRAM** · RAM) + **⚙ settings** cog — laid out ✅; **values are mock until a Rust sysinfo/nvidia-smi command lands**
 - [~] Chat UI with a **cloud indicator** when `!` used ✅ + SSE streaming + `/health` dot; **markdown/code-blocks/copy pending**
