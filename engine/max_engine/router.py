@@ -27,7 +27,10 @@ def resolve(command: Command, config: EngineConfig) -> Route:
         # TODO(Phase 2): allow a per-task default provider, not just default model.
         provider = "ollama"
 
-    model = config.task_models.get(command.action, "qwen2.5-coder:14b")
+    # Per-provider model override wins; otherwise the per-task default.
+    model = config.provider_models.get(provider, {}).get(
+        command.action
+    ) or config.task_models.get(command.action, "qwen2.5-coder:14b")
     is_cloud = any(p.name == provider and p.kind == "cloud" for p in config.providers)
 
     if is_cloud and not config.allow_cloud:

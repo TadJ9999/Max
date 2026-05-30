@@ -150,8 +150,10 @@ Parser rules:
 ### Phase 1 — Engine MVP (the brain)  🎯 *`curl` can chat with Max via any provider*
 - [x] Provider adapter interface
 - [x] Ollama (local) adapter (streaming; mock-tested) — *needs live Ollama to verify end-to-end*
-- [ ] Anthropic/Claude (cloud) adapter
-- [x] OpenAI-compatible `/v1/chat/completions` with **streaming** (SSE)
+- [x] Anthropic/Claude (cloud) adapter (streaming; mock-tested) — *needs API key to verify end-to-end*
+- [x] OpenAI-compatible `/v1/chat/completions` with **streaming** (SSE); `provider` selectable
+- [x] `/command` endpoint: full DSL → router → provider stream (sigil picks local/cloud)
+- [x] Per-provider model overrides (cloud `!` → Claude model, local → coder model)
 - [ ] Provider router (sigil → adapter+model) + per-task default model config
 - [ ] Config system (models, sigils, params, API keys) — file-based, hot-reload
 - [ ] **Privacy guard**: detect + mark cloud egress; secure API-key storage

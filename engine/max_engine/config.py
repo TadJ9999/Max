@@ -38,6 +38,18 @@ class EngineConfig(BaseModel):
             "completion": "qwen2.5-coder:3b",
         }
     )
+    # Optional per-provider model overrides: provider -> {action: model}.
+    # Falls back to task_models when a provider/action isn't listed here.
+    provider_models: dict[str, dict[str, str]] = Field(
+        default_factory=lambda: {
+            "claude": {
+                "generate": "claude-sonnet-4-6",
+                "summarize": "claude-haiku-4-5-20251001",
+                "fix": "claude-sonnet-4-6",
+                "chat": "claude-sonnet-4-6",
+            }
+        }
+    )
     providers: list[ProviderConfig] = Field(
         default_factory=lambda: [
             ProviderConfig(name="ollama", kind="local", base_url="http://127.0.0.1:11434"),
