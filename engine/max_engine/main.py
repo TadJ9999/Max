@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -27,6 +28,9 @@ from .prompts import messages_for
 from .providers.base import Provider
 from .providers.factory import build_provider
 from .router import resolve
+
+# Load engine/.env (e.g. ANTHROPIC_API_KEY) if present, before providers read it.
+load_dotenv()
 
 app = FastAPI(title="Max Engine", version=__version__)
 
