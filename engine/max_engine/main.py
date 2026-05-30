@@ -31,8 +31,9 @@ from .providers.factory import build_provider
 from .router import resolve
 
 # Load engine/.env (e.g. ANTHROPIC_API_KEY) if present, before providers read it.
-# Explicit path so it works regardless of the launch directory.
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+# Explicit path so it works regardless of the launch directory; override=True so
+# the file is authoritative over a stale/empty pre-existing env var.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
 
 app = FastAPI(title="Max Engine", version=__version__)
 

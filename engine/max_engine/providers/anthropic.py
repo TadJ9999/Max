@@ -21,6 +21,17 @@ from .base import ChatChunk, Provider
 ANTHROPIC_VERSION = "2023-06-01"
 
 
+def _api_error_message(status: int, body: bytes) -> str:
+    """Pull the human-readable message out of an Anthropic error body."""
+    try:
+        msg = json.loads(body).get("error", {}).get("message")
+        if msg:
+            return msg
+    except (ValueError, AttributeError):
+        pass
+    return f"Anthropic API returned HTTP {status}"
+
+
 def _split_system(messages: list[dict]) -> tuple[str | None, list[dict]]:
     """Separate system messages (top-level in the Anthropic API) from the turns."""
     system_parts: list[str] = []
@@ -81,7 +92,11 @@ class AnthropicProvider(Provider):
             async with client.stream(
                 "POST", f"{self.base_url}/v1/messages", json=payload, headers=headers
             ) as resp:
-                resp.raise_for_status()
+                if resp.status_code >= 400:
+                    # Surface the API's actual message (e.g. low credit balance,
+                    # bad model) instead of a generic HTTP status.
+                    body = await resp.aread()
+                    raise RuntimeError(_api_error_message(resp.status_code, body))
                 async for line in resp.aiter_lines():
                     if not line.startswith("data:"):
                         continue

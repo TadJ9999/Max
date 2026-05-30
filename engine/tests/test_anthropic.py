@@ -54,6 +54,33 @@ def test_anthropic_streams_text_deltas():
     assert chunks[-1].done is True
 
 
+def test_anthropic_surfaces_api_error_message():
+    """A 4xx from the API yields the real error message, not a generic status."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={
+                "type": "error",
+                "error": {"type": "invalid_request_error", "message": "credit balance is too low"},
+            },
+        )
+
+    async def run():
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://test")
+        provider = AnthropicProvider(api_key="test-key", base_url="http://test", client=client)
+        try:
+            return [
+                c
+                async for c in provider.chat("claude-opus-4-8", [{"role": "user", "content": "x"}])
+            ]
+        finally:
+            await client.aclose()
+
+    with pytest.raises(RuntimeError, match="credit balance is too low"):
+        asyncio.run(run())
+
+
 def test_anthropic_requires_api_key():
     provider = AnthropicProvider(api_key=None)
     provider.api_key = None  # ensure no env leak
