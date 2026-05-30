@@ -20,6 +20,7 @@ from pydantic import BaseModel
 
 from . import __version__
 from .config import load_config
+from .delegate.engine import DelegateEngine
 from .dsl import ParseError, parse_command
 from .prompts import messages_for
 from .providers.base import Provider
@@ -28,6 +29,7 @@ from .router import resolve
 
 app = FastAPI(title="Max Engine", version=__version__)
 config = load_config()
+delegate = DelegateEngine(config)
 
 
 @app.get("/health")
@@ -148,4 +150,71 @@ async def command(req: CommandRequest):
     return _sse_stream(provider, route.model, messages)
 
 
-# TODO(Phase 4): /sessions  (delegate: spawn / list / cancel)
+# ---- Delegate system: parallel sessions --------------------------------
+
+
+class TaskSpec(BaseModel):
+    task: str
+    action: str = "generate"
+    provider: str | None = None  # None => decided by delegate mode (Manual/Smart-Auto)
+    complexity: float = 0.5      # Smart-Auto hint (0..1); higher => more likely cloud
+
+
+class SubmitRequest(BaseModel):
+    tasks: list[TaskSpec]
+
+
+@app.post("/sessions")
+async def create_sessions(req: SubmitRequest):
+    """Fan out one or more tasks as isolated parallel sessions, then schedule them."""
+    created = []
+    for spec in req.tasks:
+        try:
+            s = delegate.submit(
+                spec.task,
+                action=spec.action,
+                provider=spec.provider,
+                complexity=spec.complexity,
+            )
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e)) from e
+        created.append(s)
+    await delegate.kick()
+    return {"sessions": [s.to_dict() for s in created]}
+
+
+@app.get("/sessions")
+def list_sessions():
+    """List all sessions (isolated — each output viewed separately)."""
+    return {"sessions": [s.to_dict() for s in delegate.manager.list()]}
+
+
+@app.get("/sessions/{session_id}")
+def get_session(session_id: str):
+    s = delegate.manager.get(session_id)
+    if s is None:
+        raise HTTPException(status_code=404, detail="no such session")
+    return s.to_dict()
+
+
+@app.post("/sessions/{session_id}/cancel")
+def cancel_session(session_id: str):
+    if delegate.manager.get(session_id) is None:
+        raise HTTPException(status_code=404, detail="no such session")
+    delegate.cancel(session_id)
+    return delegate.manager.get(session_id).to_dict()
+
+
+@app.post("/sessions/{session_id}/promote")
+async def promote_session(session_id: str):
+    """Manual override: push a still-queued session to the cloud, then reschedule."""
+    try:
+        s = delegate.promote_to_cloud(session_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="no such session") from e
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    await delegate.kick()
+    return s.to_dict()

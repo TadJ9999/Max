@@ -176,13 +176,16 @@ Parser rules:
 - [ ] **Workspace folder allowlist** — list the paths Max may read/operate on
 
 ### Phase 4 — Delegate system: parallel sessions & multi-model orchestration  🎯 *run many tasks at once, each on its own model*
-- [ ] Session manager: spawn / track / cancel concurrent sessions, each bound to a provider+model
-- [ ] **Mode toggle (settings): Manual** (you assign model+task) **and Smart-Auto** (AI decides local vs cloud)
-- [ ] Smart-Auto router: choose local vs cloud per task, primarily by **task complexity** (queue depth as tie-breaker)
-- [ ] Task scheduler aware of the **12 GB VRAM limit** (cloud + small-local run in parallel; heavy local models queue)
-- [ ] **Queue dashboard** with manual override: push a queued task to cloud when local is backed up
+*Engine side built + tested (29 tests); the dashboard/streaming UI lands with the Tauri app (Phase 3).*
+- [x] Session manager: spawn / track / cancel concurrent sessions, each bound to a provider+model
+- [x] **Mode (config): Manual** (you assign model+task) **and Smart-Auto** (engine decides local vs cloud)
+- [x] Smart-Auto router: choose local vs cloud per task by **task complexity** (+ local queue depth)
+- [x] Task scheduler aware of the **12 GB VRAM limit** (cloud + small-local run in parallel; heavy local models queue)
+- [x] Manual override (backend): `promote` a queued session to cloud when local is backed up
+- [x] **Isolated sessions** — each tracked + retrieved separately (`/sessions` API)
+- [ ] **Queue dashboard** (UI) — live view + drag-to-cloud (with Tauri app)
+- [ ] Streaming each session's output concurrently to the client (SSE/WebSocket)
 - [ ] Delegator/coordinator (optional): decompose one request into subtasks fanned out to workers
-- [ ] **Isolated sessions** — each result in its own pane/view, all streaming concurrently
 
 ### Phase 5 — VS Code extension  🎯 *type `. … .` live → code appears; `!.` routes to cloud*
 - [ ] **Live-as-you-type** detection (fire on closing delimiter) + debounce/cancel
