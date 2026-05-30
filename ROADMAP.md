@@ -168,7 +168,7 @@ Parser rules:
 - [x] `/command` endpoint: full DSL → router → provider stream (sigil picks local/cloud)
 - [x] Per-provider model overrides (cloud `!` → Claude model, local → coder model)
 - [x] Provider router (sigil → adapter+model) + per-task default model config (`router.py`; per-task default *provider* still TODO)
-- [~] Config system (models, sigils, params, API keys) — in-memory defaults exist (`config.py`); **file-backed + hot-reload pending**
+- [~] Config system — defaults + **file-backed persistence for UI settings** (`/config` GET/PUT → `.maxconfig.json`: cloud, delegate mode, parallel limits, workspace allowlist); models/sigils/keys + hot-reload still pending
 - [~] **Privacy guard** — cloud routes flagged (`is_cloud`) + `allow_cloud` gate + keys from env; **egress audit log + secure key store pending**
 - [~] Health/status endpoint (`/health` ✅); **background daemon mode pending**
 
@@ -187,10 +187,10 @@ Parser rules:
 - [x] Chat UI — plain chat (`/chat`) + DSL commands (`/command`), **markdown with code blocks + copy button**, cloud (`!`) indicator, SSE streaming, `/health` status dot
 - [ ] **Model manager**: list / download / switch / params (temp, ctx, quant)
 - [ ] **Routing config**: map sigils → providers/models, set **per-task defaults**, assign **hotkeys**
-- [ ] **Provider/key management** (add Claude key, toggle cloud on/off)
+- [~] **Provider/key management** — cloud on/off ✅ + **key-set status** shown in settings; per-provider key *entry* stays in `engine/.env` by design (no secret-handling in the UI)
 - [ ] Engine start/stop/restart + live VRAM/RAM meters
-- [ ] Settings: **auto-delegate toggle (Manual / Smart-Auto)**, cloud on/off
-- [ ] **Workspace folder allowlist** — list the paths Max may read/operate on
+- [x] Settings: **auto-delegate toggle (Manual / Smart-Auto)** + cloud on/off + **parallel limits** — live via `/config`, persisted to `.maxconfig.json`
+- [x] **Workspace folder allowlist** — add/remove paths in settings, persisted
 
 ### Phase 4 — Delegate system: parallel sessions & multi-model orchestration  🎯 *run many tasks at once, each on its own model*
 *Engine side built + tested (29 tests); the dashboard/streaming UI lands with the Tauri app (Phase 3).*

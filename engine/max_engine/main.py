@@ -12,6 +12,7 @@ Run::
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -22,7 +23,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from . import __version__
-from .config import load_config
+from .config import load_config, save_overrides
 from .delegate.engine import DelegateEngine
 from .dsl import ParseError, parse_command
 from .prompts import messages_for
@@ -54,6 +55,61 @@ delegate = DelegateEngine(config)
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "version": __version__}
+
+
+# ---- Settings (UI-editable config) -------------------------------------
+
+
+def _config_view() -> dict:
+    """The UI-facing settings. Never exposes the API key — only whether one is set."""
+    return {
+        "allow_cloud": config.allow_cloud,
+        "cloud_key_set": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "delegate": {
+            "mode": config.delegate.mode,
+            "max_parallel_local": config.delegate.max_parallel_local,
+            "max_parallel_cloud": config.delegate.max_parallel_cloud,
+        },
+        "workspace_allowlist": config.workspace_allowlist,
+    }
+
+
+@app.get("/config")
+def get_config() -> dict:
+    return _config_view()
+
+
+class DelegatePatch(BaseModel):
+    mode: str | None = None
+    max_parallel_local: int | None = None
+    max_parallel_cloud: int | None = None
+
+
+class ConfigPatch(BaseModel):
+    allow_cloud: bool | None = None
+    workspace_allowlist: list[str] | None = None
+    delegate: DelegatePatch | None = None
+
+
+@app.put("/config")
+def update_config(patch: ConfigPatch) -> dict:
+    """Apply UI settings to the live config and persist them."""
+    if patch.allow_cloud is not None:
+        config.allow_cloud = patch.allow_cloud
+    if patch.workspace_allowlist is not None:
+        config.workspace_allowlist = patch.workspace_allowlist
+    if patch.delegate is not None:
+        d = patch.delegate
+        if d.mode is not None:
+            if d.mode not in ("manual", "smart-auto"):
+                raise HTTPException(status_code=400, detail="mode must be 'manual' or 'smart-auto'")
+            config.delegate.mode = d.mode
+        if d.max_parallel_local is not None:
+            config.delegate.max_parallel_local = max(1, d.max_parallel_local)
+        if d.max_parallel_cloud is not None:
+            config.delegate.max_parallel_cloud = max(1, d.max_parallel_cloud)
+    save_overrides(config)
+    return _config_view()
 
 
 class ParseRequest(BaseModel):

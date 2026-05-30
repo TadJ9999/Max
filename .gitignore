@@ -28,3 +28,4 @@ app/src-tauri/target/
 models/
 data/
 secrets/
+.maxconfig.json

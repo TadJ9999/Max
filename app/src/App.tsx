@@ -3,6 +3,7 @@ import { TopBar, type SysInfo } from "./components/TopBar";
 import { TaskCard } from "./components/TaskCard";
 import { Mascot } from "./components/Mascot";
 import { ChatBar } from "./components/ChatBar";
+import { SettingsPanel } from "./components/SettingsPanel";
 import { deriveMascotState } from "./mascot/deriveMascotState";
 import { initFloatingWindow } from "./window";
 import { getSystemStats } from "./system";
@@ -112,15 +113,7 @@ function App() {
     <div className="widget">
       <TopBar sys={sys} onSettings={() => setShowSettings((v) => !v)} />
 
-      {showSettings && (
-        <div className="panel">
-          <div className="panel__title">Settings</div>
-          <p className="panel__hint">
-            Models, sigils, hotkeys, provider keys, cloud on/off, delegate mode, and the
-            workspace allowlist will live here (ROADMAP Phase 3).
-          </p>
-        </div>
-      )}
+      {showSettings && <SettingsPanel />}
 
       <div className="cards">
         {sessions.length === 0 ? (

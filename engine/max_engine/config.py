@@ -7,7 +7,13 @@ cloud toggle, and the workspace folder allowlist. File-backed loading is a TODO
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from pydantic import BaseModel, Field
+
+# UI-editable settings persist here (gitignored), next to engine/.env.
+CONFIG_FILE = Path(__file__).resolve().parent.parent / ".maxconfig.json"
 
 
 class ProviderConfig(BaseModel):
@@ -62,6 +68,41 @@ class EngineConfig(BaseModel):
     delegate: DelegateConfig = Field(default_factory=DelegateConfig)
 
 
+def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
+    """Apply the UI-editable subset of settings onto a config in place."""
+    if "allow_cloud" in data:
+        cfg.allow_cloud = bool(data["allow_cloud"])
+    if "workspace_allowlist" in data:
+        cfg.workspace_allowlist = list(data["workspace_allowlist"])
+    d = data.get("delegate") or {}
+    if "mode" in d:
+        cfg.delegate.mode = d["mode"]
+    if "max_parallel_local" in d:
+        cfg.delegate.max_parallel_local = max(1, int(d["max_parallel_local"]))
+    if "max_parallel_cloud" in d:
+        cfg.delegate.max_parallel_cloud = max(1, int(d["max_parallel_cloud"]))
+
+
 def load_config() -> EngineConfig:
-    """Return the engine config. TODO(Phase 1): load + hot-reload from a file."""
-    return EngineConfig()
+    """Defaults, with any persisted UI overrides from CONFIG_FILE applied."""
+    cfg = EngineConfig()
+    if CONFIG_FILE.exists():
+        try:
+            _apply_overrides(cfg, json.loads(CONFIG_FILE.read_text()))
+        except (ValueError, OSError):
+            pass  # corrupt/unreadable file -> fall back to defaults
+    return cfg
+
+
+def save_overrides(cfg: EngineConfig) -> None:
+    """Persist the UI-editable subset of settings to CONFIG_FILE."""
+    data = {
+        "allow_cloud": cfg.allow_cloud,
+        "workspace_allowlist": cfg.workspace_allowlist,
+        "delegate": {
+            "mode": cfg.delegate.mode,
+            "max_parallel_local": cfg.delegate.max_parallel_local,
+            "max_parallel_cloud": cfg.delegate.max_parallel_cloud,
+        },
+    }
+    CONFIG_FILE.write_text(json.dumps(data, indent=2))
