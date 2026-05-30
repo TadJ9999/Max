@@ -3,13 +3,16 @@
    transparent, so the desktop shows through the gaps between cards. */
 
 :root {
-  --accent: #22d3ee;
-  --accent-soft: #67e8f9;
-  --text: #e6f6f9;
-  --muted: #9fdbe6;
-  --muted-2: #6fbecb;
-  --glass-bg: rgba(12, 26, 31, 0.55);
-  --glass-border: rgba(103, 232, 249, 0.18);
+  /* accent aligned to the HUD (cyan primary, amber secondary) */
+  --accent: #38bdf8;
+  --accent-soft: #7dd3fc;
+  --amber: #f5a524;
+  --text: #f2f5f7;
+  --muted: #aab4bd;
+  --muted-2: #7e8a93;
+  /* Apple dark-mode "vibrancy" glass — near-black, hairline white border */
+  --glass-bg: rgba(18, 19, 22, 0.55);
+  --glass-border: rgba(255, 255, 255, 0.1);
   --rose: #fb7185;
   --green: #34d399;
 
@@ -34,7 +37,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* glass surfaces */
+/* glass surfaces — Apple dark-mode vibrancy (near-black, strong blur) */
 .topbar,
 .card,
 .panel,
@@ -42,10 +45,12 @@ body {
 .chat__row {
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
-  border-radius: 14px;
-  backdrop-filter: blur(14px) saturate(120%);
-  -webkit-backdrop-filter: blur(14px) saturate(120%);
-  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.4);
+  border-radius: 16px;
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  box-shadow:
+    0 10px 34px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .widget {
@@ -267,7 +272,7 @@ body {
   color: var(--muted-2);
 }
 .chat__cloud {
-  color: var(--accent);
+  color: var(--amber);
 }
 .chat__send {
   background: var(--accent);

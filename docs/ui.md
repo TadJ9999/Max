@@ -77,10 +77,13 @@ session stack above it; system stats and settings sit along the top.
 
 ## Decisions
 - **Mascot:** built as a **"Jarvis"-style holographic HUD** in pure **SVG + CSS** (no Rive
-  editor / `.riv` binary, no runtime dep, transparent background) — concentric counter-rotating
-  cyan/teal rings + a pulsing core driven by engine state. The component API mirrors a Rive
+  editor / `.riv` binary, no runtime dep, transparent background) — counter-rotating
+  **multi-color (cyan + amber + white)** rings, traveling data arcs, a radar sweep, and a
+  pulsing core with an "X" sigil, driven by engine state. The component API mirrors a Rive
   state-machine, so a commissioned `.riv` can drop in later with no other code changes.
   See [mascot.md](mascot.md).
+- **UI glass:** **Apple dark-mode "vibrancy"** — near-black translucent cards with hairline
+  white borders and strong backdrop blur (the desktop tints through the gaps).
 - **Show/hide:** configurable global hotkey, default **`Ctrl+Alt+M`**.
 - **Interaction:** click-through when idle, interactive on hover.
 

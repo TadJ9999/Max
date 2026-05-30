@@ -9,12 +9,11 @@ import "./Mascot.css";
 export type MascotState = "idle" | "thinking" | "busy" | "done" | "error";
 
 export interface MascotProps {
-  /** Current engine state. Drives color + spin speed + glow. */
+  /** Current engine state. Drives palette + spin speed + glow. */
   state?: MascotState;
   /**
    * VRAM pressure, 0..1. When `state === "busy"` this scales the intensity
-   * (spin speed + glow) — the deeper the local queue, the faster the HUD spins.
-   * Ignored in other states.
+   * (spin speed + glow). Ignored in other states.
    */
   vramLoad?: number;
   /** Rendered pixel size (square). Default 160. */
@@ -44,14 +43,16 @@ function ticks(count: number, rIn: number, rOut: number, majorEvery = 6): Tick[]
   });
 }
 
-const OUTER = ticks(72, 84, 92);
-const INNER = ticks(48, 44, 50);
+const OUTER = ticks(84, 84, 92, 7);
+const MID = ticks(48, 66, 72, 6);
+const INNER = ticks(60, 44, 49, 5);
 
 /**
- * Max's mascot — a "Jarvis"-style holographic HUD: concentric rings of tick
- * marks and dashed arcs counter-rotating around a pulsing reactor core. Pure
- * SVG + CSS (transparent background), no runtime deps. State drives the accent
- * color, spin speed and glow.
+ * Max's mascot — a "Jarvis"-style holographic HUD: several counter-rotating
+ * rings of tick marks and animated data arcs, a sweeping radar, and a pulsing
+ * reactor core with an "X" sigil. Pure SVG + CSS (transparent background), no
+ * runtime deps. Multi-color (cyan + amber + white); state shifts the palette,
+ * spin speed and glow.
  */
 export function Mascot({
   state = "idle",
@@ -89,14 +90,14 @@ export function Mascot({
             : 18;
   const glow =
     active === "busy"
-      ? 0.7 + v * 0.3
+      ? 0.75 + v * 0.25
       : active === "thinking"
-        ? 0.7
+        ? 0.75
         : active === "error"
-          ? 0.9
+          ? 0.95
           : active === "done"
-            ? 0.85
-            : 0.4;
+            ? 0.9
+            : 0.5;
 
   return (
     <div
@@ -112,10 +113,33 @@ export function Mascot({
       role="img"
       aria-label={`Max is ${ariaFor(active)}`}
     >
+      {/* rotating radar sweep behind the rings */}
+      <div className="hud__sweep" />
+
       <svg viewBox="0 0 200 200" width={size} height={size} className="hud__svg" aria-hidden="true">
-        {/* outer tick ring (slow) */}
-        <g className="hud__spin-slow">
+        {/* outer tick ring (cyan, slow) */}
+        <g className="hud__spin-slow hud__c1">
           {OUTER.map((t, i) => (
+            <line
+              key={i}
+              x1={t.x1}
+              y1={t.y1}
+              x2={t.x2}
+              y2={t.y2}
+              className={t.major ? "hud__tick hud__tick--major" : "hud__tick"}
+            />
+          ))}
+          <circle cx="100" cy="100" r="80" className="hud__hairline" pathLength={100} />
+        </g>
+
+        {/* amber data arc (reverse, dashes travel) */}
+        <g className="hud__spin-rev hud__c2">
+          <circle cx="100" cy="100" r="74" className="hud__arc hud__arc--dash" pathLength={100} />
+        </g>
+
+        {/* mid tick ring (white, fast) */}
+        <g className="hud__spin-fast hud__c3">
+          {MID.map((t, i) => (
             <line
               key={i}
               x1={t.x1}
@@ -127,41 +151,39 @@ export function Mascot({
           ))}
         </g>
 
-        {/* dashed arc ring (reverse) */}
-        <g className="hud__spin-rev">
-          <circle cx="100" cy="100" r="74" className="hud__arc" pathLength={100} />
+        {/* cyan gapped ring (fast, dashes travel) */}
+        <g className="hud__spin-fast hud__c1">
+          <circle cx="100" cy="100" r="58" className="hud__ring-gapped hud__arc--dash" pathLength={100} />
         </g>
 
-        {/* gapped ring (fast) */}
-        <g className="hud__spin-fast">
-          <circle cx="100" cy="100" r="62" className="hud__ring-gapped" pathLength={100} />
-        </g>
-
-        {/* inner tick ring (slow reverse) */}
-        <g className="hud__spin-rev-slow">
+        {/* inner tick ring (cyan, slow reverse) */}
+        <g className="hud__spin-rev-slow hud__c1">
           {INNER.map((t, i) => (
-            <line
-              key={i}
-              x1={t.x1}
-              y1={t.y1}
-              x2={t.x2}
-              y2={t.y2}
-              className="hud__tick hud__tick--inner"
-            />
+            <line key={i} x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} className="hud__tick hud__tick--inner" />
           ))}
         </g>
 
-        {/* fixed crosshair notches */}
-        <g className="hud__cross">
-          <line x1="100" y1="28" x2="100" y2="44" />
-          <line x1="100" y1="156" x2="100" y2="172" />
-          <line x1="28" y1="100" x2="44" y2="100" />
-          <line x1="156" y1="100" x2="172" y2="100" />
+        {/* fixed crosshair notches (amber) */}
+        <g className="hud__cross hud__c2">
+          <line x1="100" y1="26" x2="100" y2="42" />
+          <line x1="100" y1="158" x2="100" y2="174" />
+          <line x1="26" y1="100" x2="42" y2="100" />
+          <line x1="158" y1="100" x2="174" y2="100" />
         </g>
 
         {/* reactor core */}
-        <circle cx="100" cy="100" r="26" className="hud__core-ring" />
-        <circle cx="100" cy="100" r="14" className="hud__core" />
+        <g className="hud__c2">
+          <circle cx="100" cy="100" r="30" className="hud__core-ring" />
+        </g>
+        <g className="hud__spin-fast hud__c1">
+          <circle cx="100" cy="100" r="22" className="hud__core-ring hud__arc--dash" pathLength={100} />
+        </g>
+        <circle cx="100" cy="100" r="13" className="hud__core hud__c1" />
+        {/* core "X" sigil (white) */}
+        <g className="hud__sigil hud__c3">
+          <line x1="93" y1="93" x2="107" y2="107" />
+          <line x1="107" y1="93" x2="93" y2="107" />
+        </g>
       </svg>
     </div>
   );

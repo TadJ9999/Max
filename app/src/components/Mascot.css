@@ -1,9 +1,12 @@
 /*
- * Mascot — "Jarvis"-style holographic HUD.
- * Concentric counter-rotating rings of ticks + dashed arcs around a pulsing
- * reactor core. Fully transparent background (only the rings/core are drawn),
- * so the desktop shows through in the transparent Tauri window.
- * State sets the accent color (--hud), spin period (--spin) and glow (--glow).
+ * Mascot — "Jarvis"-style holographic HUD (full / busy variant).
+ * Several counter-rotating rings of ticks + traveling dashed arcs, a rotating
+ * radar sweep, and a pulsing reactor core with an "X" sigil. Multi-color
+ * (cyan + amber + white). Fully transparent background — only the rings/core
+ * are drawn, so the desktop shows through the transparent Tauri window.
+ *
+ * Palette (--c1 primary, --c2 accent, --c3 highlight), spin period (--spin) and
+ * glow (--glow) are set per state.
  */
 
 .hud {
@@ -13,28 +16,66 @@
   display: grid;
   place-items: center;
   background: transparent;
-  --hud: #22d3ee;
+  /* default (idle / thinking / busy): Iron-Man cyan + amber + white */
+  --c1: #38bdf8;
+  --c2: #f5a524;
+  --c3: #e8f6ff;
 }
 .hud[data-state="done"] {
-  --hud: #34d399;
+  --c1: #34d399;
+  --c2: #a7f3d0;
+  --c3: #ecfdf5;
 }
 .hud[data-state="error"] {
-  --hud: #fb7185;
+  --c1: #fb7185;
+  --c2: #f5a524;
+  --c3: #ffe4e6;
 }
 
-/* Soft ambient bloom behind the core (transparent — just a glow). */
+/* color groups — children inherit via currentColor */
+.hud__c1 {
+  color: var(--c1);
+}
+.hud__c2 {
+  color: var(--c2);
+}
+.hud__c3 {
+  color: var(--c3);
+}
+
+/* ambient bloom behind the core (transparent — just a glow) */
 .hud::before {
   content: "";
   position: absolute;
-  inset: 22%;
+  inset: 26%;
   border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--hud) 45%, transparent), transparent 70%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--c1) 50%, transparent), transparent 70%);
   filter: blur(14px);
-  opacity: var(--glow, 0.4);
+  opacity: var(--glow, 0.5);
   z-index: -1;
 }
 
+/* rotating radar sweep, masked to the ring band */
+.hud__sweep {
+  position: absolute;
+  inset: 5%;
+  border-radius: 50%;
+  z-index: 0;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg 255deg,
+    color-mix(in srgb, var(--c1) 42%, transparent) 358deg,
+    transparent 360deg
+  );
+  -webkit-mask: radial-gradient(circle, transparent 0 50%, #000 51% 99%, transparent 100%);
+  mask: radial-gradient(circle, transparent 0 50%, #000 51% 99%, transparent 100%);
+  opacity: calc(var(--glow, 0.5) * 0.9);
+  animation: hud-spin calc(var(--spin, 18s) * 0.9) linear infinite;
+}
+
 .hud__svg {
+  position: relative;
+  z-index: 1;
   display: block;
   overflow: visible;
 }
@@ -45,54 +86,72 @@
 
 /* ticks */
 .hud__tick {
-  stroke: var(--hud);
+  stroke: currentColor;
   stroke-width: 1.5;
-  opacity: 0.4;
+  opacity: 0.45;
 }
 .hud__tick--major {
-  opacity: 0.9;
+  opacity: 0.95;
   stroke-width: 2.2;
 }
 .hud__tick--inner {
-  opacity: 0.5;
+  stroke: currentColor;
   stroke-width: 1.2;
+  opacity: 0.5;
 }
 
-/* arcs / rings */
+/* rings / arcs */
+.hud__hairline {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.25;
+}
 .hud__arc {
   fill: none;
-  stroke: var(--hud);
-  stroke-width: 2.5;
-  stroke-dasharray: 18 6 4 6 30 6;
-  opacity: 0.85;
-  filter: drop-shadow(0 0 3px var(--hud));
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-dasharray: 16 5 4 5 26 5;
+  opacity: 0.9;
+  filter: drop-shadow(0 0 3px currentColor);
 }
 .hud__ring-gapped {
   fill: none;
-  stroke: var(--hud);
-  stroke-width: 1.5;
-  stroke-dasharray: 40 8 12 8;
-  opacity: 0.55;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-dasharray: 34 7 10 7;
+  opacity: 0.65;
 }
 .hud__cross line {
-  stroke: var(--hud);
+  stroke: currentColor;
   stroke-width: 2;
-  opacity: 0.7;
+  opacity: 0.8;
+}
+
+/* traveling dashes (data arcs) */
+.hud__arc--dash {
+  animation: hud-dash calc(var(--spin, 18s) * 0.55) linear infinite;
 }
 
 /* core */
 .hud__core-ring {
   fill: none;
-  stroke: var(--hud);
+  stroke: currentColor;
   stroke-width: 1.5;
-  opacity: 0.7;
+  opacity: 0.8;
 }
 .hud__core {
-  fill: var(--hud);
-  filter: drop-shadow(0 0 6px var(--hud));
+  fill: currentColor;
+  filter: drop-shadow(0 0 7px currentColor);
   transform-box: fill-box;
   transform-origin: center;
   animation: hud-pulse 2.4s ease-in-out infinite;
+}
+.hud__sigil line {
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  opacity: 0.95;
 }
 
 /* rotation — each ring spins around its own center at a different rate/dir */
@@ -121,10 +180,15 @@
     transform: rotate(360deg);
   }
 }
+@keyframes hud-dash {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
 @keyframes hud-pulse {
   0%,
   100% {
-    opacity: 0.6;
+    opacity: 0.65;
     transform: scale(0.9);
   }
   50% {
@@ -134,10 +198,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .hud__sweep,
   .hud__spin-slow,
   .hud__spin-rev,
   .hud__spin-fast,
   .hud__spin-rev-slow,
+  .hud__arc--dash,
   .hud__core {
     animation: none;
   }
