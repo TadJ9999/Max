@@ -115,6 +115,7 @@ work against Max for free; the DSL + routing is the value-add on top.
 |----------|---------|---------|
 | `. <instruction> .` | **Generate code** | `. add a function to do X and call Y .` |
 | `.. <code> ..` | **Summarize / docstring / README** | `.. def _rec_key(...): ... ..` |
+| `~ <code> ~` | **Fix / refactor** | `~ tidy this messy block ~` |
 
 ### Combined examples
 | You type | Resolves to |
@@ -124,8 +125,8 @@ work against Max for free; the DSL + routing is the value-add on top.
 | `@.. code ..` | docstring · Ollama (local) |
 | `#. … .` | generate code · Qwen (local) |
 
-**Proposed extra operators (optional):** `? code ?` explain · `! code !` fix/refactor
-(note: would need disambiguation from the `!` cloud sigil — TBD).
+**Decided:** `~ code ~` = fix/refactor (since `!` is reserved as the cloud sigil).
+**Proposed (optional):** `? code ?` = explain.
 
 Parser rules:
 - Parser + router live in the **engine** so every client behaves identically.
@@ -147,9 +148,10 @@ Parser rules:
 - [ ] Lock the DSL grammar (sigils + operators + escaping)
 
 ### Phase 1 — Engine MVP (the brain)  🎯 *`curl` can chat with Max via any provider*
-- [ ] Provider adapter interface
-- [ ] Ollama (local) adapter + Anthropic/Claude (cloud) adapter
-- [ ] OpenAI-compatible `/v1/chat/completions` with **streaming**
+- [x] Provider adapter interface
+- [x] Ollama (local) adapter (streaming; mock-tested) — *needs live Ollama to verify end-to-end*
+- [ ] Anthropic/Claude (cloud) adapter
+- [x] OpenAI-compatible `/v1/chat/completions` with **streaming** (SSE)
 - [ ] Provider router (sigil → adapter+model) + per-task default model config
 - [ ] Config system (models, sigils, params, API keys) — file-based, hot-reload
 - [ ] **Privacy guard**: detect + mark cloud egress; secure API-key storage
