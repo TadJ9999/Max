@@ -15,7 +15,9 @@ struct SystemStats {
     ram: f32,
     gpu: f32,
     vram: f32,
-    /// False when no NVIDIA GPU / `nvidia-smi` is available (gpu/vram are 0).
+    /// GPU temperature in °C (0 when unavailable).
+    gpu_temp: f32,
+    /// False when no NVIDIA GPU / `nvidia-smi` is available (gpu/vram/temp are 0).
     gpu_available: bool,
 }
 
@@ -36,22 +38,23 @@ fn get_system_stats(sys: tauri::State<'_, Mutex<sysinfo::System>>) -> SystemStat
         (s.global_cpu_usage(), ram)
     };
 
-    let (gpu, vram, gpu_available) = query_nvidia().unwrap_or((0.0, 0.0, false));
+    let (gpu, vram, gpu_temp, gpu_available) = query_nvidia().unwrap_or((0.0, 0.0, 0.0, false));
     SystemStats {
         cpu,
         ram,
         gpu,
         vram,
+        gpu_temp,
         gpu_available,
     }
 }
 
-/// Returns (gpu_util%, vram_used%, true) by parsing `nvidia-smi`, or None if it
-/// isn't present / fails. Runs without flashing a console window on Windows.
-fn query_nvidia() -> Option<(f32, f32, bool)> {
+/// Returns (gpu_util%, vram_used%, gpu_temp_c, true) by parsing `nvidia-smi`, or
+/// None if it isn't present / fails. No console flash on Windows.
+fn query_nvidia() -> Option<(f32, f32, f32, bool)> {
     let mut cmd = std::process::Command::new("nvidia-smi");
     cmd.args([
-        "--query-gpu=utilization.gpu,memory.used,memory.total",
+        "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu",
         "--format=csv,noheader,nounits",
     ]);
     #[cfg(windows)]
@@ -64,14 +67,15 @@ fn query_nvidia() -> Option<(f32, f32, bool)> {
     let text = String::from_utf8_lossy(&out.stdout);
     let line = text.lines().next()?;
     let parts: Vec<&str> = line.split(',').map(str::trim).collect();
-    if parts.len() < 3 {
+    if parts.len() < 4 {
         return None;
     }
     let gpu: f32 = parts[0].parse().ok()?;
     let used: f32 = parts[1].parse().ok()?;
     let total: f32 = parts[2].parse().ok()?;
+    let temp: f32 = parts[3].parse().ok()?;
     let vram = if total > 0.0 { used / total * 100.0 } else { 0.0 };
-    Some((gpu, vram, true))
+    Some((gpu, vram, temp, true))
 }
 
 /// Click-through-when-idle: Tauri's `set_ignore_cursor_events` is whole-window,

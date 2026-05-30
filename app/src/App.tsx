@@ -12,7 +12,7 @@ import { type Session } from "./types";
 import "./App.css";
 
 // Mock data until Rust sysinfo + /sessions polling are wired (ROADMAP Phase 3/4).
-const MOCK_SYS: SysInfo = { cpu: 37, gpu: 64, vram: 78, ram: 52 };
+const MOCK_SYS: SysInfo = { cpu: 37, gpu: 64, vram: 78, ram: 52, gpuTemp: 58 };
 
 const MOCK_SESSIONS: Session[] = [
   {
@@ -125,7 +125,11 @@ function App() {
         )}
       </div>
 
-      <Mascot state={mascot.state} vramLoad={mascot.vramLoad} size={150} />
+      <Mascot
+        state={mascot.state}
+        metrics={{ cpu: sys.cpu, gpu: sys.gpu, vram: sys.vram, ram: sys.ram, gpuTemp: sys.gpuTemp }}
+        size={150}
+      />
 
       <ChatBar />
     </div>

@@ -9,6 +9,8 @@ export type SysInfo = {
   gpu: number;
   vram: number;
   ram: number;
+  /** GPU temperature in °C (0 when unavailable). Drives the mascot's heat. */
+  gpuTemp: number;
 };
 
 type Props = {

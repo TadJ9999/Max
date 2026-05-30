@@ -9,6 +9,7 @@ type RawStats = {
   ram: number;
   gpu: number;
   vram: number;
+  gpu_temp: number;
   gpu_available: boolean;
 };
 
@@ -21,7 +22,7 @@ export async function getSystemStats(): Promise<SysInfo | null> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     const s = await invoke<RawStats>("get_system_stats");
-    return { cpu: s.cpu, gpu: s.gpu, vram: s.vram, ram: s.ram };
+    return { cpu: s.cpu, gpu: s.gpu, vram: s.vram, ram: s.ram, gpuTemp: s.gpu_temp };
   } catch {
     return null;
   }

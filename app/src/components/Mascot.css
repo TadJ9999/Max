@@ -1,12 +1,8 @@
 /*
- * Mascot — "Jarvis"-style holographic HUD (full / busy variant).
- * Several counter-rotating rings of ticks + traveling dashed arcs, a rotating
- * radar sweep, and a pulsing reactor core with an "X" sigil. Multi-color
- * (cyan + amber + white). Fully transparent background — only the rings/core
- * are drawn, so the desktop shows through the transparent Tauri window.
- *
- * Palette (--c1 primary, --c2 accent, --c3 highlight), spin period (--spin) and
- * glow (--glow) are set per state.
+ * Mascot — thin-wireframe holographic instrument.
+ * Razor-thin 1px strokes, monochrome wireframe + a single heat accent
+ * (cyan → amber → red, driven by GPU temp). No soft glows / fills. Fully
+ * transparent. Rotation is rAF-driven in the component (seamless).
  */
 
 .hud {
@@ -16,205 +12,88 @@
   display: grid;
   place-items: center;
   background: transparent;
-  /* default (idle / thinking / busy): J.A.R.V.I.S palette — cyan + magenta + violet */
-  --c1: #22d3ee;
-  --c2: #f24fd6;
-  --c3: #a78bfa;
-}
-.hud[data-state="done"] {
-  --c1: #34d399;
-  --c2: #6ee7b7;
-  --c3: #a7f3d0;
-}
-.hud[data-state="error"] {
-  --c1: #fb7185;
-  --c2: #f472b6;
-  --c3: #fda4af;
-}
-
-/* color groups — children inherit via currentColor */
-.hud__c1 {
-  color: var(--c1);
-}
-.hud__c2 {
-  color: var(--c2);
-}
-.hud__c3 {
-  color: var(--c3);
-}
-
-/* ambient bloom behind the core (transparent — just a glow) */
-.hud::before {
-  content: "";
-  position: absolute;
-  inset: 26%;
-  border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--c1) 50%, transparent), transparent 70%);
-  filter: blur(14px);
-  opacity: var(--glow, 0.5);
-  z-index: -1;
-}
-
-/* rotating radar sweep, masked to the ring band */
-.hud__sweep {
-  position: absolute;
-  inset: 5%;
-  border-radius: 50%;
-  z-index: 0;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg 255deg,
-    color-mix(in srgb, var(--c1) 42%, transparent) 358deg,
-    transparent 360deg
-  );
-  -webkit-mask: radial-gradient(circle, transparent 0 50%, #000 51% 99%, transparent 100%);
-  mask: radial-gradient(circle, transparent 0 50%, #000 51% 99%, transparent 100%);
-  opacity: calc(var(--glow, 0.5) * 0.9);
-  animation: hud-spin calc(var(--spin, 18s) * 0.9) linear infinite;
-}
-
-/* canvas FX (waveform + particles) sits behind the crisp SVG rings */
-.hud__fx {
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  z-index: 1;
-  pointer-events: none;
+  --accent: rgb(34, 211, 238);
+  --line: rgba(222, 240, 255, 0.42);
+  --line-dim: rgba(222, 240, 255, 0.15);
 }
 
 .hud__svg {
-  position: relative;
-  z-index: 2;
   display: block;
   overflow: visible;
 }
 .hud__svg line,
 .hud__svg circle {
-  vector-effect: non-scaling-stroke;
-}
-
-/* ticks */
-.hud__tick {
-  stroke: currentColor;
-  stroke-width: 1.5;
-  opacity: 0.45;
-}
-.hud__tick--major {
-  opacity: 0.95;
-  stroke-width: 2.2;
-}
-.hud__tick--inner {
-  stroke: currentColor;
-  stroke-width: 1.2;
-  opacity: 0.5;
-}
-
-/* rings / arcs */
-.hud__hairline {
+  vector-effect: non-scaling-stroke; /* keep 1px regardless of render size */
   fill: none;
-  stroke: currentColor;
+}
+
+/* rotating groups spin around their own centre */
+.hud__spin,
+.hud__core {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* monochrome wireframe */
+.hud__hair {
+  stroke: var(--line-dim);
   stroke-width: 1;
-  opacity: 0.25;
 }
-.hud__arc {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.6;
-  stroke-dasharray: 16 5 4 5 26 5;
-  opacity: 0.9;
-  filter: drop-shadow(0 0 3px currentColor);
+.hud__tick {
+  stroke: var(--line);
+  stroke-width: 1;
+  opacity: 0.55;
 }
-.hud__ring-gapped {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-dasharray: 34 7 10 7;
-  opacity: 0.65;
+.hud__tick--maj {
+  stroke: var(--line);
+  stroke-width: 1;
+  opacity: 0.95;
 }
 .hud__cross line {
-  stroke: currentColor;
-  stroke-width: 2;
-  opacity: 0.8;
+  stroke: var(--line-dim);
+  stroke-width: 1;
 }
 
-/* traveling dashes (data arcs) */
-.hud__arc--dash {
-  animation: hud-dash calc(var(--spin, 18s) * 0.55) linear infinite;
+/* heat-accent elements (inner ring + core) */
+.hud__hair-accent {
+  stroke: var(--accent);
+  stroke-width: 1;
+  opacity: 0.7;
+  transition: stroke 0.8s linear;
+}
+.hud__tick--accent {
+  stroke: var(--accent);
+  stroke-width: 1;
+  opacity: 0.85;
+  transition: stroke 0.8s linear;
+}
+.hud__core-dot {
+  fill: var(--accent);
+  stroke: none;
+  transition: fill 0.8s linear;
 }
 
-/* core */
-.hud__core-ring {
-  fill: none;
-  stroke: currentColor;
+/* metric gauges */
+.hud__gauge-track {
+  stroke: var(--line-dim);
+  stroke-width: 1;
+}
+.hud__gauge-fill {
+  stroke: var(--accent);
   stroke-width: 1.5;
-  opacity: 0.8;
+  stroke-linecap: round;
+  transition:
+    stroke-dasharray 0.6s ease,
+    stroke 0.8s linear;
 }
-.hud__core {
-  fill: currentColor;
-  filter: drop-shadow(0 0 8px currentColor);
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: hud-pulse 2.4s ease-in-out infinite;
-}
-.hud__core-hot {
-  fill: #eaf6ff;
-  filter: drop-shadow(0 0 6px #eaf6ff);
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: hud-pulse 2.4s ease-in-out infinite;
-}
-
-/* rotation — each ring spins around its own center at a different rate/dir */
-.hud__spin-slow,
-.hud__spin-rev,
-.hud__spin-fast,
-.hud__spin-rev-slow {
-  transform-box: fill-box;
-  transform-origin: center;
-}
-.hud__spin-slow {
-  animation: hud-spin var(--spin, 18s) linear infinite;
-}
-.hud__spin-rev {
-  animation: hud-spin calc(var(--spin, 18s) * 1.4) linear infinite reverse;
-}
-.hud__spin-fast {
-  animation: hud-spin calc(var(--spin, 18s) * 0.7) linear infinite;
-}
-.hud__spin-rev-slow {
-  animation: hud-spin calc(var(--spin, 18s) * 1.8) linear infinite reverse;
-}
-
-@keyframes hud-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@keyframes hud-dash {
-  to {
-    stroke-dashoffset: -100;
-  }
-}
-@keyframes hud-pulse {
-  0%,
-  100% {
-    opacity: 0.65;
-    transform: scale(0.9);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.12);
-  }
+.hud__gauge-label {
+  fill: var(--line);
+  font-size: 5px;
+  text-anchor: middle;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  letter-spacing: 0.04em;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hud__sweep,
-  .hud__spin-slow,
-  .hud__spin-rev,
-  .hud__spin-fast,
-  .hud__spin-rev-slow,
-  .hud__arc--dash,
-  .hud__core {
-    animation: none;
-  }
+  /* rAF loop already halts; nothing else animates */
 }
