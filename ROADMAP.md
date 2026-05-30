@@ -36,6 +36,7 @@ model on a different task, in parallel.
 - **Intent router:** generalize the delegate from "local vs cloud" → **skill domain + model + locality**; the sigil DSL stays the explicit/manual path ✅
 - **Voice:** orchestration via capabilities, but **audio on a dedicated realtime WS channel** (not MCP) ✅
 - **Home/LAN:** networked engine adds **bearer-token auth**; MCP skills run as local subprocess *or* networked service ✅
+- **OSINT news map:** a glowing 2D world map with a **news heat choropleth** (GDELT + RSS, free/key-less) and a **live day/night terminator**, opened in a dedicated large window from below the chat bar; news egress lives in the engine (see [Phase 10](#phase-10--osint-global-news-map---a-glowing-world-map-of-where-the-news-is-happening-with-a-live-daynight-terminator)) ✅
 - *(Full layered design in [docs/architecture.md](docs/architecture.md).)*
 
 ---
@@ -238,6 +239,26 @@ Parser rules:
 - [ ] **Voice** — wake word + STT + TTS as a capability over a **dedicated low-latency WebSocket audio pipeline** (kept separate from the control plane)
 - [ ] **Auth for home/LAN** — bearer-token on the API once it leaves localhost-only; per-skill placement (local subprocess vs networked)
 - [ ] **Outward MCP façade (optional)** — expose Max *itself* as an MCP server so external agents (Claude Desktop, Cursor) can "ask Max" / use its local models
+
+### Phase 10 — OSINT global news map  🎯 *a glowing world map of where the news is happening, with a live day/night terminator*
+*A button below the chat bar opens a large dedicated window (the 360×640 widget is too small) with a 2D world map: glowing-blue country wireframe, a news-driven heat choropleth, and a real-time day/night terminator. All news egress lives in the engine (clients stay thin), consistent with the privacy-marked model; the map atlas is bundled locally so only news data touches the network.*
+
+**Decisions locked:** 2D flat (equirectangular) map · dedicated large window (browser-preview falls back to an in-page overlay) · **GDELT + RSS** from day one (free, no key) · engine-side egress · bundled atlas.
+
+- [x] **Engine OSINT module** (`engine/max_engine/osint/`): GDELT DOC 2.0 client + stdlib RSS/Atom fetcher + country gazetteer (name/demonym → ISO-A3) + importance scorer (volume × source-diversity × recency) + TTL-cached aggregator service
+- [x] **Endpoints**: `GET /osint/heatmap` (per-country 0..1 intensity), `GET /osint/articles?country=&limit=` (ranked, newest-first), `GET /osint/sources`
+- [x] **Config**: `OsintConfig` (GDELT query/timespan/max-records, feed list, cache TTL); no new Python deps (stdlib XML, existing httpx)
+- [x] **Tests**: `tests/test_osint.py` — gazetteer, GDELT/RSS parsing, scoring, dedup, caching, endpoints (13 tests, network mocked) — full suite 50 passing, ruff clean
+- [x] **Desktop map** (`app/src/osint/`): `WorldMap` (d3-geo equirectangular + `world-atlas` TopoJSON, glow wireframe, heat choropleth, hover/select), `terminator.ts` (subsolar point + night ring, refreshed each minute), `OsintView` (map + ranked countries + article panel), `OsintButton` (below chat bar)
+- [x] **Dedicated window**: `#osint` hash route in `main.tsx`; Tauri `WebviewWindow` (1180×760, resizable) + `core:webview:allow-create-webview-window` capability; in-page overlay fallback outside Tauri
+- [x] **Severity classification** — Critical / High / Medium / Low from headline *content* (word-boundary keyword tiers, `osint/severity.py`); country badge = **recency-weighted mean** so one outlier story can't flip a whole country; filter bar (top of view) gates map + hotspots + articles by tier
+- [x] **Sleeker "threat-intercept" redesign** — dropped the rainbow heat ramp for a discrete dark-ops threat scale (cyan→amber→orange→rose) with per-tier glow; tactical graticule; severity-coded hotspot bars + article edges (shadowbroker-style aesthetic)
+- [x] **Naval layer (US fleet positions)** — `osint/naval.py`: parses the latest USNI Fleet Tracker (read via its WordPress *feed*, which dodges Cloudflare) + TWZ Carrier Tracker, anchors on hull tokens (`CVN-73`) with name fallback, geocodes the nearest region phrase via a sea/port/AOR gazetteer (open-water beats homeport), and serves `GET /osint/naval`. Carrier (gold chevron) + amphib (steel diamond) markers with a `⚓ Fleet` toggle; positions flagged **estimated / region-level / dated** (no real-time GPS exists publicly). 6 naval tests. Groundwork for future track prediction.
+- [x] **Verified end-to-end**: live GDELT+RSS (e.g. 360 signals / 61 countries), severity tiers (Zaporizhzhia/Iran/Israel → Critical/High), threat shading, moving terminator + subsolar marker, filter toggles, country click → filtered articles; `npm run build` + `tsc` clean
+- [ ] **Surface egress in settings/privacy guard** (OSINT makes outbound calls to public news; mark it like the cloud `!` sigil) + optional network kill-switch integration (Phase 7)
+- [ ] **Tauri external links** via the opener plugin (article links use `<a target=_blank>`; fine in the browser, route through `opener` inside the desktop shell)
+- [ ] **Tuning & breadth**: GDELT theme-query tuning for "most important"; expand the gazetteer beyond the newsworthy core; per-source toggles in the UI; optional GDELT tone signal in the score
+- [ ] *(stretch)* time-scrubber to replay the last 24h of heat; cluster/event detail on click
 
 ---
 

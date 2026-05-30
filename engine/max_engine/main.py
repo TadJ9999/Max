@@ -26,6 +26,7 @@ from . import __version__
 from .config import load_config, save_overrides
 from .delegate.engine import DelegateEngine
 from .dsl import ParseError, parse_command
+from .osint import EventsService, NavalService, OsintService
 from .prompts import messages_for
 from .providers.base import Provider
 from .providers.factory import build_provider
@@ -50,6 +51,18 @@ app.add_middleware(
 
 config = load_config()
 delegate = DelegateEngine(config)
+osint = OsintService(
+    feeds=config.osint.feeds,
+    query=config.osint.gdelt_query,
+    timespan=config.osint.gdelt_timespan,
+    max_records=config.osint.gdelt_max_records,
+    ttl_seconds=config.osint.ttl_seconds,
+)
+naval = NavalService(
+    twz_url=config.osint.naval_twz_url,
+    ttl_seconds=config.osint.naval_ttl_seconds,
+)
+events = EventsService()
 
 
 @app.get("/health")
@@ -307,3 +320,48 @@ async def promote_session(session_id: str):
         raise HTTPException(status_code=403, detail=str(e)) from e
     await delegate.kick()
     return s.to_dict()
+
+
+# ---- OSINT: global news heat map ---------------------------------------
+
+
+@app.get("/osint/heatmap")
+async def osint_heatmap() -> dict:
+    """Per-country news intensity (0..1) from GDELT + RSS, cached for a TTL.
+
+    Outbound egress to public news services; aggregated in the engine so the
+    client stays thin. Returns empty ``countries`` if every source is unreachable.
+    """
+    heatmap = await osint.get_heatmap()
+    return heatmap.to_dict()
+
+
+@app.get("/osint/articles")
+async def osint_articles(country: str | None = None, limit: int = 50) -> dict:
+    """Ranked articles, newest first. Pass ``country`` (ISO-A3) to scope to one;
+    omit it for the global top."""
+    articles = await osint.get_articles(iso=country, limit=limit)
+    return {
+        "country": country.upper() if country else None,
+        "articles": [a.to_dict() for a in articles],
+    }
+
+
+@app.get("/osint/sources")
+def osint_sources() -> dict:
+    """Where the heat map's data comes from (for the UI's source panel)."""
+    return osint.sources()
+
+
+@app.get("/osint/events")
+async def osint_events() -> dict:
+    """Geospatial event markers (earthquakes ≥ M4.5, GDACS disaster alerts).
+    Free, key-less sources; cached 5 min. Overlay-ready lat/lon + severity."""
+    return await events.get()
+
+
+@app.get("/osint/naval")
+async def osint_naval() -> dict:
+    """US carrier / big-deck amphib position *estimates* from public OSINT
+    trackers (USNI + TWZ). Region-level and dated — not real-time GPS."""
+    return await naval.get()

@@ -12,6 +12,10 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from .osint.gdelt import DEFAULT_QUERY as OSINT_DEFAULT_QUERY
+from .osint.naval import DEFAULT_TWZ_URL as OSINT_DEFAULT_TWZ_URL
+from .osint.rss import DEFAULT_FEEDS as OSINT_DEFAULT_FEEDS
+
 # UI-editable settings persist here (gitignored), next to engine/.env.
 CONFIG_FILE = Path(__file__).resolve().parent.parent / ".maxconfig.json"
 
@@ -27,6 +31,19 @@ class DelegateConfig(BaseModel):
     mode: str = "smart-auto"  # "manual" | "smart-auto"
     max_parallel_local: int = 1  # heavy local models queue past this (12 GB VRAM)
     max_parallel_cloud: int = 8
+
+
+class OsintConfig(BaseModel):
+    """Global news heat map (GDELT + RSS). Egress is outbound to public news."""
+
+    gdelt_query: str = OSINT_DEFAULT_QUERY
+    gdelt_timespan: str = "24h"
+    gdelt_max_records: int = 250
+    feeds: list[str] = Field(default_factory=lambda: list(OSINT_DEFAULT_FEEDS))
+    ttl_seconds: int = 600  # cache window (GDELT refreshes ~every 15 min)
+    # Naval layer: US carrier/amphib positions from public OSINT trackers.
+    naval_twz_url: str = OSINT_DEFAULT_TWZ_URL
+    naval_ttl_seconds: int = 21_600  # trackers update ~weekly
 
 
 class EngineConfig(BaseModel):
@@ -66,6 +83,7 @@ class EngineConfig(BaseModel):
     allow_cloud: bool = True
     workspace_allowlist: list[str] = Field(default_factory=list)
     delegate: DelegateConfig = Field(default_factory=DelegateConfig)
+    osint: OsintConfig = Field(default_factory=OsintConfig)
 
 
 def _apply_overrides(cfg: EngineConfig, data: dict) -> None:

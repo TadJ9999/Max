@@ -1,11 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
-  "windows": ["main"],
+  "description": "Capability for the main and OSINT windows",
+  "windows": ["main", "osint"],
   "permissions": [
     "core:default",
     "opener:default",
+    "core:webview:allow-create-webview-window",
     "core:window:allow-show",
     "core:window:allow-hide",
     "core:window:allow-is-visible",
