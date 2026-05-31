@@ -220,7 +220,7 @@ Parser rules:
 - [x] Workspace indexer — file walk with noise-dir pruning + text/size filters; line-aligned overlapping chunker (`rag/chunker.py`)
 - [x] Embeddings + local vector store (sqlite-vec, `rag/store.py`); **incremental re-index** keyed on per-file content hash (skip unchanged, drop deleted)
 - [x] Retrieval injected into prompts — `POST /rag/ask` retrieves context and streams a grounded answer **cited by `file:line`** (+ `/rag/index`, `/rag/search`, `/rag/status`, `/rag/clear`)
-- [ ] **UI**: a "knows your code" toggle/affordance in the widget (index button + grounded ask)
+- [x] **UI**: a **"knows your code" (🧠) toggle** in the chat bar routes plain questions to `/rag/ask`; a **⟳ index button** runs `/rag/index` and shows live `files / chunks` counts
 - [ ] Per-project / session **memory** (carry retrieved/used context across turns)
 
 ### Phase 7 — Performance & privacy polish  🎯 *snappy, stable, provably local-by-default*
