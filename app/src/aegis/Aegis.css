@@ -1,5 +1,16 @@
 /* Aegis — self-repair console. Dark terminal aesthetic with red/amber accents. */
 
+/* ---- widget action button glow (base in Osint.css) ---- */
+.widget-action-btn--aegis {
+  color: #ff6b6b;
+  border-color: rgba(255, 107, 107, 0.3);
+  box-shadow: 0 0 14px rgba(255, 107, 107, 0.15);
+}
+.widget-action-btn--aegis:hover {
+  border-color: rgba(255, 107, 107, 0.65);
+  box-shadow: 0 0 22px rgba(255, 107, 107, 0.4);
+}
+
 .aegis {
   display: flex;
   flex-direction: column;
@@ -335,6 +346,19 @@
   color: #4ade80;
 }
 .aegis__btn--approve:hover { background: rgba(74,222,128,0.18); }
+.aegis__btn--auto {
+  border-color: rgba(240, 196, 64, 0.5);
+  background: rgba(240, 196, 64, 0.1);
+  color: #f0c440;
+}
+.aegis__btn--auto:hover { background: rgba(240,196,64,0.18); }
+.aegis__auto-status {
+  font-size: 11px;
+  color: #8aabcc;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .aegis__btn--reject {
   border-color: rgba(255, 100, 100, 0.4);
   background: rgba(255, 80, 80, 0.08);
@@ -479,6 +503,44 @@
 }
 
 /* ---- filter bar ---- */
+.posture__scan-progress {
+  flex-shrink: 0;
+  padding: 0 16px 8px;
+  background: rgba(255, 107, 107, 0.04);
+  border-bottom: 1px solid rgba(255, 107, 107, 0.12);
+}
+.posture__scan-progress-track {
+  height: 3px;
+  background: rgba(255, 107, 107, 0.15);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.posture__scan-progress-bar {
+  height: 100%;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, #ff6b6b, transparent);
+  border-radius: 2px;
+  animation: posture-scan-sweep 1.6s ease-in-out infinite;
+}
+@keyframes posture-scan-sweep {
+  0%   { transform: translateX(-150%); }
+  100% { transform: translateX(350%); }
+}
+.posture__scan-progress-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+  font-size: 11px;
+  color: #ff8c8c;
+}
+.posture__scan-file-count {
+  margin-left: 4px;
+  color: #5a7090;
+  font-size: 10px;
+}
+
 .posture__filter-bar {
   display: flex;
   align-items: center;

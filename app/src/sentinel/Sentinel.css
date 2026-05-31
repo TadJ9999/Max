@@ -1,3 +1,14 @@
+/* ---- widget action button glow (base in Osint.css) ---- */
+.widget-action-btn--sentinel {
+  color: #00ffc8;
+  border-color: rgba(0, 255, 200, 0.3);
+  box-shadow: 0 0 14px rgba(0, 255, 200, 0.15);
+}
+.widget-action-btn--sentinel:hover {
+  border-color: rgba(0, 255, 200, 0.65);
+  box-shadow: 0 0 22px rgba(0, 255, 200, 0.4);
+}
+
 .sentinel {
   position: relative;
   width: 100%;

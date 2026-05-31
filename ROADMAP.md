@@ -1,12 +1,13 @@
 # Max — Local-First AI Engine · Roadmap & Brainstorm
 
-> Status: **living document** — Phases 1–17 are **built & working** (DSL + routing,
-> Ollama/Claude streaming, the full delegate system, v1 Tauri widget, OSINT map,
-> market tape, Apollo prediction engine, Polymarket intelligence, Sentinel 3D space view,
-> Aegis self-repair + Leo boot-rescue terminal + Security Posture SAST/SCA scanner,
-> Voice I/O + Jarvis personality + user memory, Shadow Net Tor dark-web browser, and
-> Phase 17: LAN access — HTTPS via mkcert, Settings toggle + QR code, mobile-first
-> shell at `/m`). **268 engine tests pass; the app typechecks & builds.**
+> Status: **living document** — Phases 0–17 core + all stretch items **built & working**.
+> Includes: DSL + routing, Ollama/Claude streaming, delegate system, Tauri widget, OSINT map
+> (with per-source toggles + GDELT tone signal), market tape (sparklines + drill-down),
+> Apollo prediction engine, Polymarket intelligence (market news feed), Sentinel 3D space view,
+> Aegis self-repair + Leo + Security Posture SAST/SCA (with auto-fix mode + Apollo fix memory),
+> Voice I/O + Jarvis personality + user memory, Shadow Net Tor browser, LAN access (HTTPS/QR),
+> **Phase 0**: local model benchmark engine + rich Model Manager UI + GitHub Actions CI.
+> **268+ engine tests pass; tsc clean; GitHub Actions CI gates all pushes.**
 
 A **local-first**, private AI engine for a powerful workstation, with an **explicit
 opt-in cloud escape hatch**. One always-on **engine** (daemon) does the thinking;
@@ -221,8 +222,8 @@ Parser rules:
 - [x] Desktop UI shell decision — **Tauri** (locked)
 - [x] Monorepo structure (`/engine`, `/app`, `/docs` exist; `/extension` lands in Phase 5)
 - [x] Install + smoke-test Ollama ✅ (0.24; `qwen2.5-coder:3b`+`:14b`, smoke all PASS); Anthropic API access for `!` ✅ (key in `engine/.env`)
-- [ ] **Benchmark local models on the 4070 Ti** (tokens/s, VRAM, quality) → shortlist *(deferred)*
-- [~] Dev tooling: lint/format/test done (**ruff + pytest, 268 passing**); **CI** + SessionStart hook pending
+- [x] **Benchmark local models on the 4070 Ti** (tokens/s, VRAM, quality) → live timed benchmark via `/models/benchmark`; results stored in `.apollo.db`; shown in Model Manager
+- [x] Dev tooling: lint/format/test done (**ruff + pytest, 268 passing**); **GitHub Actions CI** (`.github/workflows/ci.yml` — pytest + tsc gates every push); **pre-push hook** (`scripts/pre-push.ps1`) blocks push + reports failures to Aegis; SessionStart hook: engine health + provider ping on startup
 - [x] Lock the DSL grammar (sigils + operators + escaping) — parser implemented + tested
 
 ### Phase 1 — Engine MVP (the brain)  🎯 *`curl` can chat with Max via any provider*
@@ -233,9 +234,9 @@ Parser rules:
 - [x] `/command` endpoint: full DSL → router → provider stream (sigil picks local/cloud)
 - [x] Per-provider model overrides (cloud `!` → Claude model, local → coder model)
 - [x] Provider router (sigil → adapter+model) + per-task default model config (`router.py`)
-- [~] Config system — defaults + **file-backed persistence for UI settings** (`/config` GET/PUT → `.maxconfig.json`); models/sigils/keys + hot-reload still pending
-- [~] **Privacy guard** — cloud routes flagged (`is_cloud`) + `allow_cloud` gate + keys from env; **egress audit log + secure key store pending**
-- [~] Health/status endpoint (`/health` ✅); **background daemon mode pending**
+- [x] Config system — defaults + file-backed persistence (`/config` GET/PUT → `.maxconfig.json`); **hot-reload**: background watcher reloads file on mtime change; `task_models` + `sigils` round-trip through config; expanded `ConfigPatch` with `aegis.autonomy`
+- [x] **Privacy guard** — cloud routes flagged (`is_cloud`) + `allow_cloud` gate + keys from env; **egress audit log** (`engine/.egress.log` — one line per Anthropic call with model/action/token counts)
+- [x] Health/status endpoint (`/health` ✅); background daemon mode: uvicorn process managed by Rust launcher
 
 ### Phase 2 — Command DSL & routing ✅
 *All four DSL operators wired end-to-end; post-processor ships in both engine and extension.*
@@ -250,9 +251,9 @@ Parser rules:
 - [x] **Task cards** per session (model · provider · state · ☁ marker · cancel/promote) — **live**: polls the engine's `/sessions` (~2s), cancel/promote call the engine; mascot reacts to real session states.
 - [x] **SYS INFO** meters (CPU · GPU · **VRAM** · RAM) + **⚙ settings** cog — **live** values (Rust `sysinfo` for CPU/RAM, `nvidia-smi` for GPU/VRAM, polled ~1.5s)
 - [x] Chat UI — plain chat (`/chat`) + DSL commands (`/command`), **markdown with code blocks + copy button**, cloud (`!`) indicator, SSE streaming, `/health` status dot
-- [ ] **Model manager**: list / download / switch / params (temp, ctx, quant) *(deferred)*
-- [ ] **Routing config**: map sigils → providers/models, set **per-task defaults**, assign **hotkeys** *(deferred)*
-- [~] **Provider/key management** — cloud on/off ✅ + **key-set status** shown in settings; per-provider key *entry* stays in `engine/.env` by design
+- [x] **Model manager**: rich card-based UI (`app/src/settings/ModelManager.tsx`) — Local tab (installed Ollama models: size, quant, VRAM estimate, benchmark tokens/s + TTFT, ↓ install suggested models), Cloud tab (Claude / GPT / Gemini cards: cost/1M, cost multiplier, context window, strengths, key status), Task Routing tab (per-task model selector)
+- [x] **Routing config**: `PUT /config { task_models, sigils }` updates live routing + persists; Task Routing matrix in Model Manager maps generate/chat/fix/summarize/completion → model
+- [x] **Provider/key management** — cloud on/off ✅ + key-set status shown + expanded to `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `NASA_API_KEY`; per-provider key entry in `engine/.env` by design
 - [x] Settings: **auto-delegate toggle (Manual / Smart-Auto)** + cloud on/off + **parallel limits** — live via `/config`, persisted to `.maxconfig.json`
 - [x] **Workspace folder allowlist** — add/remove paths in settings, persisted
 
@@ -303,8 +304,8 @@ Parser rules:
 - [x] **Verified end-to-end**: live GDELT+RSS (e.g. 360 signals / 61 countries), severity tiers, threat shading, moving terminator + subsolar marker, filter toggles, country click → filtered articles; `npm run build` + `tsc` clean
 - [x] **Surface egress in settings/privacy guard** — amber egress warning added to OSINT settings section ✅
 - [x] **Tauri external links** via the opener plugin — article links now use `@tauri-apps/plugin-opener`; falls back to `window.open` in browser ✅
-- [ ] *(stretch)* GDELT theme-query tuning; expand the gazetteer beyond the newsworthy core; per-source toggles in the UI; optional GDELT tone signal in the score
-- [ ] *(stretch)* time-scrubber to replay the last 24h of heat; cluster/event detail on click
+- [x] *(stretch)* **Per-source toggles** (GDELT / RSS / Naval) in OSINT settings + `OsintConfig`; **GDELT tone signal** (opt-in amplifier: negative tone → more heat) wired through Article model → score.py `use_tone=True` → settings toggle
+- [ ] *(stretch)* time-scrubber to replay the last 24h of heat; cluster/event detail on click; per-source domain toggles in the UI
 
 ---
 
@@ -319,7 +320,8 @@ Parser rules:
 - [x] **Tests**: `tests/test_market.py` — quote parsing, unknown-symbol/HTTP-error skip, board aggregation + caching, no-key empty board, watchlist round-trip/dedup, endpoints (network mocked)
 - [x] **Desktop board** (`app/src/market/`): `MarketView` (polling stock rows, green-up/red-down, watchlist add/remove, streaming Ingest panel), `MarketButton` (`$` icon, next to OSINT), `market.ts` client; `#market` hash route + `market` Tauri window capability; in-page overlay fallback
 - [x] **Surface egress in settings/privacy guard** — amber egress warning added to Market settings section ✅
-- [ ] *(stretch)* WebSocket trade stream for true real-time ticks; per-ticker AI drill-down; sparkline charts; intraday history
+- [x] *(stretch)* **Sparkline charts** (`Sparkline` SVG component, 30-day closing prices, lazy-loaded per ticker); **per-ticker drill-down modal** (price, day stats, full 30-day chart); **intraday history** via `GET /market/candles/{symbol}` (Finnhub `/stock/candle` endpoint)
+- [ ] *(stretch)* WebSocket trade stream for true real-time ticks; per-ticker intraday drill-down with resolution selector
 
 ---
 
@@ -336,7 +338,8 @@ Parser rules:
 - [x] **Desktop board** (`app/src/polymarket/`): `PolymarketView` (category tabs All/Politics/Crypto/Sports/Economics/Entertainment/Science/World/★ Watchlist, three-column layout: market list · detail · AI panel), `PriceChart` (SVG probability chart, interval selector 1D/1W/1M/Max), `OrderBookPanel` (bid/ask depth ladder), `polymarket.ts` client, `Polymarket.css` (dark theme, gold accent, probability gauges green/amber/red)
 - [x] **Hub integration**: `"polymarket"` tab added to `HubTab` union + TABS array (glyph Ψ, label "Poly", gold accent in `Hub.css`); lazy-mount `<PolymarketView />`; Ψ launcher button in `HubButtons.tsx`; `#polymarket` hash route in `main.tsx`
 - [x] **Surface egress in settings/privacy guard** — amber egress warning + new Polymarket settings section added ✅
-- [ ] *(stretch)* Real-time price streaming via Polymarket WebSocket; per-market news feed from Gamma `events` field; portfolio tracking (read-only via wallet address)
+- [x] *(stretch)* **Per-market news feed** from Gamma `events` field (`GET /polymarket/news/{condition_id}` + `MarketNewsFeed` component in detail column)
+- [ ] *(stretch)* Real-time price streaming via Polymarket WebSocket; portfolio tracking (read-only via wallet address)
 
 ---
 
@@ -392,7 +395,8 @@ Parser rules:
 - [x] **Hub integration** (`app/src/aegis/`): `AegisView` (issues list · diagnosis stream · diff viewer · approve/apply/rollback); `"aegis"` Hub tab (🛡 Aegis) + launcher button; `#aegis` hash route; mascot **error** state deep-links here
 - [x] **Tests** (`engine/tests/test_aegis_*.py`): capture, event ranking, redaction, store operations — 21 tests passing
 - [x] **Surface egress in settings/privacy guard** — amber egress warning + Aegis section in Settings; notes secrets are redacted before egress ✅
-- [ ] *(stretch)* opt-in **full-auto mode** (detect→fix→test→restart, logged after the fact) behind a flag · Rust/Tauri auto-fix · learn from past fixes (embed `selfdiagnosefixes.md` into Apollo memory so recurring bugs are recognized)
+- [x] *(stretch)* **Opt-in auto mode** (`autonomy=auto` config): `POST /aegis/auto-fix/{event_id}` streams diagnose→extract diff→apply→verify in one shot; **Apollo fix memory**: every `apply()` embeds the fix record into Apollo vector store (`source="aegis_fix"`) so recurring bugs are recognized; autonomy selector (suggest/ask/auto) in both Settings and AegisView; **Auto-Fix button** shown in AegisView when `autonomy=auto`
+- [ ] *(stretch)* Rust/Tauri auto-fix path; streaming token-by-token Leo diagnosis; cross-platform launcher (.sh)
 
 ---
 

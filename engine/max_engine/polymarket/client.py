@@ -170,3 +170,58 @@ async def fetch_order_book(
         bids=_levels(data.get("bids", [])),
         asks=_levels(data.get("asks", [])),
     )
+
+
+async def fetch_market_events(
+    client: httpx.AsyncClient,
+    condition_id: str,
+    *,
+    limit: int = 10,
+) -> list[dict]:
+    """Fetch news/events for a market via the Gamma API ``/events`` field.
+
+    Returns a list of ``{title, article_url, description, start_date}`` dicts,
+    or ``[]`` on failure. The Gamma API's markets endpoint includes an ``events``
+    array with related event metadata.
+    """
+    try:
+        resp = await client.get(
+            f"{GAMMA_BASE}/markets",
+            params={"conditionId": condition_id},
+            headers={"user-agent": _UA},
+        )
+        if resp.status_code >= 400:
+            return []
+        data = resp.json()
+    except (httpx.HTTPError, ValueError):
+        return []
+
+    items = data if isinstance(data, list) else data.get("data", [])
+    if not items:
+        return []
+
+    # The first market matching this condition_id may have an events field
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        events_raw = item.get("events") or []
+        if not isinstance(events_raw, list):
+            continue
+        out: list[dict] = []
+        for ev in events_raw[:limit]:
+            if not isinstance(ev, dict):
+                continue
+            title = ev.get("title") or ev.get("question") or ""
+            if not title:
+                continue
+            out.append({
+                "title": str(title),
+                "description": (str(ev.get("description") or ""))[:300],
+                "article_url": ev.get("articleUrl") or ev.get("article_url"),
+                "start_date": ev.get("startDate") or ev.get("start_date"),
+                "end_date": ev.get("endDate") or ev.get("end_date"),
+                "category": ev.get("category"),
+            })
+        if out:
+            return out
+    return []

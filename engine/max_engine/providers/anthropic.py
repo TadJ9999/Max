@@ -12,11 +12,29 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 import httpx
 
 from .base import ChatChunk, Provider
+
+_EGRESS_LOG = Path(__file__).resolve().parent.parent.parent / ".egress.log"
+
+
+def _log_egress(model: str, action: str, input_tokens: int = 0, output_tokens: int = 0) -> None:
+    """Append one line to the egress audit log."""
+    try:
+        ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        line = (
+            f"{ts} provider=anthropic model={model} action={action} "
+            f"in={input_tokens} out={output_tokens}\n"
+        )
+        with _EGRESS_LOG.open("a", encoding="utf-8") as f:
+            f.write(line)
+    except OSError:
+        pass
 
 ANTHROPIC_VERSION = "2023-06-01"
 
@@ -88,13 +106,14 @@ class AnthropicProvider(Provider):
 
         client = self._client or httpx.AsyncClient(timeout=None)
         owns_client = self._client is None
+        output_tokens = 0
+        input_tokens_reported = 0
+        _log_egress(model, "chat_start")
         try:
             async with client.stream(
                 "POST", f"{self.base_url}/v1/messages", json=payload, headers=headers
             ) as resp:
                 if resp.status_code >= 400:
-                    # Surface the API's actual message (e.g. low credit balance,
-                    # bad model) instead of a generic HTTP status.
                     body = await resp.aread()
                     raise RuntimeError(_api_error_message(resp.status_code, body))
                 async for line in resp.aiter_lines():
@@ -108,9 +127,17 @@ class AnthropicProvider(Provider):
                     if etype == "content_block_delta":
                         delta = event.get("delta", {})
                         if delta.get("type") == "text_delta":
+                            output_tokens += 1
                             yield ChatChunk(text=delta.get("text", ""))
+                    elif etype == "message_delta":
+                        usage = event.get("usage", {})
+                        output_tokens = usage.get("output_tokens", output_tokens)
+                    elif etype == "message_start":
+                        usage = event.get("message", {}).get("usage", {})
+                        input_tokens_reported = usage.get("input_tokens", 0)
                     elif etype == "message_stop":
                         yield ChatChunk(text="", done=True)
         finally:
+            _log_egress(model, "chat_done", input_tokens_reported, output_tokens)
             if owns_client:
                 await client.aclose()

@@ -39,7 +39,19 @@ def _severity_tier(mean: float) -> int:
     return 0
 
 
-def score_countries(articles: list[Article], now: datetime | None = None) -> list[CountryStat]:
+def _tone_multiplier(tone: float | None) -> float:
+    """Map GDELT tone (-100..100) to a heat amplifier. Negative tone → more heat.
+    No tone data → neutral 1.0. Range: 0.8 (very positive) .. 1.4 (very negative)."""
+    if tone is None:
+        return 1.0
+    return 1.0 + max(-0.2, min(0.4, -tone / 100.0 * 0.4))
+
+
+def score_countries(
+    articles: list[Article],
+    now: datetime | None = None,
+    use_tone: bool = False,
+) -> list[CountryStat]:
     """Aggregate geolocated articles into normalized per-country stats."""
     now = now or datetime.now(timezone.utc)
 
@@ -52,6 +64,8 @@ def score_countries(articles: list[Article], now: datetime | None = None) -> lis
         if not art.iso:
             continue
         rw = _recency_weight(art.published, now)
+        if use_tone:
+            rw *= _tone_multiplier(art.tone)
         weighted[art.iso] = weighted.get(art.iso, 0.0) + rw
         sev_weighted[art.iso] = sev_weighted.get(art.iso, 0.0) + rw * art.severity
         counts[art.iso] = counts.get(art.iso, 0) + 1

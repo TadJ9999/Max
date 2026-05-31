@@ -54,6 +54,11 @@ class OsintConfig(BaseModel):
     # Naval layer: US carrier/amphib positions from public OSINT trackers.
     naval_twz_url: str = OSINT_DEFAULT_TWZ_URL
     naval_ttl_seconds: int = 21_600  # trackers update ~weekly
+    # Per-source toggles
+    gdelt_enabled: bool = True
+    rss_enabled: bool = True
+    naval_enabled: bool = True
+    tone_signal: bool = False  # amplify heat by negative GDELT tone (opt-in)
 
 
 class MarketConfig(BaseModel):
@@ -222,6 +227,14 @@ def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
         cfg.allow_cloud = bool(data["allow_cloud"])
     if "workspace_allowlist" in data:
         cfg.workspace_allowlist = list(data["workspace_allowlist"])
+    if "task_models" in data and isinstance(data["task_models"], dict):
+        for k, v in data["task_models"].items():
+            if isinstance(v, str) and k in cfg.task_models:
+                cfg.task_models[k] = v
+    if "sigils" in data and isinstance(data["sigils"], dict):
+        for k, v in data["sigils"].items():
+            if isinstance(v, str):
+                cfg.sigils[k] = v
     d = data.get("delegate") or {}
     if "mode" in d:
         cfg.delegate.mode = d["mode"]
@@ -250,6 +263,14 @@ def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
         cfg.osint.naval_ttl_seconds = max(3600, int(os_["naval_ttl_seconds"]))
     if "feeds" in os_:
         cfg.osint.feeds = [str(f) for f in os_["feeds"]]
+    if "gdelt_enabled" in os_:
+        cfg.osint.gdelt_enabled = bool(os_["gdelt_enabled"])
+    if "rss_enabled" in os_:
+        cfg.osint.rss_enabled = bool(os_["rss_enabled"])
+    if "naval_enabled" in os_:
+        cfg.osint.naval_enabled = bool(os_["naval_enabled"])
+    if "tone_signal" in os_:
+        cfg.osint.tone_signal = bool(os_["tone_signal"])
     pm = data.get("polymarket") or {}
     if "watchlist" in pm:
         cfg.polymarket.watchlist = [str(s) for s in pm["watchlist"]]
@@ -328,6 +349,8 @@ def save_overrides(cfg: EngineConfig) -> None:
     data = {
         "allow_cloud": cfg.allow_cloud,
         "workspace_allowlist": cfg.workspace_allowlist,
+        "task_models": cfg.task_models,
+        "sigils": cfg.sigils,
         "delegate": {
             "mode": cfg.delegate.mode,
             "max_parallel_local": cfg.delegate.max_parallel_local,
@@ -345,6 +368,10 @@ def save_overrides(cfg: EngineConfig) -> None:
             "ttl_seconds": cfg.osint.ttl_seconds,
             "naval_ttl_seconds": cfg.osint.naval_ttl_seconds,
             "feeds": cfg.osint.feeds,
+            "gdelt_enabled": cfg.osint.gdelt_enabled,
+            "rss_enabled": cfg.osint.rss_enabled,
+            "naval_enabled": cfg.osint.naval_enabled,
+            "tone_signal": cfg.osint.tone_signal,
         },
         "polymarket": {
             "watchlist": cfg.polymarket.watchlist,

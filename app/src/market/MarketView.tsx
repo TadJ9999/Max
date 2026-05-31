@@ -5,11 +5,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getBoard,
+  getCandles,
   getSources,
   getWatchlist,
   setWatchlist as putWatchlist,
   streamAnalyze,
   streamMarketChat,
+  type Candle,
   type ChatTurn,
   type MarketBoard,
   type Quote,
@@ -45,6 +47,29 @@ async function emitMascotEvent(name: string, payload?: unknown) {
   } catch { /* not in Tauri */ }
 }
 
+// ── Sparkline SVG — mini 30-day price chart ────────────────────────────────
+function Sparkline({ candles, dir }: { candles: Candle[]; dir: string }) {
+  if (candles.length < 2) return null;
+  const W = 80, H = 28;
+  const prices = candles.map((c) => c.c);
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  const range = max - min || 1;
+  const pts = prices
+    .map((p, i) => {
+      const x = (i / (prices.length - 1)) * W;
+      const y = H - ((p - min) / range) * H;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  const color = dir === "is-up" ? "#22c55e" : dir === "is-down" ? "#ef4444" : "#6b7c93";
+  return (
+    <svg className="mkt-sparkline" width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 // ── Range bar — shows where current price sits vs day range ────────────────
 function RangeBar({ quote }: { quote: Quote }) {
   const { low, high, price } = quote;
@@ -62,13 +87,103 @@ function RangeBar({ quote }: { quote: Quote }) {
   );
 }
 
+// ── Ticker drill-down modal ───────────────────────────────────────────────
+function DrillDownModal({
+  quote,
+  candles,
+  onClose,
+}: {
+  quote: Quote;
+  candles: Candle[];
+  onClose: () => void;
+}) {
+  const dir = dirClass(quote.change);
+  const sign = quote.change > 0 ? "+" : "";
+
+  // Larger chart version
+  const W = 340, H = 80;
+  const prices = candles.map((c) => c.c);
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  const range = max - min || 1;
+  const pts =
+    prices.length > 1
+      ? prices
+          .map((p, i) => {
+            const x = (i / (prices.length - 1)) * W;
+            const y = H - ((p - min) / range) * H;
+            return `${x.toFixed(1)},${y.toFixed(1)}`;
+          })
+          .join(" ")
+      : "";
+  const color = dir === "is-up" ? "#22c55e" : dir === "is-down" ? "#ef4444" : "#6b7c93";
+
+  return (
+    <div className="mkt-modal-overlay" onClick={onClose}>
+      <div className="mkt-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="mkt-modal__head">
+          <div>
+            <div className="mkt-modal__sym">{quote.symbol}</div>
+            {quote.name && <div className="mkt-modal__name">{quote.name}</div>}
+          </div>
+          <button className="mkt-modal__close" onClick={onClose}>×</button>
+        </div>
+
+        <div className="mkt-modal__price">
+          <span className="mkt-modal__price-val">${fmt(quote.price)}</span>
+          <span className={`mkt-modal__chg mkt-modal__chg--${dir}`}>
+            {sign}{fmt(quote.change)} ({sign}{fmt(Math.abs(quote.changePct))}%)
+          </span>
+        </div>
+
+        {pts && (
+          <svg className="mkt-modal__chart" width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+            <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" />
+          </svg>
+        )}
+        {candles.length === 0 && (
+          <p className="mkt-modal__no-data">Set FINNHUB_API_KEY to load chart history.</p>
+        )}
+
+        <div className="mkt-modal__stats">
+          {[
+            ["Open",  `$${fmt(quote.open)}`],
+            ["High",  `$${fmt(quote.high)}`],
+            ["Low",   `$${fmt(quote.low)}`],
+            ["Prev close", `$${fmt(quote.prevClose)}`],
+          ].map(([label, value]) => (
+            <div key={label} className="mkt-modal__stat">
+              <span className="mkt-modal__stat-lbl">{label}</span>
+              <span className="mkt-modal__stat-val">{value}</span>
+            </div>
+          ))}
+        </div>
+
+        {candles.length > 0 && (
+          <p className="mkt-modal__hint">30-day closing prices — {candles.length} sessions</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Webull-style ticker card ───────────────────────────────────────────────
-function TickerCard({ quote, onRemove }: { quote: Quote; onRemove: () => void }) {
+function TickerCard({
+  quote,
+  sparkCandles,
+  onRemove,
+  onDrillDown,
+}: {
+  quote: Quote;
+  sparkCandles: Candle[];
+  onRemove: () => void;
+  onDrillDown: () => void;
+}) {
   const dir = dirClass(quote.change);
   const sign = quote.change > 0 ? "+" : "";
   const changePct = Math.abs(quote.changePct);
   return (
-    <div className={`mkt-card mkt-card--${dir}`}>
+    <div className={`mkt-card mkt-card--${dir}`} onClick={onDrillDown} style={{ cursor: "pointer" }}>
       <div className="mkt-card__left">
         <div className="mkt-card__sym">{quote.symbol}</div>
         {quote.name && <div className="mkt-card__name">{quote.name}</div>}
@@ -76,6 +191,7 @@ function TickerCard({ quote, onRemove }: { quote: Quote; onRemove: () => void })
           {quote.open > 0 && <span>O ${fmt(quote.open)}</span>}
           {quote.prevClose > 0 && <span className="mkt-card__sep">PC ${fmt(quote.prevClose)}</span>}
         </div>
+        <Sparkline candles={sparkCandles} dir={dir} />
       </div>
       <div className="mkt-card__right">
         <div className="mkt-card__price">${fmt(quote.price)}</div>
@@ -87,7 +203,7 @@ function TickerCard({ quote, onRemove }: { quote: Quote; onRemove: () => void })
         </div>
         {quote.high > 0 && quote.low > 0 && <RangeBar quote={quote} />}
       </div>
-      <button className="mkt-card__rm" onClick={onRemove} title={`Remove ${quote.symbol}`}>×</button>
+      <button className="mkt-card__rm" onClick={(e) => { e.stopPropagation(); onRemove(); }} title={`Remove ${quote.symbol}`}>×</button>
     </div>
   );
 }
@@ -162,6 +278,8 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
   const [loading, setLoading] = useState(true);
   const [add, setAdd]         = useState("");
   const [subTab, setSubTab]   = useState<"board" | "summary">("board");
+  const [sparklines, setSparklines] = useState<Record<string, Candle[]>>({});
+  const [drillDown, setDrillDown]   = useState<Quote | null>(null);
 
   // AI panel state (collapsible, slides from right)
   const [panelOpen, setPanelOpen] = useState(false);
@@ -198,7 +316,19 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
       if (src.watchlist.length) setList((cur) => (cur.length ? cur : src.watchlist));
     }
     setLoading(false);
-  }, []);
+    // Lazy-load sparklines for all visible symbols (don't await — background)
+    if (b && src?.key_set) {
+      void Promise.all(
+        b.quotes.map(async (q) => {
+          if (sparklines[q.symbol]?.length) return;
+          const candles = await getCandles(q.symbol, "D", 30);
+          if (candles.length) {
+            setSparklines((prev) => ({ ...prev, [q.symbol]: candles }));
+          }
+        }),
+      );
+    }
+  }, [sparklines]);
 
   useEffect(() => {
     void refresh();
@@ -442,12 +572,26 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
               <div className="market__note">Engine offline — start Max engine for live quotes.</div>
             )}
 
+            {drillDown && (
+              <DrillDownModal
+                quote={drillDown}
+                candles={sparklines[drillDown.symbol] ?? []}
+                onClose={() => setDrillDown(null)}
+              />
+            )}
+
             <div className="market__cards">
               {quotes.length === 0 && !loading && (
                 <div className="market__empty">No quotes yet.</div>
               )}
               {quotes.map((q) => (
-                <TickerCard key={q.symbol} quote={q} onRemove={() => onRemove(q.symbol)} />
+                <TickerCard
+                  key={q.symbol}
+                  quote={q}
+                  sparkCandles={sparklines[q.symbol] ?? []}
+                  onRemove={() => onRemove(q.symbol)}
+                  onDrillDown={() => setDrillDown(q)}
+                />
               ))}
             </div>
           </div>

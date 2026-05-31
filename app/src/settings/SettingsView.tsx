@@ -14,7 +14,9 @@ import {
   type EngineConfigView,
   type ProfileItem,
 } from "../config";
+import { ModelManager } from "./ModelManager";
 import "./Settings.css";
+import "./ModelManager.css";
 
 // ── tiny helpers ─────────────────────────────────────────────────────────────
 
@@ -673,6 +675,11 @@ export function SettingsView() {
           <ProfileSection />
         </Section>
 
+        {/* ── Models ───────────────────────────────────────────────── */}
+        <Section title="Models" glyph="◈">
+          <ModelManager />
+        </Section>
+
         {/* ── API Keys ─────────────────────────────────────────────── */}
         <Section title="API Keys" glyph="🔑">
           <p className="stg-hint">
@@ -809,6 +816,39 @@ export function SettingsView() {
               onChange={(v) => void patch({ osint: { naval_ttl_seconds: v } })}
             />
           </div>
+          <p className="stg-hint stg-hint--section">Data sources</p>
+          <div className="stg-row">
+            <span className="stg-row__label">GDELT news</span>
+            <Toggle
+              on={cfg.osint.gdelt_enabled ?? true}
+              onChange={(v) => void patch({ osint: { gdelt_enabled: v } })}
+            />
+          </div>
+          <div className="stg-row">
+            <span className="stg-row__label">RSS feeds</span>
+            <Toggle
+              on={cfg.osint.rss_enabled ?? true}
+              onChange={(v) => void patch({ osint: { rss_enabled: v } })}
+            />
+          </div>
+          <div className="stg-row">
+            <span className="stg-row__label">Naval tracker</span>
+            <Toggle
+              on={cfg.osint.naval_enabled ?? true}
+              onChange={(v) => void patch({ osint: { naval_enabled: v } })}
+            />
+          </div>
+          <div className="stg-row">
+            <span className="stg-row__label">
+              GDELT tone signal
+              <span className="stg-badge">opt-in</span>
+            </span>
+            <Toggle
+              on={cfg.osint.tone_signal ?? false}
+              onChange={(v) => void patch({ osint: { tone_signal: v } })}
+            />
+          </div>
+          <p className="stg-hint">Tone signal amplifies heat for countries with strongly negative coverage.</p>
           <FeedList
             feeds={cfg.osint.feeds}
             onChange={(feeds) => void patch({ osint: { feeds } })}
@@ -893,6 +933,27 @@ export function SettingsView() {
             Aegis only calls the cloud when diagnosing or fixing, and <code>allow_cloud</code> is enabled.
             All secrets are redacted before any data leaves the machine.
           </p>
+          <div className="stg-row">
+            <span className="stg-row__label">
+              Autonomy mode
+              <span className="stg-badge">{cfg.aegis?.autonomy ?? "ask"}</span>
+            </span>
+            <div className="stg-seg">
+              {(["suggest", "ask", "auto"] as const).map((m) => (
+                <button
+                  key={m}
+                  className={`stg-seg__btn${(cfg.aegis?.autonomy ?? "ask") === m ? " is-on" : ""}`}
+                  onClick={() => void patch({ aegis: { autonomy: m } })}
+                >
+                  {m === "suggest" ? "Suggest" : m === "ask" ? "Ask (safe)" : "Auto"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="stg-hint">
+            <strong>Auto</strong> = diagnose + apply without confirmation. Use with caution — Aegis will modify your files automatically.
+          </p>
+
           <label className="stg-row">
             <span className="stg-row__label">Security scan enabled</span>
             <Toggle

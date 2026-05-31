@@ -221,6 +221,7 @@ export function SecurityPostureView() {
     running: false,
     scan_id: null,
     files_scanned: 0,
+    stage: "",
   });
   const [catFilter, setCatFilter] = useState<SecurityFindingCategory | "all">("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -423,7 +424,7 @@ export function SecurityPostureView() {
             {scanStatus.running ? (
               <>
                 <span className="aegis__spinner" />
-                Scanning… {scanStatus.files_scanned > 0 ? `${scanStatus.files_scanned} files` : ""}
+                Scanning…
               </>
             ) : (
               "⟳ Run scan now"
@@ -434,6 +435,22 @@ export function SecurityPostureView() {
           </button>
         </div>
       </div>
+
+      {/* ── Scan progress bar ── */}
+      {scanStatus.running && (
+        <div className="posture__scan-progress">
+          <div className="posture__scan-progress-track">
+            <div className="posture__scan-progress-bar" />
+          </div>
+          <div className="posture__scan-progress-label">
+            <span className="aegis__spinner" />
+            <span>{scanStatus.stage || "Scanning"}</span>
+            {scanStatus.files_scanned > 0 && (
+              <span className="posture__scan-file-count">{scanStatus.files_scanned} files</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Category filter ── */}
       <div className="posture__filter-bar">

@@ -9,6 +9,7 @@ doesn't sink the whole board.
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -120,6 +121,61 @@ async def fetch_quote(
         prev_close=float(data.get("pc") or 0.0),
         ts=ts,
     )
+
+
+async def fetch_candles(
+    client: httpx.AsyncClient,
+    symbol: str,
+    api_key: str,
+    *,
+    resolution: str = "D",
+    days: int = 30,
+) -> list[dict]:
+    """Fetch OHLCV candles from Finnhub ``/stock/candle``.
+
+    ``resolution`` = 1|5|15|30|60|D|W|M.
+    Returns ``[{t, o, h, l, c, v}, ...]`` sorted oldest first, or ``[]`` on failure.
+    """
+    now_ts = int(time.time())
+    from_ts = now_ts - days * 86_400
+    try:
+        resp = await client.get(
+            f"{FINNHUB_BASE}/stock/candle",
+            params={
+                "symbol": symbol.upper(),
+                "resolution": resolution,
+                "from": from_ts,
+                "to": now_ts,
+                "token": api_key,
+            },
+            timeout=15.0,
+        )
+        if resp.status_code >= 400:
+            return []
+        data = resp.json()
+    except (httpx.HTTPError, ValueError):
+        return []
+
+    if not isinstance(data, dict) or data.get("s") == "no_data":
+        return []
+    ts_list = data.get("t") or []
+    c_list = data.get("c") or []
+    o_list = data.get("o") or []
+    h_list = data.get("h") or []
+    l_list = data.get("l") or []
+    v_list = data.get("v") or []
+    return [
+        {
+            "t": int(ts_list[i]),
+            "o": float(o_list[i]) if i < len(o_list) else 0.0,
+            "h": float(h_list[i]) if i < len(h_list) else 0.0,
+            "l": float(l_list[i]) if i < len(l_list) else 0.0,
+            "c": float(c_list[i]),
+            "v": int(v_list[i]) if i < len(v_list) else 0,
+        }
+        for i, _ in enumerate(ts_list)
+        if i < len(c_list)
+    ]
 
 
 async def fetch_market_news(

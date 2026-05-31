@@ -34,6 +34,9 @@ class OsintService:
         max_records: int = 250,
         ttl_seconds: int = 600,
         client: httpx.AsyncClient | None = None,
+        gdelt_enabled: bool = True,
+        rss_enabled: bool = True,
+        tone_signal: bool = False,
     ):
         self.feeds = feeds or DEFAULT_FEEDS
         self.query = query
@@ -41,6 +44,9 @@ class OsintService:
         self.max_records = max_records
         self.ttl_seconds = ttl_seconds
         self._client = client
+        self.gdelt_enabled = gdelt_enabled
+        self.rss_enabled = rss_enabled
+        self.tone_signal = tone_signal
 
         self._lock = asyncio.Lock()
         self._articles: list[Article] = []
@@ -77,16 +83,22 @@ class OsintService:
                 return
             owns = self._client is None
             client = self._client or httpx.AsyncClient(timeout=20.0, headers={"user-agent": _UA})
+            async def _empty() -> list:
+                return []
+
             try:
-                gdelt, rss = await asyncio.gather(
+                gdelt_coro = (
                     fetch_gdelt(
                         client,
                         query=self.query,
                         timespan=self.timespan,
                         max_records=self.max_records,
-                    ),
-                    fetch_rss(client, self.feeds),
+                    ) if self.gdelt_enabled else _empty()
                 )
+                rss_coro = fetch_rss(client, self.feeds) if self.rss_enabled else _empty()
+                results = await asyncio.gather(gdelt_coro, rss_coro, return_exceptions=True)
+                gdelt = results[0] if not isinstance(results[0], BaseException) else []
+                rss = results[1] if not isinstance(results[1], BaseException) else []
             finally:
                 if owns:
                     await client.aclose()
@@ -97,7 +109,7 @@ class OsintService:
             self._articles = articles
             self._heatmap = Heatmap(
                 updated=datetime.now(timezone.utc),
-                countries=score_countries(articles),
+                countries=score_countries(articles, use_tone=self.tone_signal),
                 total_articles=len(articles),
             )
             self._fetched_at = monotonic()

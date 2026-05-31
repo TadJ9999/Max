@@ -219,5 +219,24 @@ export async function* streamPolyIngest(signal?: AbortSignal): AsyncGenerator<st
   }
 }
 
+export type MarketEvent = {
+  title: string;
+  description: string;
+  article_url: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  category: string | null;
+};
+
+export async function getMarketNews(conditionId: string): Promise<MarketEvent[]> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/polymarket/news/${encodeURIComponent(conditionId)}`);
+    if (!r.ok) return [];
+    return ((await r.json()).events ?? []) as MarketEvent[];
+  } catch {
+    return [];
+  }
+}
+
 export const CATEGORIES = ["All", "Politics", "Crypto", "Sports", "Economics", "Entertainment", "Science", "World", "Watchlist"] as const;
 export type Category = (typeof CATEGORIES)[number];

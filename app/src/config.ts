@@ -17,6 +17,10 @@ export type EngineConfigView = {
     ttl_seconds: number;
     naval_ttl_seconds: number;
     feeds: string[];
+    gdelt_enabled: boolean;
+    rss_enabled: boolean;
+    naval_enabled: boolean;
+    tone_signal: boolean;
   };
   market: {
     watchlist: string[];
@@ -58,6 +62,9 @@ export type EngineConfigView = {
     score_threshold: number;
     autonomy: string;
   };
+  task_models: Record<string, string>;
+  sigils: Record<string, string>;
+  provider_models: Record<string, Record<string, string>>;
 };
 
 export type ConfigPatch = {
@@ -72,6 +79,10 @@ export type ConfigPatch = {
     ttl_seconds?: number;
     naval_ttl_seconds?: number;
     feeds?: string[];
+    gdelt_enabled?: boolean;
+    rss_enabled?: boolean;
+    naval_enabled?: boolean;
+    tone_signal?: boolean;
   };
   market?: { watchlist?: string[]; ttl_seconds?: number };
   apollo?: { embed_model?: string; ttl_seconds?: number; retrieve_k?: number };
@@ -93,7 +104,10 @@ export type ConfigPatch = {
     osv_enabled?: boolean;
     osv_ttl_seconds?: number;
     score_threshold?: number;
+    autonomy?: string;
   };
+  task_models?: Record<string, string>;
+  sigils?: Record<string, string>;
 };
 
 export async function getConfig(): Promise<EngineConfigView | null> {

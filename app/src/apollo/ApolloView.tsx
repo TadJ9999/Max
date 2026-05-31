@@ -166,7 +166,7 @@ function ReportBox({
 }
 
 export function ApolloView({ onClose }: { onClose?: () => void } = {}) {
-  const [reportRun, setReportRun] = useState(1); // reports auto-run on open
+  const [reportRun] = useState(1); // reports auto-run on open
   const [predictRun, setPredictRun] = useState(0); // predictions wait for Ingest
   const [ingesting, setIngesting] = useState(false);
 
@@ -226,9 +226,8 @@ export function ApolloView({ onClose }: { onClose?: () => void } = {}) {
   };
 
   const onIngest = () => {
-    setReportRun((n) => n + 1);
     setPredictRun((n) => n + 1);
-    setChatMsgs([]); // clear old chat when re-ingesting
+    setChatMsgs([]);
     setIngesting(true);
     window.setTimeout(() => setIngesting(false), 1200);
   };

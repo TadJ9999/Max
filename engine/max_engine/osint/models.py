@@ -22,6 +22,7 @@ class Article:
     image: str | None = None
     severity: int = 0  # 0 low .. 3 critical (see osint.severity)
     summary: str | None = None  # plain-text excerpt (from RSS description or GDELT)
+    tone: float | None = None   # GDELT tone: negative = negative sentiment (-100..100)
 
     def to_dict(self) -> dict:
         return {

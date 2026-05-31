@@ -73,6 +73,24 @@ export async function getSources(): Promise<MarketSources | null> {
   }
 }
 
+export type Candle = { t: number; o: number; h: number; l: number; c: number; v: number };
+
+export async function getCandles(
+  symbol: string,
+  resolution = "D",
+  days = 30,
+): Promise<Candle[]> {
+  try {
+    const params = new URLSearchParams({ resolution, days: String(days) });
+    const r = await fetch(`${ENGINE_URL}/market/candles/${encodeURIComponent(symbol)}?${params}`);
+    if (!r.ok) return [];
+    const data = await r.json();
+    return (data.candles ?? []) as Candle[];
+  } catch {
+    return [];
+  }
+}
+
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 
 // POST a JSON body to a market SSE endpoint and yield text deltas as they arrive

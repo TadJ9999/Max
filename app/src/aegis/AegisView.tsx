@@ -4,6 +4,8 @@ import {
   type AegisSeverity,
   applyFix,
   getAegisEvents,
+  getAegisSources,
+  streamAutoFix,
   streamDiagnosis,
 } from "./aegis";
 import { SecurityPostureView } from "./SecurityPostureView";
@@ -99,7 +101,9 @@ export function AegisView() {
   const [diagState, setDiagState] = useState<DiagState>("idle");
   const [applyState, setApplyState] = useState<ApplyState>("idle");
   const [applyMsg, setApplyMsg] = useState("");
-  const [autonomy, setAutonomy] = useState<"suggest" | "ask">("ask");
+  const [autonomy, setAutonomy] = useState<string>("ask");
+  const [autoFixStatus, setAutoFixStatus] = useState<string>("");
+  const [autoFixing, setAutoFixing] = useState(false);
   const [lastLogId, setLastLogId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const diagAreaRef = useRef<HTMLDivElement | null>(null);
@@ -109,6 +113,8 @@ export function AegisView() {
   const load = useCallback(async () => {
     const evts = await getAegisEvents(50);
     setEvents(evts);
+    const sources = await getAegisSources();
+    if (sources) setAutonomy(sources.autonomy);
   }, []);
 
   useEffect(() => {
@@ -189,6 +195,31 @@ export function AegisView() {
     setApplyState("idle");
     setApplyMsg("");
   }, []);
+
+  const autoFix = useCallback(async () => {
+    if (!selectedId || autoFixing) return;
+    setAutoFixing(true);
+    setAutoFixStatus("Starting auto-fix…");
+    setDiagText("");
+    setDiagState("idle");
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    try {
+      for await (const ev of streamAutoFix(selectedId, ctrl.signal)) {
+        if (ev.error) {
+          setAutoFixStatus(`Error: ${ev.error}`);
+          break;
+        }
+        if (ev.status) {
+          setAutoFixStatus(ev.status === "applied" ? `✓ Applied & verified` : `${ev.status}${ev.detail ? ` — ${ev.detail}` : ""}`);
+        }
+      }
+    } catch (e) {
+      setAutoFixStatus(`Failed: ${String(e)}`);
+    } finally {
+      setAutoFixing(false);
+    }
+  }, [selectedId, autoFixing]);
 
   // Severity counts for summary strip
   const counts = { Critical: 0, High: 0, Medium: 0, Low: 0 };
@@ -342,13 +373,31 @@ export function AegisView() {
 
               {/* action bar */}
               <div className="aegis__actions">
-                {diagState !== "streaming" && (
+                {diagState !== "streaming" && !autoFixing && (
                   <button
                     className="aegis__btn aegis__btn--diagnose"
                     onClick={diagnose}
                   >
                     ⚡ Diagnose
                   </button>
+                )}
+
+                {autonomy === "auto" && !autoFixing && diagState !== "streaming" && (
+                  <button
+                    className="aegis__btn aegis__btn--auto"
+                    onClick={() => void autoFix()}
+                    title="Diagnose + apply fix automatically (autonomy=auto)"
+                  >
+                    ⚡ Auto-Fix
+                  </button>
+                )}
+                {autoFixing && (
+                  <span className="aegis__auto-status">
+                    <span className="aegis__spinner" /> {autoFixStatus}
+                  </span>
+                )}
+                {!autoFixing && autoFixStatus && (
+                  <span className="aegis__auto-status">{autoFixStatus}</span>
                 )}
 
                 {diagState === "streaming" && (

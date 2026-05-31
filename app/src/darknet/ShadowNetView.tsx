@@ -25,6 +25,10 @@ async function invokeTauri(cmd: string, args?: Record<string, unknown>): Promise
 const SEARCH_ENGINES = [
   { label: "Ahmia", url: "https://ahmia.fi/search/?q=" },
   { label: "DuckDuckGo", url: "https://duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion/?q=" },
+  { label: "Torch", url: "http://xmh57jrknzkhv6y3ls3ubitzfqnkrwxhopf5aygthi7d6rplyvk3noyd.onion/cgi-bin/omega/omega?P=" },
+  { label: "Haystak", url: "http://haystak5njsmn2hqkewecpaxetahtwhsbsa64jom2k22z5afxhnpxfid.onion/?q=" },
+  { label: "Not Evil", url: "http://notevilmtxf25uw7tskqxj422naspg2rohzgjcyfdwm6jkm36qd.onion/index.php?q=" },
+  { label: "Candle", url: "http://gjobqjj7wyczbqie.onion/?q=" },
 ];
 
 // ---- per-tab browser state ----------------------------------------------

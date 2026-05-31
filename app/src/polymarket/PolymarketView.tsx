@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CATEGORIES,
   getBoard,
+  getMarketNews,
   getMarkets,
   getOrderBook,
   getPriceHistory,
@@ -14,6 +15,7 @@ import {
   streamIngest,
   type Category,
   type ChatTurn,
+  type MarketEvent,
   type OrderBook,
   type PolyMarket,
   type PricePoint,
@@ -92,6 +94,66 @@ function MarketCard({
         {market.endDate && (
           <span className="poly__card-end">Ends {fmtDate(market.endDate)}</span>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── News feed for a market ────────────────────────────────────────────────────
+function MarketNewsFeed({ conditionId }: { conditionId: string }) {
+  const [events, setEvents] = useState<MarketEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    void getMarketNews(conditionId).then((evs) => {
+      setEvents(evs);
+      setLoading(false);
+    });
+  }, [conditionId]);
+
+  if (loading) return <div className="poly__news-loading">Loading news…</div>;
+  if (events.length === 0) return null;
+
+  return (
+    <div className="poly__news">
+      <div className="poly__ob-header">Related Events</div>
+      <div className="poly__news-list">
+        {events.map((ev, i) => (
+          <div key={i} className="poly__news-item">
+            <div className="poly__news-title">
+              {ev.article_url ? (
+                <a
+                  className="poly__news-link"
+                  href={ev.article_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    try {
+                      const m = await import("@tauri-apps/plugin-opener");
+                      const openFn = (m as unknown as Record<string, unknown>).openUrl ?? (m as unknown as Record<string, unknown>).open;
+                      if (typeof openFn === "function") await (openFn as (u: string) => Promise<void>)(ev.article_url!);
+                      else window.open(ev.article_url!, "_blank");
+                    } catch {
+                      window.open(ev.article_url!, "_blank");
+                    }
+                  }}
+                >
+                  {ev.title}
+                </a>
+              ) : (
+                ev.title
+              )}
+            </div>
+            {ev.description && (
+              <div className="poly__news-desc">{ev.description.slice(0, 180)}</div>
+            )}
+            {ev.start_date && (
+              <div className="poly__news-date">{new Date(ev.start_date).toLocaleDateString()}</div>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -200,6 +262,8 @@ function DetailPanel({
           <OrderBookPanel book={book} loading={bookLoading} />
         </>
       )}
+
+      <MarketNewsFeed conditionId={market.conditionId} />
     </div>
   );
 }

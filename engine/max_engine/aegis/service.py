@@ -13,7 +13,7 @@ import subprocess
 import tempfile
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
+from typing import Any  # noqa: F401 — used in type hint above
 
 from ..config import EngineConfig
 from ..providers.factory import build_provider
@@ -23,10 +23,17 @@ from .store import AegisStore
 
 
 class AegisService:
-    def __init__(self, store: AegisStore, config: EngineConfig, repo_root: str) -> None:
+    def __init__(
+        self,
+        store: AegisStore,
+        config: EngineConfig,
+        repo_root: str,
+        apollo_store: Any | None = None,
+    ) -> None:
         self._store = store
         self._config = config
         self._root = Path(repo_root)
+        self._apollo_store = apollo_store  # optional: embed fix records into Apollo memory
 
     @property
     def store(self) -> AegisStore:
@@ -84,6 +91,71 @@ class AegisService:
             err = {"error": {"message": redact(str(e)), "type": type(e).__name__}}
             yield f"data: {json.dumps(err)}\n\n"
 
+    # ---- auto diagnose-and-apply (autonomy=auto) -------------------------
+
+    async def auto_diagnose_and_apply(self, event_id: str) -> AsyncIterator[str]:
+        """Full pipeline: diagnose → extract diff → apply → verify.
+
+        Only runs when ``config.aegis.autonomy == "auto"``. Yields SSE JSON
+        status messages so the client can follow progress. Logged as "auto-applied"
+        or "auto-rolled-back" in selfdiagnosefixes.md.
+        """
+        if self._config.aegis.autonomy != "auto":
+            yield f"data: {json.dumps({'error': {'message': 'autonomy is not set to auto; cannot auto-apply'}})}\n\n"
+            return
+
+        # Step 1: diagnose
+        diagnosis_parts: list[str] = []
+        yield f"data: {json.dumps({'status': 'diagnosing'})}\n\n"
+        async for chunk in self.diagnose(event_id):
+            if chunk == "data: [DONE]\n\n":
+                break
+            diagnosis_parts.append(chunk)
+            yield chunk
+
+        diagnosis_text = "".join(
+            part.split("content\":\"")[-1].split("\"")[0]
+            for part in diagnosis_parts
+            if "content" in part
+        )
+
+        # Step 2: extract unified diff
+        diff = _extract_diff_from_diagnosis(diagnosis_text)
+        if not diff:
+            yield f"data: {json.dumps({'status': 'no_diff', 'detail': 'No patchable diff found in diagnosis — nothing applied.'})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
+        # Step 3: apply
+        yield f"data: {json.dumps({'status': 'applying', 'diff_lines': diff.count(chr(10))})}\n\n"
+        result = self.apply(event_id, diff)
+        if result.get("ok"):
+            yield f"data: {json.dumps({'status': 'applied', 'verification': result.get('verification', '')})}\n\n"
+            self._embed_fix_into_apollo(event_id, diagnosis_text, diff, "auto-applied")
+        else:
+            yield f"data: {json.dumps({'status': 'failed', 'error': result.get('error', '')})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    def _embed_fix_into_apollo(
+        self, event_id: str, diagnosis: str, diff: str, status: str
+    ) -> None:
+        """Embed a fix record into Apollo memory so recurrences are recognized."""
+        if self._apollo_store is None:
+            return
+        try:
+            text = (
+                f"Aegis fix [{status}] for event {event_id}:\n\n"
+                f"Diagnosis:\n{diagnosis[:1000]}\n\n"
+                f"Patch applied:\n{diff[:800]}"
+            )
+            self._apollo_store.upsert(
+                text=text,
+                source="aegis_fix",
+                metadata={"event_id": event_id, "status": status},
+            )
+        except Exception:
+            pass
+
     # ---- apply ----------------------------------------------------------
 
     def apply(self, event_id: str, diff: str, log_id: str | None = None) -> dict:
@@ -130,6 +202,8 @@ class AegisService:
         if log_id:
             self._store.update_log_status(log_id, "verified", verify_out)
         _write_logbook(self._root, event_id, "applied+verified", verify_out)
+        # Embed the fix into Apollo memory for future pattern recognition
+        self._embed_fix_into_apollo(event_id, "", diff, "applied+verified")
         return {"ok": True, "verification": verify_out}
 
     # ---- rollback -------------------------------------------------------
@@ -304,3 +378,23 @@ def _write_logbook(root: Path, event_id: str | None, status: str, detail: str) -
             f.write(entry)
     except OSError:
         pass
+
+
+def _extract_diff_from_diagnosis(text: str) -> str:
+    """Pull the first unified diff block (```diff ... ```) out of an AI response."""
+    import re
+    m = re.search(r"```diff\s*(.*?)```", text, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    # Fallback: look for diff header lines
+    lines = text.splitlines()
+    diff_lines: list[str] = []
+    in_diff = False
+    for line in lines:
+        if line.startswith("--- ") or line.startswith("+++ ") or line.startswith("@@ "):
+            in_diff = True
+        if in_diff:
+            diff_lines.append(line)
+            if line.startswith("```") and diff_lines:
+                break
+    return "\n".join(diff_lines) if len(diff_lines) > 3 else ""

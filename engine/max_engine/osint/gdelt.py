@@ -43,6 +43,12 @@ def _to_article(row: dict) -> Article | None:
     if not url or not title:
         return None
     country_name = row.get("sourcecountry")
+    tone_raw = row.get("tone")
+    tone: float | None = None
+    try:
+        tone = float(tone_raw) if tone_raw is not None else None
+    except (ValueError, TypeError):
+        pass
     return Article(
         title=title,
         url=url,
@@ -52,6 +58,7 @@ def _to_article(row: dict) -> Article | None:
         country=country_name or None,
         published=_parse_seendate(row.get("seendate")),
         image=row.get("socialimage") or None,
+        tone=tone,
     )
 
 

@@ -45,6 +45,7 @@ from .providers.base import Provider
 from .providers.factory import build_provider
 from .rag import RagService, RagStore, SessionMemory
 from .router import model_for, resolve
+from .models import BenchmarkStore, CLOUD_MODELS, list_ollama_models, pull_ollama_model, run_benchmark, vram_mb
 
 # Load engine/.env (e.g. ANTHROPIC_API_KEY) if present, before providers read it.
 # Explicit path so it works regardless of the launch directory; override=True so
@@ -71,6 +72,9 @@ osint = OsintService(
     timespan=config.osint.gdelt_timespan,
     max_records=config.osint.gdelt_max_records,
     ttl_seconds=config.osint.ttl_seconds,
+    gdelt_enabled=config.osint.gdelt_enabled,
+    rss_enabled=config.osint.rss_enabled,
+    tone_signal=config.osint.tone_signal,
 )
 naval = NavalService(
     twz_url=config.osint.naval_twz_url,
@@ -151,6 +155,7 @@ dark_svc = TorService(
     socks_port=config.darknet.socks_port,
     control_port=config.darknet.control_port,
 )
+_benchmark_store = BenchmarkStore(config.apollo.db_path.replace(".apollo.db", ".apollo.db"))
 
 # Register Aegis as the global FastAPI exception handler so unhandled errors
 # are captured into the event store before the 500 response is returned.
@@ -158,11 +163,11 @@ app.add_exception_handler(Exception, _aegis_capture.fastapi_handler)
 
 
 @app.on_event("startup")
-async def _aegis_startup_scan() -> None:
-    """Optionally run a security scan on startup, then schedule the interval loop."""
+async def _startup() -> None:
+    """Startup tasks: security scan scheduler + config hot-reload watcher."""
     import asyncio
 
-    async def _scheduler() -> None:
+    async def _scan_scheduler() -> None:
         if config.aegis.scan_on_startup:
             await scan_svc.run_scan("scheduled")
         while True:
@@ -170,7 +175,23 @@ async def _aegis_startup_scan() -> None:
             if config.aegis.scan_enabled:
                 await scan_svc.run_scan("scheduled")
 
-    asyncio.create_task(_scheduler())
+    async def _config_hot_reload() -> None:
+        """Re-apply .maxconfig.json onto the live config whenever the file changes."""
+        from .config import CONFIG_FILE, _apply_overrides
+        last_mtime: float = 0.0
+        while True:
+            await asyncio.sleep(5)
+            try:
+                mtime = CONFIG_FILE.stat().st_mtime if CONFIG_FILE.exists() else 0.0
+                if mtime and mtime != last_mtime:
+                    last_mtime = mtime
+                    import json as _json
+                    _apply_overrides(config, _json.loads(CONFIG_FILE.read_text()))
+            except Exception:
+                pass
+
+    asyncio.create_task(_scan_scheduler())
+    asyncio.create_task(_config_hot_reload())
 
 
 @app.get("/health")
@@ -201,6 +222,10 @@ def _config_view() -> dict:
             "ttl_seconds": config.osint.ttl_seconds,
             "naval_ttl_seconds": config.osint.naval_ttl_seconds,
             "feeds": config.osint.feeds,
+            "gdelt_enabled": config.osint.gdelt_enabled,
+            "rss_enabled": config.osint.rss_enabled,
+            "naval_enabled": config.osint.naval_enabled,
+            "tone_signal": config.osint.tone_signal,
         },
         "market": {
             "watchlist": config.market.watchlist,
@@ -245,6 +270,9 @@ def _config_view() -> dict:
             "score_threshold": config.aegis.score_threshold,
             "autonomy": config.aegis.autonomy,
         },
+        "task_models": config.task_models,
+        "sigils": config.sigils,
+        "provider_models": config.provider_models,
     }
 
 
@@ -270,6 +298,10 @@ class OsintPatch(BaseModel):
     ttl_seconds: int | None = None
     naval_ttl_seconds: int | None = None
     feeds: list[str] | None = None
+    gdelt_enabled: bool | None = None
+    rss_enabled: bool | None = None
+    naval_enabled: bool | None = None
+    tone_signal: bool | None = None
 
 
 class MarketPatch(BaseModel):
@@ -305,6 +337,17 @@ class VoicePatch(BaseModel):
     tts_voice_name: str | None = None
 
 
+class AegisPatch(BaseModel):
+    scan_enabled: bool | None = None
+    scan_interval_hours: int | None = None
+    scan_on_startup: bool | None = None
+    scan_roots: list[str] | None = None
+    osv_enabled: bool | None = None
+    osv_ttl_seconds: int | None = None
+    score_threshold: int | None = None
+    autonomy: str | None = None
+
+
 class ConfigPatch(BaseModel):
     allow_cloud: bool | None = None
     workspace_allowlist: list[str] | None = None
@@ -316,6 +359,9 @@ class ConfigPatch(BaseModel):
     apollo: ApolloPatch | None = None
     personality: PersonalityPatch | None = None
     voice: VoicePatch | None = None
+    aegis: AegisPatch | None = None
+    task_models: dict[str, str] | None = None
+    sigils: dict[str, str] | None = None
 
 
 @app.put("/config")
@@ -351,6 +397,17 @@ def update_config(patch: ConfigPatch) -> dict:
             config.osint.naval_ttl_seconds = max(3600, o.naval_ttl_seconds)
         if o.feeds is not None:
             config.osint.feeds = o.feeds
+        if o.gdelt_enabled is not None:
+            config.osint.gdelt_enabled = o.gdelt_enabled
+            osint.gdelt_enabled = o.gdelt_enabled
+        if o.rss_enabled is not None:
+            config.osint.rss_enabled = o.rss_enabled
+            osint.rss_enabled = o.rss_enabled
+        if o.naval_enabled is not None:
+            config.osint.naval_enabled = o.naval_enabled
+        if o.tone_signal is not None:
+            config.osint.tone_signal = o.tone_signal
+            osint.tone_signal = o.tone_signal
     if patch.market is not None:
         m = patch.market
         if m.watchlist is not None:
@@ -403,22 +460,46 @@ def update_config(patch: ConfigPatch) -> dict:
             config.voice.tts_pitch = max(0.5, min(2.0, vo.tts_pitch))
         if vo.tts_voice_name is not None:
             config.voice.tts_voice_name = vo.tts_voice_name
+    if patch.aegis is not None:
+        ag = patch.aegis
+        if ag.scan_enabled is not None:
+            config.aegis.scan_enabled = ag.scan_enabled
+        if ag.scan_interval_hours is not None:
+            config.aegis.scan_interval_hours = max(1, ag.scan_interval_hours)
+        if ag.scan_on_startup is not None:
+            config.aegis.scan_on_startup = ag.scan_on_startup
+        if ag.scan_roots is not None:
+            config.aegis.scan_roots = ag.scan_roots
+        if ag.osv_enabled is not None:
+            config.aegis.osv_enabled = ag.osv_enabled
+        if ag.osv_ttl_seconds is not None:
+            config.aegis.osv_ttl_seconds = max(3600, ag.osv_ttl_seconds)
+        if ag.score_threshold is not None:
+            config.aegis.score_threshold = max(0, min(100, ag.score_threshold))
+        if ag.autonomy is not None:
+            if ag.autonomy not in ("suggest", "ask", "auto"):
+                raise HTTPException(status_code=400, detail="autonomy must be 'suggest', 'ask', or 'auto'")
+            config.aegis.autonomy = ag.autonomy
+    if patch.task_models is not None:
+        for task, model in patch.task_models.items():
+            if task in config.task_models:
+                config.task_models[task] = model
+    if patch.sigils is not None:
+        for sigil, provider in patch.sigils.items():
+            config.sigils[sigil] = provider
     save_overrides(config)
     return _config_view()
 
 
 class KeyPatch(BaseModel):
-    name: str   # e.g. "ANTHROPIC_API_KEY" or "FINNHUB_API_KEY"
+    name: str   # e.g. "ANTHROPIC_API_KEY"
     value: str  # new value — write-only; never returned
 
 
 @app.post("/config/key")
 def set_api_key(patch: KeyPatch) -> dict:
-    """Write an API key to engine/.env and reload it into the running process.
-
-    Accepted names: ANTHROPIC_API_KEY, FINNHUB_API_KEY. The value is stored in
-    the .env file only — it is never echoed back to the caller."""
-    allowed = {"ANTHROPIC_API_KEY", "FINNHUB_API_KEY"}
+    """Write an API key to engine/.env and reload it into the running process."""
+    allowed = {"ANTHROPIC_API_KEY", "FINNHUB_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "NASA_API_KEY"}
     if patch.name not in allowed:
         raise HTTPException(status_code=400, detail=f"Unknown key name '{patch.name}'")
     env_path = Path(__file__).resolve().parent.parent / ".env"
@@ -436,6 +517,105 @@ def set_api_key(patch: KeyPatch) -> dict:
     env_path.write_text("\n".join(new_lines) + "\n")
     os.environ[patch.name] = patch.value
     return _config_view()
+
+
+# ---- Models (local Ollama + cloud catalog) ----------------------------------
+
+
+@app.get("/models")
+async def list_models() -> dict:
+    """Return installed Ollama models + the cloud model catalog with benchmark data."""
+    ollama_url = next(
+        (p.base_url for p in config.providers if p.name == "ollama"),
+        "http://127.0.0.1:11434",
+    )
+    raw = await list_ollama_models(base_url=ollama_url)
+    benchmarks = {r["model"]: r for r in _benchmark_store.all()}
+
+    local: list[dict] = []
+    for m in raw:
+        tag = m.get("name", "")
+        size_bytes = m.get("size", 0)
+        size_gb = round(size_bytes / 1e9, 1)
+        details = m.get("details", {})
+        bench = benchmarks.get(tag)
+        local.append({
+            "id": tag,
+            "display_name": tag,
+            "provider": "ollama",
+            "kind": "local",
+            "size_gb": size_gb,
+            "quant": details.get("quantization_level", ""),
+            "family": details.get("family", ""),
+            "parameter_size": details.get("parameter_size", ""),
+            "vram_mb": vram_mb(tag),
+            "ttft_ms": bench["ttft_ms"] if bench else None,
+            "tokens_per_sec": bench["tokens_per_sec"] if bench else None,
+            "bench_ran_at": bench["ran_at"] if bench else None,
+        })
+
+    # Annotate cloud models with key_set status
+    cloud: list[dict] = []
+    for cm in CLOUD_MODELS:
+        env_key = cm.get("env_key", "")
+        key_set = bool(os.environ.get(env_key)) if env_key else False
+        cloud.append({**cm, "key_set": key_set})
+
+    return {
+        "local": local,
+        "cloud": cloud,
+        "task_models": config.task_models,
+        "sigils": config.sigils,
+    }
+
+
+class BenchmarkRequest(BaseModel):
+    model: str
+
+
+@app.post("/models/benchmark")
+async def benchmark_model(req: BenchmarkRequest) -> dict:
+    """Run a live timed benchmark against a local Ollama model."""
+    ollama_url = next(
+        (p.base_url for p in config.providers if p.name == "ollama"),
+        "http://127.0.0.1:11434",
+    )
+    try:
+        result = await run_benchmark(req.model, base_url=ollama_url)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    _benchmark_store.upsert(
+        model=result["model"],
+        ttft_ms=result["ttft_ms"],
+        tokens_per_sec=result["tokens_per_sec"],
+        prompt_tokens=result.get("prompt_tokens", 0),
+        total_tokens=result.get("total_tokens", 0),
+    )
+    return result
+
+
+class PullRequest(BaseModel):
+    model: str
+
+
+@app.post("/models/pull")
+async def pull_model(req: PullRequest) -> StreamingResponse:
+    """Stream Ollama model pull progress as SSE."""
+    ollama_url = next(
+        (p.base_url for p in config.providers if p.name == "ollama"),
+        "http://127.0.0.1:11434",
+    )
+
+    async def _gen():
+        import json as _json
+        async for status in pull_ollama_model(req.model, base_url=ollama_url):
+            yield f"data: {_json.dumps({'status': status})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+# ---- Parse / route ----------------------------------------------------------
 
 
 class ParseRequest(BaseModel):
@@ -1000,6 +1180,20 @@ async def market_chat_endpoint(req: MarketChatRequest):
     return _sse_stream(provider, model, messages)
 
 
+@app.get("/market/candles/{symbol}")
+async def market_candles(symbol: str, resolution: str = "D", days: int = 30) -> dict:
+    """OHLCV candles for a symbol. Used for sparklines (resolution=D, days=30) and
+    intraday charts (resolution=60, days=5). Returns [] when no key is set."""
+    from .market.finnhub import fetch_candles
+    api_key = os.environ.get("FINNHUB_API_KEY")
+    if not api_key:
+        return {"symbol": symbol, "candles": []}
+    import httpx as _httpx
+    async with _httpx.AsyncClient(timeout=15.0) as client:
+        candles = await fetch_candles(client, symbol, api_key, resolution=resolution, days=days)
+    return {"symbol": symbol, "candles": candles}
+
+
 # ---- Polymarket: prediction markets ------------------------------------
 
 
@@ -1068,6 +1262,17 @@ async def polymarket_order_book(token_id: str) -> dict:
     if book is None:
         return {"tokenId": token_id, "bids": [], "asks": []}
     return {"tokenId": token_id, **book.to_dict()}
+
+
+@app.get("/polymarket/news/{condition_id}")
+async def polymarket_news(condition_id: str, limit: int = 10) -> dict:
+    """Related news/events for a prediction market from the Gamma API events field."""
+    from .polymarket.client import fetch_market_events
+    import httpx as _httpx
+    from .polymarket.client import _UA
+    async with _httpx.AsyncClient(timeout=15.0, headers={"user-agent": _UA}) as client:
+        events = await fetch_market_events(client, condition_id, limit=limit)
+    return {"condition_id": condition_id, "events": events}
 
 
 @app.get("/polymarket/sources")
@@ -1226,6 +1431,18 @@ def aegis_rollback(req: AegisRollbackRequest) -> dict:
     return aegis_svc.rollback(req.snapshot_ref, req.log_id)
 
 
+@app.post("/aegis/auto-fix/{event_id}")
+async def aegis_auto_fix(event_id: str) -> StreamingResponse:
+    """Diagnose + auto-apply fix in one step (only runs when autonomy=auto).
+
+    Streams SSE status events: diagnosing → applying → applied | failed.
+    Requires ``config.aegis.autonomy == "auto"`` to proceed."""
+    return StreamingResponse(
+        aegis_svc.auto_diagnose_and_apply(event_id),
+        media_type="text/event-stream",
+    )
+
+
 @app.get("/aegis/log")
 def aegis_log(limit: int = 100) -> dict:
     """Structured history of all diagnosis + apply actions."""
@@ -1260,6 +1477,7 @@ def aegis_scan_status() -> dict:
         "running": scan_svc.is_running,
         "scan_id": scan_svc.current_scan_id,
         "files_scanned": scan_svc.files_scanned,
+        "stage": scan_svc.stage,
     }
 
 

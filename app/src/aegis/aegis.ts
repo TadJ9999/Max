@@ -164,6 +164,37 @@ export async function getAegisSources(): Promise<AegisSources | null> {
   }
 }
 
+export async function* streamAutoFix(
+  eventId: string,
+  signal?: AbortSignal,
+): AsyncGenerator<{ status?: string; detail?: string; error?: string }> {
+  const r = await fetch(`${ENGINE_URL}/aegis/auto-fix/${encodeURIComponent(eventId)}`, {
+    method: "POST",
+    signal,
+  });
+  if (!r.ok || !r.body) throw new Error(`engine returned HTTP ${r.status}`);
+
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t.startsWith("data:")) continue;
+      const data = t.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+      try {
+        yield JSON.parse(data) as { status?: string; detail?: string; error?: string };
+      } catch { /* skip malformed */ }
+    }
+  }
+}
+
 // ─── Phase 16: Security Posture ──────────────────────────────────────────────
 
 export type SecurityFindingStatus = "open" | "fixed" | "ignored";
@@ -225,6 +256,7 @@ export type ScanStatus = {
   running: boolean;
   scan_id: string | null;
   files_scanned: number;
+  stage: string;
 };
 
 export async function runScan(): Promise<{ scan_id: string | null; started: boolean }> {
@@ -240,10 +272,10 @@ export async function runScan(): Promise<{ scan_id: string | null; started: bool
 export async function getScanStatus(): Promise<ScanStatus> {
   try {
     const r = await fetch(`${ENGINE_URL}/aegis/scan/status`);
-    if (!r.ok) return { running: false, scan_id: null, files_scanned: 0 };
+    if (!r.ok) return { running: false, scan_id: null, files_scanned: 0, stage: "" };
     return (await r.json()) as ScanStatus;
   } catch {
-    return { running: false, scan_id: null, files_scanned: 0 };
+    return { running: false, scan_id: null, files_scanned: 0, stage: "" };
   }
 }
 

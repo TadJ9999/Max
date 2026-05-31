@@ -467,3 +467,22 @@
 /* ── price chart ── */
 .price-chart { display: block; overflow: visible; }
 .price-chart--empty text { font-family: inherit; }
+
+/* ── Market news feed ── */
+.poly__news { margin-top: 12px; }
+.poly__news-loading { font-size: 11px; color: #4a6080; padding: 8px 0; }
+.poly__news-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.poly__news-item {
+  background: #080f1a;
+  border: 1px solid #1a2535;
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.poly__news-title { font-size: 11px; font-weight: 600; color: #afc2d5; line-height: 1.4; }
+.poly__news-link { color: #f0b429; text-decoration: none; }
+.poly__news-link:hover { text-decoration: underline; }
+.poly__news-desc { font-size: 10px; color: #5a7090; line-height: 1.4; }
+.poly__news-date { font-size: 9px; color: #3a5070; }

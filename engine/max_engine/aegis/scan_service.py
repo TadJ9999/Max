@@ -66,6 +66,7 @@ class ScanService:
         self._running = False
         self._current_scan_id: str | None = None
         self._files_scanned: int = 0
+        self._stage: str = ""
 
     # ---- status ---------------------------------------------------------
 
@@ -80,6 +81,10 @@ class ScanService:
     @property
     def files_scanned(self) -> int:
         return self._files_scanned
+
+    @property
+    def stage(self) -> str:
+        return self._stage
 
     # ---- run_scan -------------------------------------------------------
 
@@ -97,6 +102,7 @@ class ScanService:
         scan_id = self._store.start_scan(trigger)
         self._current_scan_id = scan_id
         self._files_scanned = 0
+        self._stage = "Initializing"
 
         try:
             await self._do_scan(scan_id)
@@ -116,11 +122,13 @@ class ScanService:
         # ---- SAST -------------------------------------------------------
         sast_findings: list[dict[str, Any]] = []
         try:
+            self._stage = "Scanning files"
             raw_findings, files_examined = await asyncio.to_thread(scan_files, roots)
             self._files_scanned = files_examined
             self._store.update_scan_files(scan_id, files_examined)
 
             if raw_findings:
+                self._stage = "AI triage"
                 sast_findings = await self._triage_all(raw_findings)
             log.info("SAST: %d findings from %d files", len(sast_findings), files_examined)
         except Exception:
@@ -133,6 +141,7 @@ class ScanService:
         sca_findings: list[dict[str, Any]] = []
         if cfg.osv_enabled:
             try:
+                self._stage = "Checking dependencies"
                 packages = await asyncio.to_thread(parse_all, self._root)
                 raw_sca = await query_osv(packages)
                 sca_findings = _annotate_sca_files(raw_sca, packages, self._root)
@@ -144,6 +153,7 @@ class ScanService:
             self._store.upsert_finding(scan_id, f)
 
         # ---- Reconcile vanished findings --------------------------------
+        self._stage = "Finalizing"
         self._store.reconcile_scan(scan_id)
 
         # ---- Score + finish -------------------------------------------

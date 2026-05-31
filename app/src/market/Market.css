@@ -756,3 +756,130 @@
   border: 1px solid rgba(34, 197, 94, 0.28);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 40px rgba(34, 197, 94, 0.12);
 }
+
+/* ── Sparkline ── */
+.mkt-sparkline {
+  display: block;
+  margin-top: 4px;
+  opacity: 0.8;
+}
+
+/* ── Drill-down modal ── */
+.mkt-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 12, 0.75);
+  backdrop-filter: blur(6px);
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mkt-modal {
+  background: #0a1220;
+  border: 1px solid #1e3050;
+  border-radius: 12px;
+  padding: 20px 24px;
+  width: 400px;
+  max-width: 92vw;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mkt-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.mkt-modal__sym {
+  font-size: 22px;
+  font-weight: 700;
+  color: #d7e2ee;
+  letter-spacing: 0.02em;
+}
+.mkt-modal__name {
+  font-size: 12px;
+  color: #5a7090;
+  margin-top: 2px;
+}
+
+.mkt-modal__close {
+  background: none;
+  border: none;
+  color: #5a7090;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.mkt-modal__close:hover { color: #d7e2ee; }
+
+.mkt-modal__price {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.mkt-modal__price-val {
+  font-size: 28px;
+  font-weight: 700;
+  color: #d7e2ee;
+  font-variant-numeric: tabular-nums;
+}
+.mkt-modal__chg {
+  font-size: 14px;
+  font-weight: 600;
+}
+.mkt-modal__chg--is-up   { color: #22c55e; }
+.mkt-modal__chg--is-down { color: #ef4444; }
+.mkt-modal__chg--is-flat { color: #6b7c93; }
+
+.mkt-modal__chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  background: #060e18;
+  padding: 6px 4px;
+}
+
+.mkt-modal__no-data {
+  font-size: 11px;
+  color: #4a6080;
+  text-align: center;
+  margin: 0;
+  padding: 8px 0;
+}
+
+.mkt-modal__stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.mkt-modal__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mkt-modal__stat-lbl {
+  font-size: 9px;
+  color: #4a6080;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.mkt-modal__stat-val {
+  font-size: 12px;
+  font-weight: 600;
+  color: #afc2d5;
+  font-variant-numeric: tabular-nums;
+}
+
+.mkt-modal__hint {
+  font-size: 10px;
+  color: #3a5070;
+  margin: 0;
+  text-align: right;
+}
