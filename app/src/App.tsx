@@ -8,7 +8,7 @@ import { HubButtons } from "./hub/HubButtons";
 import { deriveMascotState } from "./mascot/deriveMascotState";
 import { initFloatingWindow } from "./window";
 import { getSystemStats, shutdownApp } from "./system";
-import { getSessions, cancelSession, promoteSession } from "./engine";
+import { getSessions, cancelSession, promoteSession, streamSession } from "./engine";
 import { type Session } from "./types";
 import "./App.css";
 
@@ -52,6 +52,8 @@ function App() {
   const [chatThinking, setChatThinking] = useState(false);
   const seenIds = useRef<Set<string>>(new Set());
   const firstPoll = useRef(true);
+  // One live SSE output stream per running session (keyed by id).
+  const streams = useRef<Map<string, AbortController>>(new Map());
 
   // Anchor top-right + register the global hotkey (no-op outside Tauri).
   useEffect(() => {
@@ -86,14 +88,54 @@ function App() {
     };
   }, []);
 
-  // Poll the engine's sessions (~2s). When the engine is unreachable, keep the
-  // current cards (placeholder until first successful connect).
+  // Poll the engine's sessions (~2s) for state/list, and open a live SSE output
+  // stream per running session so tokens appear as they're produced (not just on
+  // the poll). When the engine is unreachable, keep the current cards.
   useEffect(() => {
     let alive = true;
+    const active = streams.current;
+
+    // Live output stream for one running session: snapshot sets, deltas append.
+    const openStream = (sid: string) => {
+      const ac = new AbortController();
+      active.set(sid, ac);
+      const patch = (fn: (prev: string) => string) =>
+        setSessions((xs) => xs.map((s) => (s.id === sid ? { ...s, output: fn(s.output ?? "") } : s)));
+      void streamSession(
+        sid,
+        {
+          onSnapshot: (text) => patch(() => text),
+          onDelta: (text) => patch((prev) => prev + text),
+          onDone: () => active.delete(sid),
+        },
+        ac.signal,
+      ).finally(() => active.delete(sid));
+    };
+
     const tick = async () => {
       const real = await getSessions();
       if (!alive || !real) return;
-      setSessions(real);
+      // Keep the richer output: a live stream usually runs ahead of the 2s poll.
+      setSessions((prev) => {
+        const byId = new Map(prev.map((s) => [s.id, s]));
+        return real.map((s) => {
+          const old = byId.get(s.id)?.output ?? "";
+          const next = s.output ?? "";
+          return { ...s, output: old.length > next.length ? old : next };
+        });
+      });
+
+      const realIds = new Set(real.map((s) => s.id));
+      for (const [sid, ac] of active) {
+        if (!realIds.has(sid)) {
+          ac.abort();
+          active.delete(sid);
+        }
+      }
+      for (const s of real) {
+        if (s.state === "running" && !active.has(s.id)) openStream(s.id);
+      }
+
       // Fire one comet when new sessions appear (skip the initial load).
       const fresh = real.some((s) => !seenIds.current.has(s.id));
       real.forEach((s) => seenIds.current.add(s.id));
@@ -105,8 +147,10 @@ function App() {
     return () => {
       alive = false;
       window.clearInterval(id);
+      for (const ac of active.values()) ac.abort();
+      active.clear();
     };
-  }, []);
+  }, [ping]);
 
   // Collapse sessions (+ measured VRAM) into the single mascot signal.
   const mascot = useMemo(

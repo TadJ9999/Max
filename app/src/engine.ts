@@ -90,6 +90,7 @@ type RawSession = {
   model: string;
   is_cloud: boolean;
   state: string;
+  output: string;
 };
 
 // Engine has a "cancelled" state the widget renders as "done".
@@ -121,9 +122,61 @@ export async function getSessions(): Promise<Session[] | null> {
       model: s.model,
       state: STATE_MAP[s.state] ?? "queued",
       isCloud: s.is_cloud,
+      output: s.output ?? "",
     }));
   } catch {
     return null;
+  }
+}
+
+// Live per-session output via GET /sessions/{id}/stream (SSE).
+// The engine sends a `snapshot` (output so far) on connect, then `chunk` deltas,
+// then a final `done`. We map those to set / append / finish so cards show tokens
+// as they're produced instead of waiting on the ~2s poll.
+export type SessionStreamHandlers = {
+  onSnapshot?: (text: string) => void;
+  onDelta?: (text: string) => void;
+  onDone?: (state: string) => void;
+};
+
+export async function streamSession(
+  id: string,
+  handlers: SessionStreamHandlers,
+  signal?: AbortSignal,
+): Promise<void> {
+  let r: Response;
+  try {
+    r = await fetch(`${ENGINE_URL}/sessions/${id}/stream`, { signal });
+  } catch {
+    return; // offline / mock session — polling still drives the card
+  }
+  if (!r.ok || !r.body) return;
+
+  const reader = r.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t.startsWith("data:")) continue;
+      const data = t.slice(5).trim();
+      if (!data) continue;
+
+      const obj = JSON.parse(data) as { type: string; text?: string; state?: string };
+      if (obj.type === "snapshot") handlers.onSnapshot?.(obj.text ?? "");
+      else if (obj.type === "chunk") handlers.onDelta?.(obj.text ?? "");
+      else if (obj.type === "done") {
+        handlers.onDone?.(obj.state ?? "done");
+        return;
+      }
+    }
   }
 }
 

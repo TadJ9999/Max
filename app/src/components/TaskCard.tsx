@@ -10,7 +10,8 @@ type Props = {
 };
 
 export function TaskCard({ session, onCancel, onPromote }: Props) {
-  const { id, title, provider, model, state, isCloud } = session;
+  const { id, title, provider, model, state, isCloud, output } = session;
+  const live = (output ?? "").trim();
   return (
     <article className={`card card--${state}`}>
       <div className="card__head">
@@ -25,6 +26,11 @@ export function TaskCard({ session, onCancel, onPromote }: Props) {
         <span className="card__sep">·</span>
         <span className="card__model">{model}</span>
       </div>
+      {live && (
+        <pre className={`card__output${state === "running" ? " card__output--live" : ""}`}>
+          {live}
+        </pre>
+      )}
       <div className="card__actions">
         {state === "queued" && (
           <button className="act act--promote" onClick={() => onPromote(id)} title="Promote to cloud">

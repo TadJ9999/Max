@@ -17,4 +17,5 @@ export type Session = {
   model: string;
   state: SessionState;
   isCloud: boolean;
+  output?: string; // live-streamed output (SSE /sessions/{id}/stream)
 };

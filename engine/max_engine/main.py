@@ -368,7 +368,7 @@ async def stream_session(session_id: str):
         q = s.subscribe()
         try:
             if s.output:  # catch-up for a mid-run (or finished) connect
-                yield f"data: {json.dumps({'type': 'chunk', 'text': s.output})}\n\n"
+                yield f"data: {json.dumps({'type': 'snapshot', 'text': s.output})}\n\n"
             if s.state in TERMINAL_STATES:
                 yield f"data: {json.dumps({'type': 'done', 'state': s.state.value})}\n\n"
                 return
