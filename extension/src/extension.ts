@@ -73,6 +73,10 @@ async function runMatch(editor: vscode.TextEditor, range: vscode.Range, match: D
   runToken = cts;
 
   const start = range.start;
+  // Capture the indentation of the command line so continuation lines align.
+  const cmdLine = editor.document.lineAt(range.start.line);
+  const baseIndent = cmdLine.text.slice(0, cmdLine.firstNonWhitespaceCharacterIndex);
+
   const meta: { model?: string } = {};
   applying = true;
   status.text = match.cloud ? "$(cloud) Max ☁ cloud…" : "$(sync~spin) Max…";
@@ -86,12 +90,13 @@ async function runMatch(editor: vscode.TextEditor, range: vscode.Range, match: D
     for await (const delta of streamCommand(match.text, cts.token, meta)) {
       if (cts.token.isCancellationRequested) break;
       acc += delta;
+      const processed = postProcess(acc, baseIndent);
       const prev = new vscode.Range(start, end);
-      await editor.edit((b) => b.replace(prev, acc), {
+      await editor.edit((b) => b.replace(prev, processed), {
         undoStopBefore: false,
         undoStopAfter: false,
       });
-      end = endPosition(start, acc);
+      end = endPosition(start, processed);
     }
     if (!acc.trim()) {
       vscode.window.showWarningMessage("Max: the model returned nothing.");
@@ -158,6 +163,46 @@ async function provideInlineCompletionItems(
   const completion = await fimComplete(prefix, suffix, token);
   if (!completion || token.isCancellationRequested) return;
   return [new vscode.InlineCompletionItem(completion, new vscode.Range(position, position))];
+}
+
+// ---- post-processing ---------------------------------------------------
+
+/**
+ * Strip opening/closing markdown code fences and re-apply the base indentation
+ * to continuation lines.  Applied to the *accumulated* stream buffer on every
+ * chunk so the fence never appears in the editor even during streaming.
+ *
+ * base_indent: whitespace prefix of the command line — prepended to every line
+ * after the first so the whole block sits at the right column.
+ */
+function postProcess(text: string, baseIndent: string): string {
+  const lines = text.split("\n");
+
+  // Strip opening fence (first line matches ```)
+  let start = 0;
+  if (lines[0] !== undefined && /^`{3}/.test(lines[0])) {
+    start = 1;
+  }
+
+  // Strip closing fence (last non-empty line matches ```)
+  let end = lines.length;
+  while (end > start && lines[end - 1].trim() === "") {
+    end--;
+  }
+  if (end > start && /^`{3}\s*$/.test(lines[end - 1])) {
+    end--;
+  }
+
+  const body = lines.slice(start, end);
+
+  // Re-indent: first line is placed at the cursor (already indented),
+  // subsequent lines get base_indent prepended. Blank lines stay blank.
+  const result = body.map((line, i) => {
+    if (i === 0 || line === "" || !baseIndent) return line;
+    return baseIndent + line;
+  });
+
+  return result.join("\n");
 }
 
 // ---- helpers -----------------------------------------------------------

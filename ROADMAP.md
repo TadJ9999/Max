@@ -177,13 +177,6 @@ Parser rules:
 - [~] **Privacy guard** — cloud routes flagged (`is_cloud`) + `allow_cloud` gate + keys from env; **egress audit log + secure key store pending**
 - [~] Health/status endpoint (`/health` ✅); **background daemon mode pending**
 
-### Phase 2 — Command DSL & routing  🎯 *send `!.`/`@..`/`#.` strings → correct provider + behavior*
-- [x] DSL parser (sigils + `.`/`..`, escaping, nested code) — `dsl/parser.py`, tested
-- [x] Wire parser → router → adapter — the `/command` endpoint
-- [x] `.` → code generation — `generate` system prompt (output quality to tune post-benchmark)
-- [x] `..` → docstring / README generation — `summarize` system prompt
-- [ ] Output post-processing (strip fences, match indentation/style) — *prompt-only today; no post-processor yet*
-
 ### Phase 3 — Desktop widget app  🎯 **v1 — floating widget + configure everything** ([UI design](docs/ui.md))
 - [x] **Floating transparent widget** — frameless/transparent/always-on-top/skip-taskbar window, **top-right anchoring**, **global hotkey toggle** (`Ctrl+Shift+M`), and **click-through-when-idle** (Rust cursor-poll). ✅ *Confirmed on-screen (placement, hotkey, hover interactivity).*
 - [x] **Live vector mascot** ("X") reacting to engine state (idle / thinking / busy / done / error) — built as a **"Jarvis"-style SVG + CSS HUD** (not Rive; same state API)
@@ -409,3 +402,10 @@ secrets redacted before any store or egress.
 - [x] Retrieval injected into prompts — `POST /rag/ask` streams grounded answers **cited by `file:line`**
 - [x] **UI**: 🧠 toggle routes questions to `/rag/ask`; ⟳ index button shows live `files / chunks` counts; ✕ clears session memory
 - [x] **Session memory** — `SessionMemory` carries prior turns per `session_id`; fed to model + used to widen retrieval so terse follow-ups still pull the right code
+
+### Phase 2 — Command DSL & routing ✅
+*All four DSL operators wired end-to-end; post-processor ships in both engine and extension.*
+- [x] DSL parser (sigils + `.`/`..`/`~`, escaping, nested code) — `dsl/parser.py`, tested
+- [x] Wire parser → router → adapter — the `/command` endpoint
+- [x] `.` → code generation; `..` → docstring/README; `~` → fix/refactor — system prompts in `prompts.py`
+- [x] Output post-processing — `engine/max_engine/postprocess.py` (strip_fences + reindent, 14 tests); `extension/src/extension.ts` applies `postProcess(acc, baseIndent)` on every streaming chunk: opening fence never shows, closing fence stripped on arrival, all continuation lines aligned to the command's column
