@@ -12,7 +12,7 @@ import { getSessions, cancelSession, promoteSession, streamSession } from "./eng
 import { type Session } from "./types";
 import "./App.css";
 
-// Mock data until Rust sysinfo + /sessions polling are wired (ROADMAP Phase 3/4).
+// Placeholder state shown before the first real poll lands (engine offline fallback).
 const MOCK_SYS: SysInfo = { cpu: 37, gpu: 64, vram: 78, ram: 52, gpuTemp: 58 };
 
 const MOCK_SESSIONS: Session[] = [
@@ -125,8 +125,8 @@ function App() {
     };
   }, [ping]);
 
-  // System status → red core when the host is unreachable. Connectivity is a
-  // stand-in until a real engine health probe is wired (ROADMAP Phase 3/4).
+  // System status → red core when the host is unreachable. Uses online/offline
+  // events as a lightweight proxy; engine health is confirmed on the next poll.
   useEffect(() => {
     const sync = () => setSystemDown(!navigator.onLine);
     window.addEventListener("online", sync);

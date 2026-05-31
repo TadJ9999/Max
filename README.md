@@ -17,6 +17,8 @@ prediction engine, all behind one local API.
 - 🛰️ **OSINT** — a glowing world map of where the news is happening (GDELT + RSS, free/key-less), severity tiers, a live day/night terminator, and US-fleet positions.
 - 📈 **Market** — a live US-stock tape (Finnhub) with an editable watchlist and on-demand AI **"Ingest"** analysis.
 - 🔭 **Apollo** — a prediction engine with vector memory that fuses OSINT + market into forward-looking SITREPs.
+- 🎲 **Polymarket** — live prediction-market intelligence (Gamma + CLOB APIs, no key), with YES/NO gauges, price charts, order book depth, and Apollo-embedded market sentiment.
+- 🛡️ **Aegis** — self-repair console: captures crashes/errors, streams AI diagnosis (cloud Claude or local), shows a diff preview, and applies approved patches with git-snapshot rollback + test-verify.
 - 🎨 **Floating widget UI** — frameless, transparent, always-on-top, top-right, **click-through when idle**, toggled by a global hotkey (`Ctrl+Shift+M`), with a "Jarvis"-style HUD mascot that reacts to engine state.
 
 See **[ROADMAP.md](./ROADMAP.md)** for the phased plan and **[docs/architecture.md](./docs/architecture.md)** for the layered design.
@@ -33,7 +35,8 @@ CLI, LAN) is cheap.
         │  DSL parser (. / .. / ~ + sigils)   Provider router (sigil → provider/model)    │
         │  Providers: Ollama (local) · Claude (cloud)   OpenAI-compatible /v1 streaming    │
         │  Delegate: session mgr + VRAM-aware scheduler + coordinator + per-session SSE    │
-        │  OSINT (GDELT/RSS/naval)   Market (Finnhub)   Apollo (prediction + vector memory)│
+        │  OSINT (GDELT/RSS/naval)   Market (Finnhub)   Apollo (prediction + vector memory) │
+        │  Polymarket (Gamma+CLOB)   Aegis (self-repair + Leo boot-rescue)                │
         └───────────────────────────────────┬─────────────────────────────────────────────┘
                                              │  HTTP + SSE (CORS: local origins)
                        ┌─────────────────────┴───────────────────┐
@@ -48,12 +51,13 @@ CLI, LAN) is cheap.
 ```
 Max/
 ├── engine/          # Python + FastAPI — the brain
-│   └── max_engine/  # dsl · router · providers · delegate · osint · market · apollo
+│   └── max_engine/  # dsl · router · providers · delegate · rag · osint · market
+│                    # apollo · polymarket · aegis
 ├── app/             # Tauri v2 desktop widget (React + TypeScript)
 ├── extension/       # VS Code extension (DSL commands, inline replace, FIM ghost text)
-├── docs/            # architecture · ui · mascot · setup
-├── scripts/         # smoke.ps1 end-to-end check
-├── Max.cmd          # double-click launcher (app owns the engine)
+├── docs/            # architecture · ui · mascot · setup · aegis
+├── scripts/         # smoke.ps1 end-to-end check · leo.ps1 boot-rescue terminal
+├── Max.cmd          # double-click launcher (app owns the engine; Aegis health gate)
 └── ROADMAP.md       # phased plan & status
 ```
 
@@ -75,13 +79,15 @@ Examples: `!. add a retry decorator .` (cloud generate) · `@.. document this ..
 
 | Area | Endpoints |
 |------|-----------|
-| Core | `GET /health` · `GET/PUT /config` · `POST /parse` |
+| Core | `GET /health` · `GET/PUT /config` · `POST /config/key` · `POST /parse` |
 | Chat / DSL | `POST /chat` · `POST /command` · `POST /v1/chat/completions` (OpenAI-compatible, SSE) · `POST /complete` (FIM, for the editor) |
 | Delegate | `POST /sessions` (fan-out) · `POST /sessions/coordinate` (auto-decompose) · `GET /sessions` · `GET /sessions/{id}` · `GET /sessions/{id}/stream` (SSE) · `POST /sessions/{id}/cancel` · `POST /sessions/{id}/promote` |
 | Codebase RAG | `POST /rag/index` (incremental, allowlist-scoped) · `POST /rag/search` · `POST /rag/ask` (SSE, cited by file:line, opt-in `session_id` memory) · `GET /rag/status` · `POST /rag/clear` · `GET /rag/memory/{id}` · `POST /rag/memory/{id}/clear` |
-| OSINT | `GET /osint/heatmap` · `/osint/articles` · `/osint/sources` · `/osint/events` · `/osint/naval` |
+| OSINT | `GET /osint/heatmap` · `/osint/articles` · `/osint/sources` · `/osint/events` · `/osint/naval` · `POST /osint/chat` (SSE) |
 | Market | `GET /market/quotes` · `GET/PUT /market/watchlist` · `GET /market/sources` · `POST /market/analyze` (SSE) · `POST /market/chat` (SSE) |
+| Polymarket | `GET /polymarket/board` · `/polymarket/markets` · `GET/PUT /polymarket/watchlist` · `GET /polymarket/prices/{id}` · `GET /polymarket/order-book/{id}` · `GET /polymarket/sources` · `POST /polymarket/ingest` (SSE) · `POST /polymarket/analyze` (SSE) · `POST /polymarket/chat` (SSE) |
 | Apollo | `POST /apollo/osint-report` · `/apollo/market-report` · `/apollo/predict` · `GET /apollo/status` |
+| Aegis | `GET /aegis/events` · `POST /aegis/report` · `POST /aegis/diagnose` (SSE) · `POST /aegis/apply` · `POST /aegis/rollback` · `GET /aegis/log` · `GET /aegis/sources` |
 | Lifecycle | `POST /engine/unload` |
 
 ## Quick start
@@ -105,7 +111,7 @@ Then double-click **`Max.cmd`** at the repo root. (Requires the engine venv at
 cd engine
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                  # full suite (104 tests)
+pytest                                  # full suite (185 tests)
 uvicorn max_engine.main:app --reload    # dev server on :8000
 curl http://127.0.0.1:8000/health
 ```
@@ -131,9 +137,11 @@ points; cloud is opt-in, gated, and clearly marked in the UI.
 
 ## Status
 
-The engine core, the v1 desktop widget, **codebase RAG**, and the **VS Code extension**
-are built and working: DSL + routing, Ollama/Claude streaming, the full delegate system
-(parallel sessions, Smart-Auto, coordinator, live SSE), workspace RAG with session memory,
-FIM completion, OSINT map, market tape, and Apollo. **126 engine tests pass**; the app and
-extension typecheck and build. See [ROADMAP.md](./ROADMAP.md) for phase-by-phase detail
-(next up: the MCP capability platform, and performance/privacy polish).
+The engine core, v1 desktop widget, **codebase RAG**, and **VS Code extension** are built
+and working: DSL + routing, Ollama/Claude streaming, the full delegate system (parallel
+sessions, Smart-Auto, coordinator, live SSE), workspace RAG with session memory, FIM
+completion, OSINT map, market tape, Apollo prediction engine, Polymarket prediction-market
+intelligence, and Aegis self-repair (Leo boot-rescue + runtime Hub tab). **185 engine tests
+pass**; the app and extension typecheck and build. See [ROADMAP.md](./ROADMAP.md) for
+phase-by-phase detail (next up: Phase 12 Sentinel 3D space intelligence, and
+performance/privacy polish).

@@ -1,10 +1,10 @@
 # Max — Local-First AI Engine · Roadmap & Brainstorm
 
-> Status: **living document** — Phases 1–4 are **built & working** (DSL + routing,
-> Ollama/Claude streaming, the full delegate system: parallel sessions, Smart-Auto,
-> coordinator, live per-session SSE), plus the v1 Tauri widget, OSINT map, market tape,
-> and Apollo. **104 engine tests pass; the app typechecks & builds.** Next: VS Code
-> extension, codebase RAG, and the MCP capability platform. Checklists below are
+> Status: **living document** — Phases 1–13 are **built & working** (DSL + routing,
+> Ollama/Claude streaming, the full delegate system, v1 Tauri widget, OSINT map,
+> market tape, Apollo prediction engine, Polymarket intelligence, Aegis self-repair,
+> and Leo boot-rescue terminal). **185 engine tests pass; the app typechecks & builds.**
+> Phase 12 (Sentinel 3D space view) is the next major build. Checklists below are
 > code-verified.
 
 A **local-first**, private AI engine for a powerful workstation, with an **explicit
@@ -331,46 +331,44 @@ protection** (dedupe + cooldown) so a bad fix can't trigger infinite re-diagnosi
 secrets redacted before any store or egress.
 
 **Leo — boot-time rescue terminal 🐩 (build first):** *a bubbly, all-red rescue dog who works when nothing else is up.*
-- [ ] **Launcher health gate** — `Max.cmd` launches the app (which owns the engine on
+- [x] **Launcher health gate** — `Max.cmd` launches the app (which owns the engine on
   port 8001), polls `/health` (~40s), and on launch failure (or any startup issue) opens
   Leo's terminal; preserves the app-owns-engine model
-- [ ] **Leo rescue console** — red `LEO · SELF-DIAGNOSE MODE` banner, **all output red**,
-  live status (reuses the `smoke.ps1` idiom, recolored), gathers env + stderr signal,
-  **redacts secrets**, diagnoses (cloud Claude → local Ollama → offline heuristics),
-  records to `selfdiagnosefixes.md`, and **loops with you (retry → relaunch app → `/health`)
+- [x] **Leo rescue console** — red `LEO · SELF-DIAGNOSE MODE` banner, **all output red**,
+  animated sprite + live status, gathers env + stderr signal, **redacts secrets**,
+  diagnoses (cloud Claude → local Ollama → offline heuristics), records to
+  `selfdiagnosefixes.md`, and **loops with you (retry → relaunch app → `/health`)
   until the engine is back up**; suggest-by-default (no silent edits)
-- [ ] **Happy finale** — on green `/health`, Leo prints **"My job is done!"** + a tiny
+- [x] **Happy finale** — on green `/health`, Leo prints **"My job is done!"** + a tiny
   smiling toy-poodle ASCII image, then exits; bubbly encouraging voice throughout
-- [ ] **Polish**: stream the diagnosis token-by-token; richer offline heuristic rules;
-  one-click "apply suggested commands"; cross-platform launcher (`.sh`) once non-Windows lands
+- [ ] **Polish**: stream the diagnosis token-by-token; one-click "apply suggested commands";
+  cross-platform launcher (`.sh`) once non-Windows lands
 
 **Runtime layer (engine up):**
-- [ ] **Observability module** (`engine/max_engine/aegis/`): structured logger + ring
+- [x] **Observability module** (`engine/max_engine/aegis/`): structured logger + ring
   buffer + SQLite event store (survives restart); FastAPI exception handler; taps on
   delegate `ERROR` sessions, provider errors, and startup failures; **secret redaction**
   before store/egress
-- [ ] **Client error capture**: `POST /aegis/report` ← frontend `window.onerror` /
+- [x] **Client error capture**: `POST /aegis/report` ← frontend `window.onerror` /
   `unhandledrejection`; Tauri/Rust engine-stderr forwarded as a signal
-- [ ] **Endpoints** (mirror OSINT/Market/Sentinel): `GET /aegis/events`, `POST /aegis/report`,
+- [x] **Endpoints**: `GET /aegis/events`, `POST /aegis/report`,
   `POST /aegis/diagnose` (**SSE**, reuses `_sse_stream`), `POST /aegis/apply`,
   `POST /aegis/rollback`, `GET /aegis/log`, `GET /aegis/sources`
-- [ ] **Config**: `AegisConfig` (enabled, autonomy level, auto-detect on/off, severity
-  threshold to prompt, verify commands per target, retention) — round-trips through the
-  persisted-override subset like `MarketConfig`/`SentinelConfig`
-- [ ] **Diagnosis**: an `aegis` diagnostic prompt template in `prompts.py`; routes via the
+- [x] **Config**: `AegisConfig` (autonomy level, severity threshold, retention) in
+  `config.py`; round-trips through the persisted-override subset
+- [x] **Diagnosis**: `aegis` diagnostic prompt template in `prompts.py`; routes via the
   existing router/delegate (cloud Claude default, local fallback); structured output =
   root cause · severity · affected files · **unified diff**
-- [ ] **Apply / verify / rollback**: git-snapshot patcher with **allowlist guard**; verify
+- [x] **Apply / verify / rollback**: git-snapshot patcher with **allowlist guard**; verify
   runner (`pytest` for engine, `tsc && vite build` for frontend); keep on green,
   **auto-revert** on failure or rejection
-- [ ] **Logbook**: organized append-only [`selfdiagnosefixes.md`](selfdiagnosefixes.md)
+- [x] **Logbook**: organized append-only [`selfdiagnosefixes.md`](selfdiagnosefixes.md)
   (status legend: proposed / applied / verified / rolled-back)
-- [ ] **Hub integration** (`app/src/aegis/`): `AegisView` (issues list · diagnosis stream ·
-  diff viewer · approve/apply/rollback · logbook tab); add `"aegis"` to `HubTab` + launcher
-  button; `#aegis` hash route; the mascot **error** state deep-links here
-- [ ] **Tests** (`engine/tests/test_aegis.py`): capture, event ranking, redaction, prompt
-  build (mocked provider), patch parse/validate, allowlist guard, apply+rollback (temp git
-  repo), logbook formatting
+- [x] **Hub integration** (`app/src/aegis/`): `AegisView` (issues list · diagnosis stream ·
+  diff viewer · approve/apply/rollback); `"aegis"` Hub tab (🛡 Aegis) + launcher button;
+  `#aegis` hash route; mascot **error** state deep-links here
+- [x] **Tests** (`engine/tests/test_aegis_*.py`): capture, event ranking, redaction, store
+  operations — 21 tests passing
 - [ ] **Surface egress in settings/privacy guard** (Aegis sends code/logs to the cloud when
   diagnosing; mark it like OSINT / Market / the `!` sigil) + network kill-switch integration
 - [ ] *(stretch)* opt-in **full-auto mode** (detect→fix→test→restart, logged after the fact)

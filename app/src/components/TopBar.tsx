@@ -1,6 +1,6 @@
 // Top bar: SYS INFO meters (left) + settings cog (right).
-// Meter values are mock until a Rust `sysinfo`/nvidia-smi command is wired
-// (ROADMAP Phase 3). VRAM is emphasized — it's the 12 GB bottleneck.
+// Meter values come from Rust sysinfo + nvidia-smi (~1.5s poll via system.ts).
+// VRAM is emphasized — it's the 12 GB bottleneck.
 
 import { Meter } from "./Meter";
 

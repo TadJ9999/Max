@@ -23,8 +23,8 @@ to show it. So Aegis has two layers:
 | **Leo — boot rescue** *(build first)* | launch **fails / any startup issue** | a standalone **terminal** Leo opens himself | cloud Claude → local Ollama → offline heuristics |
 | **Runtime layer** | engine **is up**, something later breaks | the in-engine `aegis` module + desktop 🛡 window | router/delegate (cloud default, local fallback) |
 
-> **Status: planned (Phase 13) — not yet built.** This document is the design; no
-> rescue-console code is in the repo yet.
+> **Status: built (Phase 13).** Leo (`scripts/leo.ps1` + `Max.cmd` health gate) and
+> the runtime layer (`engine/max_engine/aegis/` + Hub 🛡 tab) are live.
 
 They are deliberately decoupled: **Leo must work with nothing else running**, so he
 never calls the engine's endpoints. Both layers share the same contract — the
