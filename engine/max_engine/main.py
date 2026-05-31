@@ -323,6 +323,24 @@ async def create_sessions(req: SubmitRequest):
     return {"sessions": [s.to_dict() for s in created]}
 
 
+class CoordinateRequest(BaseModel):
+    request: str
+    planner: str | None = None  # provider override; default decided by delegate mode
+    max_subtasks: int = 6
+
+
+@app.post("/sessions/coordinate")
+async def coordinate_sessions(req: CoordinateRequest):
+    """Auto-delegate: a planner model splits one request into independent
+    subtasks, each fanned out as a parallel session under the same scheduler."""
+    try:
+        return await delegate.coordinate(
+            req.request, planner=req.planner, max_subtasks=req.max_subtasks
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+
+
 @app.get("/sessions")
 def list_sessions():
     """List all sessions (isolated — each output viewed separately)."""
