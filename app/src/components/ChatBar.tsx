@@ -3,7 +3,16 @@
 // the line starts with the cloud sigil `!`. A status dot polls /health.
 
 import { useEffect, useRef, useState } from "react";
-import { getHealth, isDslCommand, streamChat, streamCommand } from "../engine";
+import {
+  getHealth,
+  getRagStatus,
+  indexWorkspace,
+  isDslCommand,
+  streamAsk,
+  streamChat,
+  streamCommand,
+  type RagStatus,
+} from "../engine";
 import { MarkdownView } from "./MarkdownView";
 import { CopyButton } from "./CopyButton";
 
@@ -20,6 +29,28 @@ export function ChatBar({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // "Knows your code" mode: plain questions are answered from the indexed workspace.
+  const [codeMode, setCodeMode] = useState(false);
+  const [rag, setRag] = useState<RagStatus | null>(null);
+  const [indexing, setIndexing] = useState(false);
+
+  // Pull the index status when code mode turns on, so the counts are current.
+  useEffect(() => {
+    if (codeMode) void getRagStatus().then(setRag);
+  }, [codeMode]);
+
+  const reindex = async () => {
+    if (indexing) return;
+    setIndexing(true);
+    setErr(null);
+    try {
+      const res = await indexWorkspace();
+      if (res) setRag({ files: res.files, chunks: res.chunks });
+      else setErr("indexing failed — is a workspace folder allow-listed in settings?");
+    } finally {
+      setIndexing(false);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -47,8 +78,9 @@ export function ChatBar({
     onRequest?.(); // fire a request comet on the mascot
     const ac = new AbortController();
     abortRef.current = ac;
-    // DSL command (`. … .`, `!. … .`, `~ … ~`) → /command; plain text → /chat.
-    const stream = isDslCommand(q) ? streamCommand : streamChat;
+    // DSL command (`. … .`, `!. … .`, `~ … ~`) → /command. Plain text → /chat,
+    // or /rag/ask (grounded in the indexed workspace) when code mode is on.
+    const stream = isDslCommand(q) ? streamCommand : codeMode ? streamAsk : streamChat;
     try {
       for await (const delta of stream(q, ac.signal)) {
         setOutput((o) => o + delta);
@@ -90,7 +122,7 @@ export function ChatBar({
         />
         <input
           className="chat__input"
-          placeholder="Ask Max…  ( ! = cloud )"
+          placeholder={codeMode ? "Ask about your code…  (grounded)" : "Ask Max…  ( ! = cloud )"}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKey}
@@ -99,6 +131,33 @@ export function ChatBar({
           <span className="chat__cloud" title="cloud ( ! ) — this leaves your machine">
             ☁
           </span>
+        )}
+        <button
+          className={`chat__mode ${codeMode ? "is-on" : ""}`}
+          onClick={() => setCodeMode((v) => !v)}
+          title={
+            codeMode
+              ? `Knows-your-code: ON — plain questions answered from your indexed workspace${
+                  rag ? ` (${rag.files} files / ${rag.chunks} chunks)` : ""
+                }`
+              : "Knows-your-code: OFF — click to ground answers in your codebase"
+          }
+        >
+          🧠
+        </button>
+        {codeMode && (
+          <button
+            className="chat__index"
+            onClick={() => void reindex()}
+            disabled={indexing}
+            title={
+              rag
+                ? `Re-index workspace · ${rag.files} files / ${rag.chunks} chunks`
+                : "Index the allow-listed workspace"
+            }
+          >
+            {indexing ? "…" : "⟳"}
+          </button>
         )}
         <button className="chat__send" onClick={() => void send()} disabled={busy} title="Send">
           {busy ? "…" : "▶"}

@@ -81,6 +81,45 @@ export function streamChat(text: string, signal?: AbortSignal): AsyncGenerator<s
   return streamSSE("/chat", { text }, signal);
 }
 
+// ---- Codebase RAG -------------------------------------------------------
+
+export type RagStatus = { files: number; chunks: number; allowlist?: string[] };
+export type RagIndexResult = RagStatus & {
+  indexed: number;
+  skipped: number;
+  removed: number;
+};
+
+// Stream a workspace-grounded answer (cited by file:line) via /rag/ask.
+export function streamAsk(question: string, signal?: AbortSignal): AsyncGenerator<string> {
+  return streamSSE("/rag/ask", { question }, signal);
+}
+
+export async function getRagStatus(): Promise<RagStatus | null> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/rag/status`, { method: "GET" });
+    if (!r.ok) return null;
+    return (await r.json()) as RagStatus;
+  } catch {
+    return null;
+  }
+}
+
+// (Re)index the workspace allowlist; returns the run summary (or null if offline).
+export async function indexWorkspace(): Promise<RagIndexResult | null> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/rag/index`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (!r.ok) return null;
+    return (await r.json()) as RagIndexResult;
+  } catch {
+    return null;
+  }
+}
+
 // ---- Sessions (delegate) ------------------------------------------------
 
 type RawSession = {

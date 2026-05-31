@@ -606,6 +606,29 @@ body {
 .chat__cloud {
   color: var(--magenta);
 }
+/* "Knows your code" toggle + re-index button (icon ghost-buttons). */
+.chat__mode,
+.chat__index {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.chat__mode.is-on {
+  border-color: var(--accent);
+  background: rgba(34, 211, 238, 0.16);
+  color: var(--accent);
+}
+.chat__index:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .chat__send {
   background: var(--accent);
   color: #042027;
