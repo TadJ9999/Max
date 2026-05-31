@@ -60,6 +60,39 @@ function App() {
     void initFloatingWindow();
   }, []);
 
+  // Aegis: capture unhandled frontend errors and report them to the engine.
+  useEffect(() => {
+    const handleError = (msg: string | Event, src?: string, line?: number, col?: number, err?: Error) => {
+      void import("./aegis/aegis").then(({ reportError }) => {
+        reportError({
+          source: "frontend",
+          severity: "High",
+          kind: err?.name ?? "Error",
+          message: typeof msg === "string" ? msg : String(msg),
+          traceback: err?.stack ?? `${src ?? ""}:${line ?? 0}:${col ?? 0}`,
+          context: { src, line, col },
+        });
+      });
+    };
+    const handleRejection = (e: PromiseRejectionEvent) => {
+      void import("./aegis/aegis").then(({ reportError }) => {
+        reportError({
+          source: "frontend",
+          severity: "Medium",
+          kind: "UnhandledRejection",
+          message: String(e.reason),
+          traceback: e.reason?.stack,
+        });
+      });
+    };
+    window.onerror = handleError;
+    window.addEventListener("unhandledrejection", handleRejection);
+    return () => {
+      window.onerror = null;
+      window.removeEventListener("unhandledrejection", handleRejection);
+    };
+  }, []);
+
   // Cross-window mascot signals: Hub features (Market/OSINT/Apollo) emit via
   // BroadcastChannel (primary — works reliably across Tauri WebView2 windows)
   // and Tauri events (secondary). The widget mascot animates even when the user

@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type AegisEvent,
-  type AegisLogEntry,
   type AegisSeverity,
   applyFix,
   getAegisEvents,
-  getAegisLog,
-  rollbackFix,
   streamDiagnosis,
 } from "./aegis";
 import "./Aegis.css";
@@ -323,13 +320,8 @@ export function AegisView() {
                   <button
                     className="aegis__btn aegis__btn--diagnose"
                     onClick={diagnose}
-                    disabled={diagState === "streaming"}
                   >
-                    {diagState === "streaming" ? (
-                      <><span className="aegis__spinner" /> Diagnosing…</>
-                    ) : (
-                      "⚡ Diagnose"
-                    )}
+                    ⚡ Diagnose
                   </button>
                 )}
 
