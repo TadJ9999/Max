@@ -528,6 +528,37 @@ body {
   opacity: 0.5;
 }
 
+/* ── markdown tables ──────────────────────────────────────────────── */
+.md__table-wrap {
+  overflow-x: auto;
+  margin: 6px 0;
+}
+.md__table {
+  border-collapse: collapse;
+  font-size: 0.85em;
+  min-width: 100%;
+}
+.md__table th,
+.md__table td {
+  padding: 4px 10px;
+  border: 1px solid rgba(120, 160, 185, 0.18);
+  text-align: left;
+  white-space: nowrap;
+}
+.md__table th {
+  background: rgba(34, 211, 238, 0.08);
+  color: #22d3ee;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-size: 0.82em;
+}
+.md__table tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.03);
+}
+.md__table tr:hover td {
+  background: rgba(34, 211, 238, 0.05);
+}
+
 /* shared copy-to-clipboard button for AI output fields */
 .copy-btn {
   font-size: 10px;

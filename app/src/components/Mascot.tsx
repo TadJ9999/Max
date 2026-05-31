@@ -313,14 +313,21 @@ export function Mascot({
         <span className="hud__orb-fluid hud__orb-fluid--a" />
         <span className="hud__orb-fluid hud__orb-fluid--b" />
         <span className="hud__orb-fluid hud__orb-fluid--c" />
+        {/* AI-green accent fluid — only visible while the orb is processing an LLM call */}
+        <span className="hud__orb-fluid hud__orb-fluid--d" />
         <span className="hud__orb-gloss" />
       </div>
 
-      {/* HTML effect layer (comet strike / response ripple) */}
+      {/* HTML effect layer (comet strike / response ripple + nebula explosion) */}
       <div className="hud__fx">
         {absorb > 0 && <div key={`a${absorb}`} className="hud__absorb" />}
         {ripple > 0 && <div key={`r${ripple}`} className="hud__ripple" />}
         {ripple > 0 && <div key={`b${ripple}`} className="hud__blast" />}
+        {/* Nebula gas cloud — three staggered rings that expand + dissolve */}
+        {ripple > 0 && <div key={`n1${ripple}`} className="hud__nebula hud__nebula--1" />}
+        {ripple > 0 && <div key={`n2${ripple}`} className="hud__nebula hud__nebula--2" />}
+        {ripple > 0 && <div key={`n3${ripple}`} className="hud__nebula hud__nebula--3" />}
+        {ripple > 0 && <div key={`ng${ripple}`} className="hud__nebula-gas" />}
       </div>
 
       {/* request comets */}

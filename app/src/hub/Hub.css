@@ -27,6 +27,12 @@
   display: flex;
   gap: 6px;
 }
+.hub__tabs-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
 .hub__tab {
   display: inline-flex;
   align-items: center;
@@ -64,6 +70,15 @@
   color: #22c55e;
   border-color: rgba(34, 197, 94, 0.4);
   background: rgba(34, 197, 94, 0.1);
+}
+/* Settings tab pushed to far right with margin-left: auto */
+.hub__tab--settings {
+  margin-left: auto;
+}
+.hub__tab--settings.is-active {
+  color: #a78bfa;
+  border-color: rgba(167, 139, 250, 0.4);
+  background: rgba(167, 139, 250, 0.1);
 }
 .hub__close {
   width: 30px;

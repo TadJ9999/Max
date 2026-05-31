@@ -104,6 +104,43 @@ export async function getHeatmap(): Promise<Heatmap | null> {
   }
 }
 
+export type OsintChatTurn = { role: "user" | "assistant"; content: string };
+
+export async function* streamOsintChat(
+  messages: OsintChatTurn[],
+  country: string | null,
+  signal?: AbortSignal,
+): AsyncGenerator<string> {
+  const r = await fetch(`${ENGINE_URL}/osint/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ messages, country }),
+    signal,
+  });
+  if (!r.ok || !r.body) throw new Error(`engine returned HTTP ${r.status}`);
+
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t.startsWith("data:")) continue;
+      const data = t.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+      const obj = JSON.parse(data);
+      if (obj.error) throw new Error(obj.error.message ?? "engine error");
+      const delta: string | undefined = obj.choices?.[0]?.delta?.content;
+      if (delta) yield delta;
+    }
+  }
+}
+
 export async function getCountryArticles(
   iso: string | null,
   limit = 40,

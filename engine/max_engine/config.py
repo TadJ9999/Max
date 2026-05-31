@@ -149,6 +149,28 @@ def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
     mk = data.get("market") or {}
     if "watchlist" in mk:
         cfg.market.watchlist = [str(s) for s in mk["watchlist"]]
+    if "ttl_seconds" in mk:
+        cfg.market.ttl_seconds = max(5, int(mk["ttl_seconds"]))
+    os_ = data.get("osint") or {}
+    if "gdelt_query" in os_:
+        cfg.osint.gdelt_query = str(os_["gdelt_query"])
+    if "gdelt_timespan" in os_:
+        cfg.osint.gdelt_timespan = str(os_["gdelt_timespan"])
+    if "gdelt_max_records" in os_:
+        cfg.osint.gdelt_max_records = max(10, int(os_["gdelt_max_records"]))
+    if "ttl_seconds" in os_:
+        cfg.osint.ttl_seconds = max(60, int(os_["ttl_seconds"]))
+    if "naval_ttl_seconds" in os_:
+        cfg.osint.naval_ttl_seconds = max(3600, int(os_["naval_ttl_seconds"]))
+    if "feeds" in os_:
+        cfg.osint.feeds = [str(f) for f in os_["feeds"]]
+    ap = data.get("apollo") or {}
+    if "embed_model" in ap:
+        cfg.apollo.embed_model = str(ap["embed_model"])
+    if "ttl_seconds" in ap:
+        cfg.apollo.ttl_seconds = max(3600, int(ap["ttl_seconds"]))
+    if "retrieve_k" in ap:
+        cfg.apollo.retrieve_k = max(1, int(ap["retrieve_k"]))
 
 
 def load_config() -> EngineConfig:
@@ -173,6 +195,22 @@ def save_overrides(cfg: EngineConfig) -> None:
             "max_parallel_cloud": cfg.delegate.max_parallel_cloud,
         },
         "idle": {"keep_alive": cfg.idle.keep_alive},
-        "market": {"watchlist": cfg.market.watchlist},
+        "market": {
+            "watchlist": cfg.market.watchlist,
+            "ttl_seconds": cfg.market.ttl_seconds,
+        },
+        "osint": {
+            "gdelt_query": cfg.osint.gdelt_query,
+            "gdelt_timespan": cfg.osint.gdelt_timespan,
+            "gdelt_max_records": cfg.osint.gdelt_max_records,
+            "ttl_seconds": cfg.osint.ttl_seconds,
+            "naval_ttl_seconds": cfg.osint.naval_ttl_seconds,
+            "feeds": cfg.osint.feeds,
+        },
+        "apollo": {
+            "embed_model": cfg.apollo.embed_model,
+            "ttl_seconds": cfg.apollo.ttl_seconds,
+            "retrieve_k": cfg.apollo.retrieve_k,
+        },
     }
     CONFIG_FILE.write_text(json.dumps(data, indent=2))

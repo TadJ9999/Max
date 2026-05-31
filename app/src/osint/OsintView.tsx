@@ -1,6 +1,7 @@
-// OSINT view — severity filter bar, zoomable map, expandable news cards.
+// OSINT view — severity filter bar, zoomable map, expandable news cards,
+// and a slide-in AI chat panel grounded in the indexed articles.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WorldMap } from "./WorldMap";
 import { SEVERITY_TIERS, severityColor, severityTier } from "./countries";
 import {
@@ -8,12 +9,22 @@ import {
   getEvents,
   getHeatmap,
   getNaval,
+  streamOsintChat,
   type Article,
   type GeoEvent,
   type Heatmap,
+  type OsintChatTurn,
   type ShipPosition,
 } from "./osint";
+import { MarkdownView } from "../components/MarkdownView";
 import "./Osint.css";
+
+async function emitMascotEvent(name: string, payload?: unknown) {
+  try {
+    const { emit } = await import("@tauri-apps/api/event");
+    await emit(name, payload);
+  } catch { /* not in Tauri */ }
+}
 
 type Selection = { iso: string; name: string } | null;
 const ALL_SEVERITIES = new Set(SEVERITY_TIERS.map((t) => t.level));
@@ -111,6 +122,57 @@ export function OsintView({ onClose }: { onClose?: () => void }) {
   const [showEvents, setShowEvents] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  // ── AI Chat panel ────────────────────────────────────────────────────────
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMsgs, setChatMsgs] = useState<OsintChatTurn[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const chatAbort = useRef<AbortController | null>(null);
+  const chatThreadRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (chatThreadRef.current) {
+      chatThreadRef.current.scrollTop = chatThreadRef.current.scrollHeight;
+    }
+  }, [chatMsgs]);
+
+  const sendChat = async () => {
+    const q = chatInput.trim();
+    if (!q || chatBusy) return;
+    const history: OsintChatTurn[] = [...chatMsgs, { role: "user", content: q }];
+    setChatMsgs([...history, { role: "assistant", content: "" }]);
+    setChatInput("");
+    setChatBusy(true);
+    void emitMascotEvent("mascot:signal");
+    void emitMascotEvent("mascot:thinking", true);
+    const ctrl = new AbortController();
+    chatAbort.current = ctrl;
+    try {
+      for await (const delta of streamOsintChat(history, selected?.iso ?? null, ctrl.signal)) {
+        setChatMsgs((prev) => {
+          const next = prev.slice();
+          const last = next[next.length - 1];
+          next[next.length - 1] = { ...last, content: last.content + delta };
+          return next;
+        });
+      }
+    } catch (e) {
+      if (!ctrl.signal.aborted) {
+        setChatMsgs((prev) => {
+          const next = prev.slice();
+          next[next.length - 1] = { role: "assistant", content: `⚠ ${(e as Error).message}` };
+          return next;
+        });
+      }
+    } finally {
+      setChatBusy(false);
+      chatAbort.current = null;
+      void emitMascotEvent("mascot:thinking", false);
+    }
+  };
+
+  useEffect(() => () => { chatAbort.current?.abort(); }, []);
+
   const loadHeatmap = useCallback(async () => {
     setLoading(true);
     setHeatmap(await getHeatmap());
@@ -178,6 +240,57 @@ export function OsintView({ onClose }: { onClose?: () => void }) {
 
   return (
     <div className="osint">
+      {/* ── AI chat slide-in panel ── */}
+      <div className={`osint__chat-panel${chatOpen ? " is-open" : ""}`}>
+        <div className="osint__chat-head">
+          <span className="osint__chat-title">
+            ✦ OSINT Intel AI
+            {selected && <span className="osint__chat-scope"> · {selected.name}</span>}
+          </span>
+          <button className="osint__chat-close" onClick={() => setChatOpen(false)}>×</button>
+        </div>
+        <div className="osint__chat-thread" ref={chatThreadRef}>
+          {chatMsgs.length === 0 && (
+            <div className="osint__chat-placeholder">
+              Ask anything about current intelligence. I'll cross-reference indexed
+              articles with broader knowledge to give you the full picture.
+            </div>
+          )}
+          {chatMsgs.map((m, i) => (
+            <div key={i} className={`osint__chat-msg osint__chat-msg--${m.role}`}>
+              {m.role === "assistant" ? (
+                m.content ? (
+                  <MarkdownView source={m.content} />
+                ) : (
+                  <span className="osint__chat-cursor">▍</span>
+                )
+              ) : (
+                m.content
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="osint__chat-input">
+          <input
+            className="osint__chat-text"
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) =>
+              e.key === "Enter" && !e.shiftKey && (e.preventDefault(), void sendChat())
+            }
+            placeholder={`Ask about ${selected ? selected.name : "global"} intel…`}
+            disabled={chatBusy}
+          />
+          <button
+            className="osint__chat-send"
+            onClick={() => void sendChat()}
+            disabled={chatBusy || !chatInput.trim()}
+          >
+            {chatBusy ? "…" : "▶"}
+          </button>
+        </div>
+      </div>
+
       {/* ── header bar ── */}
       <header className="osint__bar">
         <div className="osint__title">
@@ -221,6 +334,13 @@ export function OsintView({ onClose }: { onClose?: () => void }) {
             {loading ? "loading…" : offline ? "engine offline"
               : `${heatmap?.totalArticles ?? 0} signals`}
           </span>
+          <button
+            className={`osint__btn osint__btn--chat${chatOpen ? " is-on" : ""}`}
+            onClick={() => setChatOpen((v) => !v)}
+            title="AI Chat"
+          >
+            ✦ Ask AI
+          </button>
           <button className="osint__btn" onClick={refresh} title="Refresh">↻</button>
           {onClose && (
             <button className="osint__btn osint__btn--close" onClick={onClose} title="Close">×</button>

@@ -1,0 +1,506 @@
+/* Settings view — one-stop config panel. Dark glass aesthetic matching the hub. */
+
+:root {
+  --stg-bg: #03080d;
+  --stg-glass: rgba(10, 18, 28, 0.7);
+  --stg-border: rgba(120, 160, 185, 0.14);
+  --stg-accent: #22d3ee;
+  --stg-text: #e7eef3;
+  --stg-muted: #7f95a3;
+  --stg-green: #00dc78;
+  --stg-red: #ff4d6d;
+}
+
+.stg {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--stg-bg);
+  color: var(--stg-text);
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  font-size: 13px;
+}
+
+.stg__offline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 12px;
+  color: var(--stg-muted);
+}
+.stg__offline-glyph {
+  font-size: 32px;
+  opacity: 0.4;
+}
+
+/* ── header ─────────────────────────────────────────────────────── */
+.stg__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 20px 12px;
+  border-bottom: 1px solid var(--stg-border);
+  flex-shrink: 0;
+}
+.stg__glyph {
+  font-size: 16px;
+  opacity: 0.7;
+}
+.stg__title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--stg-accent);
+  text-transform: uppercase;
+  flex: 1;
+}
+.stg__saved {
+  font-size: 11px;
+  color: var(--stg-green);
+  animation: stg-fade 0.3s ease;
+}
+@keyframes stg-fade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ── body ───────────────────────────────────────────────────────── */
+.stg__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stg__body::-webkit-scrollbar { width: 4px; }
+.stg__body::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, 0.2); border-radius: 2px; }
+
+/* ── section ────────────────────────────────────────────────────── */
+.stg-section {
+  border: 1px solid var(--stg-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--stg-glass);
+  backdrop-filter: blur(12px);
+}
+.stg-section__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  color: var(--stg-text);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  transition: background 0.15s ease;
+}
+.stg-section__head:hover {
+  background: rgba(34, 211, 238, 0.06);
+}
+.stg-section__glyph {
+  font-size: 14px;
+  width: 20px;
+  text-align: center;
+}
+.stg-section__title {
+  flex: 1;
+  text-transform: uppercase;
+}
+.stg-section__chevron {
+  font-size: 9px;
+  color: var(--stg-muted);
+}
+.stg-section__body {
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--stg-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── row ────────────────────────────────────────────────────────── */
+.stg-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+}
+.stg-row__label {
+  flex: 1;
+  color: var(--stg-muted);
+  font-size: 11.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.stg-row__mono {
+  font-family: ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--stg-muted);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stg-row__mono--dim {
+  opacity: 0.55;
+}
+.stg-row__muted {
+  color: var(--stg-muted);
+  font-size: 11px;
+  opacity: 0.6;
+}
+.stg-row-group {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ── inline text input (single-line, used for keep-alive) ─────── */
+.stg-inline {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--stg-border);
+  border-radius: 6px;
+  color: var(--stg-text);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  padding: 4px 8px;
+  width: 80px;
+  outline: none;
+}
+.stg-inline:focus {
+  border-color: rgba(34, 211, 238, 0.45);
+}
+
+/* ── badge ──────────────────────────────────────────────────────── */
+.stg-badge {
+  font-size: 9.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--stg-muted);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  letter-spacing: 0.04em;
+}
+.stg-badge--ok {
+  background: rgba(0, 220, 120, 0.12);
+  color: var(--stg-green);
+  border-color: rgba(0, 220, 120, 0.25);
+}
+.stg-badge--no {
+  background: rgba(255, 77, 109, 0.1);
+  color: var(--stg-red);
+  border-color: rgba(255, 77, 109, 0.22);
+}
+.stg-badge--local {
+  background: rgba(160, 120, 255, 0.12);
+  color: #a870ff;
+  border-color: rgba(160, 120, 255, 0.25);
+}
+.stg-badge--cloud {
+  background: rgba(34, 211, 238, 0.1);
+  color: var(--stg-accent);
+  border-color: rgba(34, 211, 238, 0.22);
+}
+
+/* ── toggle ─────────────────────────────────────────────────────── */
+.stg-toggle {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+  flex-shrink: 0;
+}
+.stg-toggle--on {
+  background: rgba(0, 220, 120, 0.22);
+  border-color: rgba(0, 220, 120, 0.45);
+}
+.stg-toggle__knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--stg-muted);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+.stg-toggle--on .stg-toggle__knob {
+  transform: translateX(18px);
+  background: var(--stg-green);
+}
+
+/* ── segmented control ──────────────────────────────────────────── */
+.stg-seg {
+  display: flex;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--stg-border);
+  border-radius: 7px;
+  padding: 2px;
+}
+.stg-seg__btn {
+  padding: 3px 10px;
+  border-radius: 5px;
+  border: none;
+  background: none;
+  color: var(--stg-muted);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.stg-seg__btn.is-on {
+  background: rgba(34, 211, 238, 0.18);
+  color: var(--stg-accent);
+}
+
+/* ── number input ───────────────────────────────────────────────── */
+.stg-num {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stg-num__label {
+  font-size: 10.5px;
+  color: var(--stg-muted);
+  letter-spacing: 0.03em;
+}
+.stg-num__input {
+  width: 90px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--stg-border);
+  border-radius: 6px;
+  color: var(--stg-text);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  padding: 4px 8px;
+  outline: none;
+}
+.stg-num__input:focus {
+  border-color: rgba(34, 211, 238, 0.45);
+}
+
+/* ── text field ─────────────────────────────────────────────────── */
+.stg-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stg-text__label {
+  font-size: 10.5px;
+  color: var(--stg-muted);
+  letter-spacing: 0.03em;
+}
+.stg-text__input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--stg-border);
+  border-radius: 6px;
+  color: var(--stg-text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 10px;
+  outline: none;
+  box-sizing: border-box;
+}
+.stg-text__input--mono {
+  font-family: ui-monospace, monospace;
+}
+.stg-text__input:focus {
+  border-color: rgba(34, 211, 238, 0.45);
+}
+
+/* ── API key field ──────────────────────────────────────────────── */
+.stg-key {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--stg-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.stg-key__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.stg-key__label {
+  flex: 1;
+  font-size: 12px;
+  color: var(--stg-text);
+}
+.stg-key__badge {
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: rgba(255, 77, 109, 0.1);
+  color: var(--stg-red);
+  border: 1px solid rgba(255, 77, 109, 0.2);
+}
+.stg-key__badge.is-set {
+  background: rgba(0, 220, 120, 0.1);
+  color: var(--stg-green);
+  border-color: rgba(0, 220, 120, 0.22);
+}
+.stg-key__ok {
+  font-size: 11px;
+  color: var(--stg-green);
+}
+.stg-key__row {
+  display: flex;
+  gap: 6px;
+}
+.stg-key__input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--stg-border);
+  border-radius: 6px;
+  color: var(--stg-text);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  padding: 5px 10px;
+  outline: none;
+}
+.stg-key__input:focus {
+  border-color: rgba(34, 211, 238, 0.4);
+}
+.stg-key__save {
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  background: rgba(34, 211, 238, 0.1);
+  color: var(--stg-accent);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.stg-key__save:hover:not(:disabled) {
+  background: rgba(34, 211, 238, 0.2);
+}
+.stg-key__save:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── list (feeds / paths) ───────────────────────────────────────── */
+.stg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.stg-list__label {
+  font-size: 10.5px;
+  color: var(--stg-muted);
+  letter-spacing: 0.03em;
+}
+.stg-list__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.stg-list__empty {
+  font-size: 11px;
+  color: var(--stg-muted);
+  opacity: 0.6;
+  padding: 4px 0;
+}
+.stg-list__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.stg-list__val {
+  flex: 1;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--stg-muted);
+}
+.stg-list__rm {
+  background: none;
+  border: none;
+  color: var(--stg-muted);
+  font-size: 14px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+.stg-list__rm:hover {
+  opacity: 1;
+  color: var(--stg-red);
+}
+.stg-list__add {
+  display: flex;
+  gap: 6px;
+}
+.stg-list__input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--stg-border);
+  border-radius: 6px;
+  color: var(--stg-text);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  padding: 5px 8px;
+  outline: none;
+}
+.stg-list__input:focus {
+  border-color: rgba(34, 211, 238, 0.4);
+}
+.stg-list__addbtn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--stg-border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--stg-muted);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.stg-list__addbtn:hover {
+  background: rgba(34, 211, 238, 0.12);
+  color: var(--stg-accent);
+}
+
+/* ── hint text ──────────────────────────────────────────────────── */
+.stg-hint {
+  font-size: 11px;
+  color: var(--stg-muted);
+  opacity: 0.7;
+  line-height: 1.5;
+  margin: 0;
+}
+.stg-hint code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10.5px;
+}

@@ -78,12 +78,26 @@ type Block =
   | { type: "ul"; items: string[] }
   | { type: "ol"; items: string[] }
   | { type: "hr" }
+  | { type: "table"; headers: string[]; rows: string[][] }
   | { type: "p"; text: string };
+
+function parseTableRow(line: string): string[] {
+  return line
+    .replace(/^\||\|$/g, "")
+    .split("|")
+    .map((c) => c.trim());
+}
+
+function isTableSeparator(line: string): boolean {
+  return /^\|?[\s\-:|]+(\|[\s\-:|]+)*\|?$/.test(line.trim()) && line.includes("-");
+}
 
 function parseBlocks(src: string): Block[] {
   const blocks: Block[] = [];
   let para: string[] = [];
   let list: { type: "ul" | "ol"; items: string[] } | null = null;
+  let table: { headers: string[]; rows: string[][] } | null = null;
+  let tablePhase: "header" | "sep" | "rows" = "header";
 
   const flushPara = () => {
     if (para.length) {
@@ -97,17 +111,51 @@ function parseBlocks(src: string): Block[] {
       list = null;
     }
   };
+  const flushTable = () => {
+    if (table) {
+      blocks.push({ type: "table", headers: table.headers, rows: table.rows });
+      table = null;
+      tablePhase = "header";
+    }
+  };
 
   for (const line of src.split("\n")) {
+    const isTableLine = line.trim().startsWith("|") || (table && line.trim().includes("|"));
+
+    if (table) {
+      if (isTableLine) {
+        if (tablePhase === "sep" && isTableSeparator(line)) {
+          tablePhase = "rows";
+        } else if (tablePhase === "header") {
+          // First row after header — if separator, advance; else treat header as a row too
+          if (isTableSeparator(line)) {
+            tablePhase = "rows";
+          } else {
+            table.rows.push(parseTableRow(line));
+          }
+        } else {
+          if (!isTableSeparator(line)) {
+            table.rows.push(parseTableRow(line));
+          }
+        }
+        continue;
+      } else {
+        flushTable();
+      }
+    }
+
     if (line.trim() === "") {
       flushPara();
       flushList();
+      flushTable();
       continue;
     }
+
     const h = line.match(/^(#{1,6})\s+(.*)$/);
     const ul = line.match(/^\s*[-*+]\s+(.*)$/);
     const ol = line.match(/^\s*\d+\.\s+(.*)$/);
     const hr = /^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line);
+    const isTableStart = line.trim().startsWith("|") && line.trim().endsWith("|");
 
     if (h) {
       flushPara();
@@ -117,6 +165,11 @@ function parseBlocks(src: string): Block[] {
       flushPara();
       flushList();
       blocks.push({ type: "hr" });
+    } else if (isTableStart) {
+      flushPara();
+      flushList();
+      table = { headers: parseTableRow(line), rows: [] };
+      tablePhase = "sep";
     } else if (ul) {
       flushPara();
       if (!list || list.type !== "ul") {
@@ -138,6 +191,7 @@ function parseBlocks(src: string): Block[] {
   }
   flushPara();
   flushList();
+  flushTable();
   return blocks;
 }
 
@@ -154,6 +208,23 @@ function Blocks({ text }: { text: string }) {
           );
         }
         if (b.type === "hr") return <hr key={i} className="md__hr" />;
+        if (b.type === "table")
+          return (
+            <div key={i} className="md__table-wrap">
+              <table className="md__table">
+                <thead>
+                  <tr>{b.headers.map((h, j) => <th key={j}>{renderInline(h, `th${i}-${j}`)}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {b.rows.map((row, j) => (
+                    <tr key={j}>
+                      {row.map((cell, k) => <td key={k}>{renderInline(cell, `td${i}-${j}-${k}`)}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
         if (b.type === "ul")
           return (
             <ul key={i} className="md__ul">

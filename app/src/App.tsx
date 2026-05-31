@@ -60,6 +60,29 @@ function App() {
     void initFloatingWindow();
   }, []);
 
+  // Cross-window mascot signals: Hub features (Market/OSINT/Apollo) emit these
+  // Tauri events when an LLM call starts or finishes, so the main-widget mascot
+  // animates even when the user is looking at a different window.
+  useEffect(() => {
+    let u1: (() => void) | undefined;
+    let u2: (() => void) | undefined;
+    void (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        u1 = await listen("mascot:signal", () => ping());
+        u2 = await listen("mascot:thinking", (e: { payload: boolean }) =>
+          setChatThinking(e.payload),
+        );
+      } catch {
+        /* not running in Tauri */
+      }
+    })();
+    return () => {
+      u1?.();
+      u2?.();
+    };
+  }, [ping]);
+
   // System status → red core when the host is unreachable. Connectivity is a
   // stand-in until a real engine health probe is wired (ROADMAP Phase 3/4).
   useEffect(() => {

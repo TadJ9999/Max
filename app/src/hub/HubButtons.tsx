@@ -63,6 +63,12 @@ const ICONS: Record<HubTab, React.ReactNode> = {
       <path d="M10 8.2v3.6M9.1 8.9h1.6a0.7 0.7 0 0 1 0 1.4H9.4a0.7 0.7 0 0 0 0 1.4h1.5" stroke="currentColor" strokeWidth="0.9" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
+  settings: (
+    <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="10" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M10 2v1.5M10 16.5V18M2 10h1.5M16.5 10H18M4.1 4.1l1.1 1.1M14.8 14.8l1.1 1.1M15.9 4.1l-1.1 1.1M5.2 14.8l-1.1 1.1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  ),
 };
 
 const META: { id: HubTab; title: string; cls: string }[] = [

@@ -115,10 +115,11 @@ def health() -> dict:
 
 
 def _config_view() -> dict:
-    """The UI-facing settings. Never exposes the API key — only whether one is set."""
+    """The UI-facing settings. Never exposes API key values — only whether they are set."""
     return {
         "allow_cloud": config.allow_cloud,
         "cloud_key_set": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "finnhub_key_set": bool(os.environ.get("FINNHUB_API_KEY")),
         "delegate": {
             "mode": config.delegate.mode,
             "max_parallel_local": config.delegate.max_parallel_local,
@@ -126,6 +127,28 @@ def _config_view() -> dict:
         },
         "idle": {"keep_alive": config.idle.keep_alive},
         "workspace_allowlist": config.workspace_allowlist,
+        "osint": {
+            "gdelt_query": config.osint.gdelt_query,
+            "gdelt_timespan": config.osint.gdelt_timespan,
+            "gdelt_max_records": config.osint.gdelt_max_records,
+            "ttl_seconds": config.osint.ttl_seconds,
+            "naval_ttl_seconds": config.osint.naval_ttl_seconds,
+            "feeds": config.osint.feeds,
+        },
+        "market": {
+            "watchlist": config.market.watchlist,
+            "ttl_seconds": config.market.ttl_seconds,
+        },
+        "apollo": {
+            "embed_model": config.apollo.embed_model,
+            "db_path": config.apollo.db_path,
+            "ttl_seconds": config.apollo.ttl_seconds,
+            "retrieve_k": config.apollo.retrieve_k,
+        },
+        "providers": [
+            {"name": p.name, "kind": p.kind, "base_url": p.base_url}
+            for p in config.providers
+        ],
     }
 
 
@@ -144,11 +167,34 @@ class IdlePatch(BaseModel):
     keep_alive: str | None = None
 
 
+class OsintPatch(BaseModel):
+    gdelt_query: str | None = None
+    gdelt_timespan: str | None = None
+    gdelt_max_records: int | None = None
+    ttl_seconds: int | None = None
+    naval_ttl_seconds: int | None = None
+    feeds: list[str] | None = None
+
+
+class MarketPatch(BaseModel):
+    watchlist: list[str] | None = None
+    ttl_seconds: int | None = None
+
+
+class ApolloPatch(BaseModel):
+    embed_model: str | None = None
+    ttl_seconds: int | None = None
+    retrieve_k: int | None = None
+
+
 class ConfigPatch(BaseModel):
     allow_cloud: bool | None = None
     workspace_allowlist: list[str] | None = None
     delegate: DelegatePatch | None = None
     idle: IdlePatch | None = None
+    osint: OsintPatch | None = None
+    market: MarketPatch | None = None
+    apollo: ApolloPatch | None = None
 
 
 @app.put("/config")
@@ -170,7 +216,67 @@ def update_config(patch: ConfigPatch) -> dict:
             config.delegate.max_parallel_cloud = max(1, d.max_parallel_cloud)
     if patch.idle is not None and patch.idle.keep_alive is not None:
         config.idle.keep_alive = patch.idle.keep_alive
+    if patch.osint is not None:
+        o = patch.osint
+        if o.gdelt_query is not None:
+            config.osint.gdelt_query = o.gdelt_query
+        if o.gdelt_timespan is not None:
+            config.osint.gdelt_timespan = o.gdelt_timespan
+        if o.gdelt_max_records is not None:
+            config.osint.gdelt_max_records = max(10, o.gdelt_max_records)
+        if o.ttl_seconds is not None:
+            config.osint.ttl_seconds = max(60, o.ttl_seconds)
+        if o.naval_ttl_seconds is not None:
+            config.osint.naval_ttl_seconds = max(3600, o.naval_ttl_seconds)
+        if o.feeds is not None:
+            config.osint.feeds = o.feeds
+    if patch.market is not None:
+        m = patch.market
+        if m.watchlist is not None:
+            config.market.watchlist = m.watchlist
+            market.set_watchlist(m.watchlist)
+        if m.ttl_seconds is not None:
+            config.market.ttl_seconds = max(5, m.ttl_seconds)
+    if patch.apollo is not None:
+        a = patch.apollo
+        if a.embed_model is not None:
+            config.apollo.embed_model = a.embed_model
+        if a.ttl_seconds is not None:
+            config.apollo.ttl_seconds = max(3600, a.ttl_seconds)
+        if a.retrieve_k is not None:
+            config.apollo.retrieve_k = max(1, a.retrieve_k)
     save_overrides(config)
+    return _config_view()
+
+
+class KeyPatch(BaseModel):
+    name: str   # e.g. "ANTHROPIC_API_KEY" or "FINNHUB_API_KEY"
+    value: str  # new value — write-only; never returned
+
+
+@app.post("/config/key")
+def set_api_key(patch: KeyPatch) -> dict:
+    """Write an API key to engine/.env and reload it into the running process.
+
+    Accepted names: ANTHROPIC_API_KEY, FINNHUB_API_KEY. The value is stored in
+    the .env file only — it is never echoed back to the caller."""
+    allowed = {"ANTHROPIC_API_KEY", "FINNHUB_API_KEY"}
+    if patch.name not in allowed:
+        raise HTTPException(status_code=400, detail=f"Unknown key name '{patch.name}'")
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    lines: list[str] = env_path.read_text().splitlines() if env_path.exists() else []
+    found = False
+    new_lines: list[str] = []
+    for line in lines:
+        if line.startswith(f"{patch.name}="):
+            new_lines.append(f"{patch.name}={patch.value}")
+            found = True
+        else:
+            new_lines.append(line)
+    if not found:
+        new_lines.append(f"{patch.name}={patch.value}")
+    env_path.write_text("\n".join(new_lines) + "\n")
+    os.environ[patch.name] = patch.value
     return _config_view()
 
 
@@ -592,10 +698,50 @@ async def osint_events() -> dict:
 
 
 @app.get("/osint/naval")
-async def osint_naval() -> dict:
+async def osint_naval_endpoint() -> dict:
     """US carrier / big-deck amphib position *estimates* from public OSINT
     trackers (USNI + TWZ). Region-level and dated — not real-time GPS."""
     return await naval.get()
+
+
+class OsintChatRequest(BaseModel):
+    messages: list[ChatMessage]
+    country: str | None = None  # ISO-A3 to focus context; None = global
+
+
+@app.post("/osint/chat")
+async def osint_chat(req: OsintChatRequest):
+    """AI chat grounded in indexed OSINT articles + broader reasoning.
+
+    The system prompt includes the most recent headlines so the model can
+    cite them, then instructs it to cross-reference with its own knowledge
+    to verify and extend the analysis. Cloud Claude when allowed, else local."""
+    articles = await osint.get_articles(iso=req.country, limit=20)
+    article_lines = "\n".join(
+        f"• [Sev {a.severity}] {a.title} ({a.domain}): {a.summary or '(no summary)'}"
+        for a in articles[:15]
+    )
+    country_ctx = f"Focused on: {req.country.upper()}" if req.country else "Global view — all regions"
+    system = (
+        "You are an elite OSINT intelligence analyst embedded in the Max platform. "
+        f"{country_ctx}.\n\n"
+        "INDEXED INTELLIGENCE (last 24 h, ranked by severity):\n"
+        f"{article_lines}\n\n"
+        "GUIDELINES:\n"
+        "- Lead with the indexed data, but cross-reference with your broader knowledge "
+        "to verify, add context, and surface patterns the data alone doesn't show.\n"
+        "- Clearly flag when you go beyond indexed sources: prefix such sentences with "
+        "'[Broader knowledge]'.\n"
+        "- If asked to verify a specific claim, state your confidence (High / Medium / Low) "
+        "and why.\n"
+        "- Be concise and structured; use bullet points for multi-part answers.\n"
+        "- Never fabricate specific numbers, dates, or names — say 'unverified' if uncertain."
+    )
+    history = [m.model_dump() for m in req.messages]
+    provider_name, model = _ai_route()
+    provider = build_provider(provider_name, config)
+    messages = [{"role": "system", "content": system}, *history]
+    return _sse_stream(provider, model, messages)
 
 
 # ---- Market: live US-stock board + AI "Ingest" -------------------------

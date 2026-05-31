@@ -23,18 +23,28 @@ const land = feature(
 // ── Ship silhouettes (top-down, bow pointing up, centered at 0,0) ──────────
 //
 // Aircraft carrier (CVN – Nimitz / Ford class)
-// Defining features: very elongated, angled flight deck on PORT side (left),
-// island superstructure bump on STARBOARD side (right), pointed bow.
+// Very elongated hull (3:1 ratio). The angled flight deck extends significantly
+// to PORT (left). The island superstructure is a distinct bump on STARBOARD
+// (right side, mid-ship). Sharp clipper bow.
 const CARRIER_D =
-  "M1,-14 L5,-11 L5.5,0 L9.5,0 L9.5,7.5 L5.5,7.5 " +
-  "L4,13 L-4,13 L-4.5,4 L-10.5,-0.5 L-7.5,-10.5 L-2.5,-13 Z";
+  // hull port side + angled deck extension
+  "M0,-16 L2.5,-13 L3,-4 " +        // bow → port side
+  "L11,-4 L12,0 L11,4 L3,4 " +      // angled deck: extends 8 units to port
+  "L3,11 " +                         // port stern corner
+  // stern + starboard
+  "L-3,11 L-3.5,6 " +               // starboard stern
+  "L-6.5,5 L-7,2 L-6.5,-1 L-3.5,-2 " + // island bump starboard mid-ship
+  "L-3,-13 L-1.5,-15 Z";            // starboard side → bow
 
 // Amphibious assault ship (LHD/LHA – Wasp / America class)
-// Defining features: shorter / wider, NO angled deck (symmetric), island on
-// starboard, rounded bow — clearly different silhouette from a carrier.
+// Shorter and wider than a carrier (2:1 ratio). Full-length flat deck (no
+// angled section), island on starboard, more rounded hull form.
 const AMPHIB_D =
-  "M0,-11 L4,-9.5 L5.5,-5 L5.5,-1 L8.5,-1 L8.5,5 " +
-  "L5.5,5 L5,10 L-5,10 L-5.5,-5 L-4,-9.5 Z";
+  "M0,-12 L3.5,-10 L4.5,-3 " +      // bow → port
+  "L4.5,8 L3,11 " +                  // port side → stern
+  "L-3,11 L-4.5,8 " +               // starboard stern
+  "L-6,4 L-6.5,1 L-6,-2 L-4.5,-3 " + // island: starboard mid-ship
+  "L-4.5,-10 L-3,-12 Z";            // starboard side → bow
 
 // ── types ───────────────────────────────────────────────────────────────────
 type VB = { x: number; y: number; w: number; h: number };
