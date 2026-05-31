@@ -34,7 +34,11 @@ if (-not $AppDir -or -not (Test-Path $AppDir)) {
     $AppDir = Split-Path -Parent $PSScriptRoot
 }
 
-$HEALTH_URL   = "http://localhost:8001/health"
+# Use 127.0.0.1, NOT 'localhost': on Windows 'localhost' resolves to ::1 (IPv6)
+# first, but the engine (uvicorn) binds only 127.0.0.1 (IPv4). A localhost
+# request wastes ~2s failing over IPv6 before falling back to IPv4 — which
+# blows the 2s health timeout and makes Leo think a healthy engine is down.
+$HEALTH_URL   = "http://127.0.0.1:8001/health"
 $MAX_ATTEMPTS = 3
 
 try { $Host.UI.RawUI.WindowTitle = "LEO - SELF-DIAGNOSE MODE" } catch { }
@@ -162,9 +166,9 @@ function Invoke-EnvSniff {
         $tcp.Close()
     } catch { }
 
-    # 5. Ollama (local fallback)
+    # 5. Ollama (local fallback) — 127.0.0.1, not localhost (see HEALTH_URL note)
     try {
-        $null = Invoke-WebRequest -Uri "http://localhost:11434" -TimeoutSec 1 -ErrorAction Stop -UseBasicParsing
+        $null = Invoke-WebRequest -Uri "http://127.0.0.1:11434" -TimeoutSec 1 -ErrorAction Stop -UseBasicParsing
         Say "[ok] Ollama reachable (local fallback available)" "Green"
     } catch {
         Say "[!] Ollama unreachable (local fallback offline)" "Yellow"
@@ -283,7 +287,7 @@ function Invoke-OllamaDiagnosis([System.Collections.Generic.List[string]]$Issues
             stream = $false
         } | ConvertTo-Json
 
-        $resp = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" `
+        $resp = Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/generate" `
             -Method POST -Body $body -ErrorAction Stop -TimeoutSec 15
         return $resp.response
     } catch {

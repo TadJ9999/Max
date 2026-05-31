@@ -29,11 +29,15 @@ taskkill /F /IM Max.exe >nul 2>&1
 echo [Max] Launching desktop app - the engine starts automatically...
 start "" "%MAXEXE%"
 
-rem  Health gate: poll /health for up to 40 seconds in background.
+rem  Health gate: poll /health for up to 60 seconds in background.
 rem  If it never comes up, open Leo in a dedicated rescue terminal.
+rem  NOTE: use 127.0.0.1 (not 'localhost'). On Windows 'localhost' resolves to
+rem  ::1 (IPv6) first, but uvicorn binds only 127.0.0.1 (IPv4) — so a localhost
+rem  request wastes ~2s failing over IPv6 before falling back, blowing the 2s
+rem  timeout and tripping Leo on every launch even when the engine is healthy.
 start "Max Health Gate" /min cmd /c ^
     powershell -NoProfile -NonInteractive -Command ^
-    "$ok=$false; for($i=0;$i -lt 40;$i++){try{$r=Invoke-WebRequest -Uri 'http://localhost:8001/health' -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop;if($r.StatusCode -eq 200){$ok=$true;break}}catch{};Start-Sleep 1}; if(-not $ok){Start-Process powershell -ArgumentList '-NoExit','-ExecutionPolicy','Bypass','-File','\"%LEOSC%\"','-AppDir','\"%APPDIR%\"' -WindowStyle Normal}"
+    "$ok=$false; for($i=0;$i -lt 60;$i++){try{$r=Invoke-WebRequest -Uri 'http://127.0.0.1:8001/health' -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop;if($r.StatusCode -eq 200){$ok=$true;break}}catch{};Start-Sleep 1}; if(-not $ok){Start-Process powershell -ArgumentList '-NoExit','-ExecutionPolicy','Bypass','-File','\"%LEOSC%\"','-AppDir','\"%APPDIR%\"' -WindowStyle Normal}"
 
 goto :end
 

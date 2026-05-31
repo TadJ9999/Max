@@ -116,6 +116,232 @@
   overflow: hidden;
 }
 
+/* ---- Tab strip ---- */
+.shadow-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 0;
+  background: rgba(0,0,0,0.25);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+}
+
+.shadow-tabs__list {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.shadow-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 180px;
+  min-width: 90px;
+  padding: 5px 8px;
+  border-radius: 6px 6px 0 0;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid transparent;
+  border-bottom: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: rgba(200,216,232,0.6);
+  transition: background 0.15s, color 0.15s;
+}
+.shadow-tab:hover { background: rgba(255,255,255,0.06); }
+.shadow-tab--active {
+  background: rgba(34,211,238,0.1);
+  border-color: rgba(34,211,238,0.25);
+  color: #22d3ee;
+}
+
+.shadow-tab__glyph { font-size: 9px; opacity: 0.7; flex-shrink: 0; }
+.shadow-tab__spin {
+  width: 9px; height: 9px; flex-shrink: 0;
+  border: 1.5px solid rgba(34,211,238,0.2);
+  border-top-color: #22d3ee;
+  border-radius: 50%;
+  animation: shadow-spin 0.7s linear infinite;
+}
+.shadow-tab__title {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shadow-tab__close {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 3px;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+.shadow-tab__close:hover { opacity: 1; background: rgba(255,64,64,0.2); color: #ff6060; }
+
+.shadow-tabs__new {
+  width: 24px; height: 24px;
+  border: none;
+  background: rgba(255,255,255,0.04);
+  color: rgba(200,216,232,0.6);
+  cursor: pointer;
+  border-radius: 5px;
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.shadow-tabs__new:hover { background: rgba(34,211,238,0.15); color: #22d3ee; }
+
+.shadow-tabs__status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: rgba(200,216,232,0.55);
+  flex-shrink: 0;
+  padding-bottom: 4px;
+}
+
+/* ---- Tor features bar ---- */
+.shadow-features {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  background: rgba(0,255,136,0.03);
+  border-bottom: 1px solid rgba(0,255,136,0.08);
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.shadow-feat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  height: 24px;
+  border-radius: 5px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  color: rgba(200,216,232,0.7);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.shadow-feat:hover:not(:disabled) {
+  background: rgba(34,211,238,0.1);
+  color: #22d3ee;
+  border-color: rgba(34,211,238,0.25);
+}
+.shadow-feat:disabled { opacity: 0.4; cursor: not-allowed; }
+.shadow-feat--on {
+  background: rgba(245,200,66,0.12);
+  color: #f5c842;
+  border-color: rgba(245,200,66,0.3);
+}
+.shadow-feat--disc {
+  background: rgba(255,64,64,0.08);
+  color: rgba(255,100,100,0.85);
+  border-color: rgba(255,64,64,0.2);
+}
+.shadow-feat--disc:hover:not(:disabled) {
+  background: rgba(255,64,64,0.16);
+  color: #ff6060;
+  border-color: rgba(255,64,64,0.4);
+}
+
+.shadow-features__search {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+}
+.shadow-features__search-input {
+  height: 24px;
+  width: 150px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 5px;
+  color: #c8d8e8;
+  font-size: 11px;
+  padding: 0 8px;
+  outline: none;
+}
+.shadow-features__search-input:focus { border-color: rgba(34,211,238,0.4); }
+.shadow-feat--search { font-weight: 500; }
+
+.shadow-features__spacer { flex: 1; min-width: 8px; }
+.shadow-features__age {
+  font-size: 10px;
+  color: rgba(200,216,232,0.45);
+  font-family: monospace;
+  white-space: nowrap;
+}
+
+/* ---- Bookmarks dropdown ---- */
+.shadow-bookmarks {
+  position: absolute;
+  top: 96px;
+  left: 8px;
+  z-index: 30;
+  width: 320px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: rgba(10,10,20,0.98);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.6);
+  padding: 6px;
+}
+.shadow-bookmarks__empty {
+  font-size: 11px;
+  color: rgba(200,216,232,0.45);
+  padding: 10px;
+  text-align: center;
+}
+.shadow-bookmark {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s;
+}
+.shadow-bookmark:hover { background: rgba(34,211,238,0.08); }
+.shadow-bookmark__title { font-size: 11px; color: #22d3ee; font-weight: 600; padding-right: 18px; }
+.shadow-bookmark__url {
+  font-size: 9px;
+  color: rgba(200,216,232,0.4);
+  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shadow-bookmark__del {
+  position: absolute;
+  top: 6px; right: 6px;
+  border: none; background: transparent;
+  color: rgba(200,216,232,0.4);
+  cursor: pointer;
+  font-size: 13px;
+  border-radius: 3px;
+}
+.shadow-bookmark__del:hover { color: #ff6060; background: rgba(255,64,64,0.15); }
+
 /* ---- Toolbar ---- */
 .shadow-toolbar {
   display: flex;

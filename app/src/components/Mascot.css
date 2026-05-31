@@ -496,7 +496,10 @@
 }
 
 .tor-streak--down {
-  top: 50%;
+  /* Same region as the up streak — between the core and the lock above it —
+     but anchored at the top (lock side) and grown downward so it reads as a
+     pulse travelling from the lock down into the core. */
+  bottom: 50%;
   height: 80px;
   background: linear-gradient(to bottom, transparent, #00ff88, transparent);
   transform: translateX(-50%) scaleY(0);

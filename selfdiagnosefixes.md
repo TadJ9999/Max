@@ -61,3 +61,21 @@ by the AI diagnosis.
 - **Root cause:** ROOT CAUSE:
 - **Fix:** Port 8001 is held by a stale process or hung FastAPI instance. Ollama is also down, preventing the diagnosis fallback service from running.  FIX COMMANDS: lsof -ti:8001 | xargs kill -9 sudo systemctl restart ollama sleep 2 python -m uvicorn main:app --host 0.0.0.0 --port 8001  VERIFICATION: curl http://localhost:8001/health curl http://localhost:11434/api/tags  Both should return 200 with valid responses. If curl fails, check that FastAPI started without errors in the terminal where you ran the python command.
 
+
+## 2026-05-31T20:34Z - Boot failure (Leo)
+- **Status:** proposed
+- **Root cause:** ROOT CAUSE:
+- **Fix:** Port 8001 is held by a stale process from a previous failed startup. The engine cannot bind to the port, and Ollama is down so local diagnosis cannot run.  FIX COMMANDS: lsof -ti:8001 | xargs kill -9 sleep 2 cd /path/to/max && python -m uvicorn main:app --host 0.0.0.0 --port 8001  (Replace /path/to/max with your actual project directory)  VERIFICATION: curl http://localhost:8001/health Expected: HTTP 200 response with health status, not connection refused.
+
+
+## 2026-05-31T20:34Z - Boot failure (Leo)
+- **Status:** proposed
+- **Root cause:** ROOT CAUSE:
+- **Fix:** Port 8001 is held by a stale process or another service. FastAPI cannot bind to the port, so the engine fails silently. Ollama being down means local diagnosis cannot help.  FIX COMMANDS: lsof -i :8001 Kill the process using port 8001 with: kill -9 <PID> Then restart the engine: cd /path/to/max && python -m uvicorn main:app --port 8001 --host 0.0.0.0  VERIFICATION: curl -s http://localhost:8001/health Should return HTTP 200 with a valid response. If you get connection refused, the port is still blocked or FastAPI didn't start.
+
+
+## 2026-05-31T20:35Z - Boot failure (Leo)
+- **Status:** proposed
+- **Root cause:** ROOT CAUSE:
+- **Fix:** Port 8001 is held by a stale process or crashed FastAPI instance. Without Ollama running, the engine cannot start its local diagnosis fallback, compounding the startup failure.  FIX COMMANDS: lsof -i :8001 | grep LISTEN | awk '{print $2}' | xargs kill -9 sleep 2 cd /path/to/max && python -m uvicorn main:app --host 0.0.0.0 --port 8001  (Replace /path/to/max with your actual FastAPI project directory)  VERIFICATION: curl -s http://localhost:8001/health | grep -q "ok" && echo "ENGINE UP" || echo "FAILED"  If curl fails, check logs: tail -f /path/to/max/engine.log
+

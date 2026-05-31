@@ -752,9 +752,13 @@ body {
 }
 
 /* TorLock sits above the mascot rings; the connector line is drawn by CSS
-   streaks in Mascot.css relative to the mascot's center. */
+   streaks in Mascot.css relative to the mascot's center. Nudge it up so it
+   sits clear of the rings and closer to where the streaks terminate. */
 .widget__mascot-wrap .tor-lock {
   z-index: 10;
+  position: relative;
+  top: -14px;
+  margin-bottom: -10px; /* don't let the upward nudge add dead space */
 }
 
 /* scrollbars */
