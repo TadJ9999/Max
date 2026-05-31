@@ -81,6 +81,22 @@ class AegisConfig(BaseModel):
     max_fixes_per_error: int = 3     # loop-protection cap
 
 
+class SentinelConfig(BaseModel):
+    """Space situational awareness. SGP4 propagation runs client-side; this just
+    serves raw TLEs + NEO/space-weather/fireball/launch/ISS layers with TTL caches.
+    The NASA key is read from the environment (``NASA_API_KEY``), never stored here."""
+
+    tle_groups: list[str] = Field(
+        default_factory=lambda: ["stations", "starlink", "gps", "galileo", "weather"]
+    )
+    tle_ttl: int = 7200       # TLEs update ~daily
+    neo_ttl: int = 3600
+    sw_ttl: int = 600         # space weather refreshes often
+    fireball_ttl: int = 21600
+    launch_ttl: int = 3600
+    iss_ttl: int = 5          # live position
+
+
 class PersonalityConfig(BaseModel):
     """How Max addresses and speaks to the user."""
 
@@ -174,6 +190,7 @@ class EngineConfig(BaseModel):
     apollo: ApolloConfig = Field(default_factory=ApolloConfig)
     rag: RagConfig = Field(default_factory=RagConfig)
     aegis: AegisConfig = Field(default_factory=AegisConfig)
+    sentinel: SentinelConfig = Field(default_factory=SentinelConfig)
     personality: PersonalityConfig = Field(default_factory=PersonalityConfig)
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
     darknet: DarkNetConfig = Field(default_factory=DarkNetConfig)

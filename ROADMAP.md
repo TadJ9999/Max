@@ -428,6 +428,23 @@ secrets redacted before any store or egress.
 
 ---
 
+### Phase 16 — Aegis Security Posture: Full Codebase Vulnerability Scanner  🛡 *Max audits its own code + dependencies and helps Leo fix what it finds* — **PLANNED**
+
+*Extends Aegis from reactive (catch runtime errors) to proactive (find vulnerabilities before they bite). A new **Security Posture** sub-tab inside the 🛡 Aegis tab runs two scanners: **SAST** (regex/heuristic rules over the codebase, AI-triaged) and **SCA** (parse dependency manifests/lockfiles and query OSV.dev for known CVEs/GHSAs). Findings persist with status across scans, drive a posture score + severity counts aggregated over time, run on a configurable in-engine schedule (plus a manual "Run scan now"), and each finding can be clicked to "Ask Leo to fix" — reusing the existing diagnose → apply (stash → patch → verify → keep/rollback) machinery. Adds zero new runtime deps. Full plan: `C:\Users\tadjo\.claude\plans\new-feature-plan-inside-enchanted-hamming.md`.*
+
+**Decisions locked:** SAST = heuristic rules + AI triage (no new deps) · SCA = **OSV.dev** batch API (free, no key, covers PyPI/npm/crates.io; returns CVE/GHSA + CVSS + fixed version) via existing `httpx`, TTL-cached, offline-safe · in-engine async-interval scheduler + manual trigger (no OS cron) · sub-tab toggle inside Aegis (`Runtime Errors` | `Security Posture`) · posture score 0–100 (`100 − 15·crit − 7·high − 3·med − 1·low`) + severity counts + scan-history trend strip · findings dedup by fingerprint, status open/fixed/ignored, auto-`fixed` on reconcile when no longer seen · "Ask Leo to fix" reuses diagnose/apply/rollback; SCA fixes = manifest version-bump diffs · **ecosystem-aware verify** (Python→pytest, npm→npm ci+tsc, rust→cargo check; missing toolchain → "applied, needs manual verify") · configurable **score-threshold gate** → "at risk" banner · one-click **Markdown posture report** export · new `aegis_scans` + `aegis_findings` tables in `.apollo.db`; reuses `rag/chunker` file-walker, `aegis/redact`, and the provider router.
+
+- [ ] **SAST scanner** (`aegis/scanner.py`): heuristic rule registry (secrets, eval/exec, shell=True, SQL injection, unsafe pickle/yaml, XSS sinks, disabled TLS, weak hashing, debug/CORS) + AI triage; snippets redacted via `aegis/redact.py`; file walk via `rag/chunker.gather_files`.
+- [ ] **SCA scanner** (`aegis/deps.py` + `aegis/osv.py`): parse `engine/pyproject.toml` / `app/package-lock.json` / `app/src-tauri/Cargo.lock`; OSV.dev `querybatch` → CVE findings with fixed versions + CVSS→severity; injectable httpx; offline-safe.
+- [ ] **Store + scan service**: `aegis_scans` / `aegis_findings` tables in `store.py`; `scan_service.py` `run_scan` (SAST+SCA independent), dedup/reconcile, posture score; in-engine scheduler + `scan_on_startup` (add FastAPI startup hook).
+- [ ] **Endpoints** (`main.py`): `POST /aegis/scan`, `GET /aegis/scan/status`, `GET /aegis/posture`, `GET /aegis/findings`, `GET /aegis/scans`, `POST /aegis/findings/{id}/fix` (SSE), `POST /aegis/findings/{id}/status`, `GET /aegis/report`.
+- [ ] **Ask-Leo-to-fix + ecosystem-aware apply**: `fix_finding` SSE (SAST = code diff, SCA = version bump); generalize `AegisService` verify by changed paths (pytest / npm / cargo).
+- [ ] **Security Posture UI** (`app/src/aegis/SecurityPostureView.tsx`): score gauge, at-risk banner, trend strip, SAST/SCA finding list + detail, fix/approve/ignore/reopen, report export; sub-tab toggle added to `AegisView.tsx`; styles in `Aegis.css`.
+- [ ] **Config + Settings**: `AegisConfig` scan/OSV/threshold fields in `config.py` exposed via `/config`; controls in `settings/SettingsView.tsx`; `aegis_security` prompt in `prompts.py`.
+- [ ] **Tests**: `test_aegis_scanner.py`, `test_aegis_deps_osv.py` (mocked httpx), `test_aegis_scan_store.py`.
+
+---
+
 ## ✅ Completed Phases
 
 ### Phase 4 — Delegate system: parallel sessions & multi-model orchestration ✅

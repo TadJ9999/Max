@@ -82,6 +82,11 @@
   border-color: rgba(255, 107, 107, 0.4);
   background: rgba(255, 107, 107, 0.1);
 }
+.hub__tab--sentinel.is-active {
+  color: #00ffc8;
+  border-color: rgba(0, 255, 200, 0.4);
+  background: rgba(0, 255, 200, 0.1);
+}
 .hub__tab--settings {
   margin-left: auto;
 }
@@ -123,7 +128,8 @@
 .hub__view > .osint,
 .hub__view > .market,
 .hub__view > .apollo,
-.hub__view > .aegis {
+.hub__view > .aegis,
+.hub__view > .sentinel {
   height: 100% !important;
   min-height: 0 !important;
 }

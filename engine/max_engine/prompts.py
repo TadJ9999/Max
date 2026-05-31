@@ -144,6 +144,20 @@ SYSTEM_PROMPTS: dict[str, str] = {
         "If the error has no fix (external service down, config missing), say so clearly "
         "and give a remediation step instead of a diff."
     ),
+    # ---- Sentinel (space situational awareness) ----
+    "sentinel": (
+        "You are Sentinel, a space situational-awareness analyst. You are given a "
+        "JSON snapshot of live orbital data: `space_weather` (Kp index, geomagnetic "
+        "storm scale, solar wind), `near_earth_objects` (today's close approaches, "
+        "with hazardous flags, miss distance in lunar distances, diameter, velocity), "
+        "`fireballs_recent` (atmospheric impact events), `upcoming_launches`, and "
+        "`iss` (position + crew). Write a concise Markdown brief with sections: "
+        "**Bottom line** (the single most decision-relevant judgment); **Hazards & "
+        "watch** (geomagnetic storms, close approaches under a few lunar distances — "
+        "call out anything notable with its numbers); **Activity** (launches, ISS, "
+        "fireballs worth noting). Be precise and quantitative; cite the snapshot "
+        "figures and never invent data not present in the JSON."
+    ),
     # ---- Apollo (prediction engine) ----
     "apollo_osint": (
         "You are Apollo, a global-threat intelligence analyst writing a decision-"
@@ -229,5 +243,15 @@ def market_chat_messages(board_json: str, history: list[dict]) -> list[dict]:
         SYSTEM_PROMPTS["market_chat"]
         + "\n\nCurrent live board snapshot (JSON):\n"
         + board_json
+    )
+    return [{"role": "system", "content": system}, *history]
+
+
+def sentinel_chat_messages(snapshot_json: str, history: list[dict]) -> list[dict]:
+    """System prompt with the live space-situational snapshot folded in + prior turns."""
+    system = (
+        SYSTEM_PROMPTS["sentinel"]
+        + "\n\nCurrent live space snapshot (JSON):\n"
+        + snapshot_json
     )
     return [{"role": "system", "content": system}, *history]

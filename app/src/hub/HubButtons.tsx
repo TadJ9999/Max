@@ -86,6 +86,13 @@ const ICONS: Record<HubTab, React.ReactNode> = {
       <path d="M7 10 L9 12 L13 8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
+  sentinel: (
+    <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="10" cy="10" r="6.5" stroke="currentColor" strokeWidth="1.2" />
+      <ellipse cx="10" cy="10" rx="9" ry="3.4" stroke="currentColor" strokeWidth="0.9" strokeDasharray="2 1.4" transform="rotate(28 10 10)" />
+      <circle cx="17.2" cy="6.2" r="1.2" fill="currentColor" />
+    </svg>
+  ),
   settings: (
     <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
       <circle cx="10" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.2" />
@@ -101,6 +108,7 @@ const META: { id: HubTab; title: string; cls: string }[] = [
   { id: "apollo", title: "Apollo — Prediction Engine", cls: "widget-action-btn--apollo" },
   { id: "aegis", title: "Aegis — Self-Repair Console", cls: "widget-action-btn--aegis" },
   { id: "shadow", title: "Shadow Net — Tor Browser", cls: "widget-action-btn--shadow" },
+  { id: "sentinel", title: "Sentinel — 3D Space Intelligence", cls: "widget-action-btn--sentinel" },
 ];
 
 export function HubButtons() {

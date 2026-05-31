@@ -38,7 +38,8 @@ from .market import MarketService, board_digest
 from .osint import EventsService, NavalService, OsintService
 from .polymarket import PolymarketService
 from .polymarket.embedder import embed_markets
-from .prompts import apply_persona, market_chat_messages, messages_for, polymarket_chat_messages, rag_messages
+from .sentinel import SentinelService
+from .prompts import apply_persona, market_chat_messages, messages_for, polymarket_chat_messages, rag_messages, sentinel_chat_messages
 from .providers.base import Provider
 from .providers.factory import build_provider
 from .rag import RagService, RagStore, SessionMemory
@@ -87,6 +88,15 @@ polymarket_svc = PolymarketService(
     categories=config.polymarket.categories,
 )
 _polymarket_embedded_count: int = 0
+sentinel_svc = SentinelService(
+    nasa_key=os.environ.get("NASA_API_KEY") or "DEMO_KEY",
+    tle_ttl=config.sentinel.tle_ttl,
+    neo_ttl=config.sentinel.neo_ttl,
+    sw_ttl=config.sentinel.sw_ttl,
+    fireball_ttl=config.sentinel.fireball_ttl,
+    launch_ttl=config.sentinel.launch_ttl,
+    iss_ttl=config.sentinel.iss_ttl,
+)
 
 
 def _make_store(path: str) -> VectorStore | None:
@@ -1193,6 +1203,88 @@ def aegis_log(limit: int = 100) -> dict:
 def aegis_sources() -> dict:
     """Current provider status, autonomy level, store path."""
     return aegis_svc.sources()
+
+
+# ---- Sentinel: space situational awareness -----------------------------
+#
+# SGP4 propagation runs client-side (satellite.js Web Worker); the engine
+# serves raw TLEs plus the NEO / space-weather / fireball / launch / ISS
+# layers with per-feed TTL caching. All sources are free (NASA via env key).
+
+
+@app.get("/sentinel/groups")
+def sentinel_groups() -> dict:
+    """Available CelesTrak satellite groups."""
+    return {"groups": sentinel_svc.groups()}
+
+
+@app.get("/sentinel/tle")
+async def sentinel_tle(group: str = "stations"):
+    """Raw TLEs for a group (parsed by the client's satellite.js worker)."""
+    return await sentinel_svc.get_tle(group)
+
+
+@app.get("/sentinel/neo")
+async def sentinel_neo():
+    """Today's near-Earth objects (NASA NeoWs) + SBDB orbital elements."""
+    return await sentinel_svc.get_neo()
+
+
+@app.get("/sentinel/space-weather")
+async def sentinel_space_weather():
+    """NOAA SWPC planetary Kp index + solar wind + storm scale."""
+    return await sentinel_svc.get_space_weather()
+
+
+@app.get("/sentinel/fireballs")
+async def sentinel_fireballs():
+    """Recent atmospheric impact events (NASA CNEOS)."""
+    return await sentinel_svc.get_fireballs()
+
+
+@app.get("/sentinel/launches")
+async def sentinel_launches():
+    """Upcoming rocket launches (TheSpaceDevs Launch Library 2)."""
+    return await sentinel_svc.get_launches()
+
+
+@app.get("/sentinel/iss")
+async def sentinel_iss():
+    """Live ISS position + crew."""
+    return await sentinel_svc.get_iss()
+
+
+@app.get("/sentinel/sources")
+def sentinel_sources() -> dict:
+    """Data sources + whether each needs a key."""
+    return {"sources": sentinel_svc.sources()}
+
+
+@app.post("/sentinel/analyze")
+async def sentinel_analyze() -> StreamingResponse:
+    """AI brief grounded in the live space snapshot (SSE)."""
+    payload = await sentinel_svc.analyze_payload()
+    return _stream_ai("sentinel", payload)
+
+
+class SentinelChatRequest(BaseModel):
+    messages: list[dict] = []
+
+
+@app.post("/sentinel/chat")
+async def sentinel_chat(req: SentinelChatRequest) -> StreamingResponse:
+    """Conversational analyst grounded in the live space snapshot (SSE)."""
+    payload = await sentinel_svc.chat_payload(req.messages)
+    provider_name, model = _ai_route()
+    try:
+        provider = build_provider(provider_name, config)
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    messages = sentinel_chat_messages(json.dumps(payload), req.messages)
+    messages[0]["content"] = apply_persona(
+        messages[0]["content"], config.personality, _profile_store.to_context_block()
+    )
+    return _sse_stream(provider, model, messages)
 
 
 # ---- Apollo: prediction engine -----------------------------------------
