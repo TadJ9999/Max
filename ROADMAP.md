@@ -1,8 +1,11 @@
 # Max — Local-First AI Engine · Roadmap & Brainstorm
 
-> Status: **living document** — core decisions locked and the engine MVP is scaffolded
-> (DSL parser, router, Ollama/Claude adapters, delegate engine + `/sessions` API; 29 tests).
-> The phase checklists below track real, code-verified status.
+> Status: **living document** — Phases 1–4 are **built & working** (DSL + routing,
+> Ollama/Claude streaming, the full delegate system: parallel sessions, Smart-Auto,
+> coordinator, live per-session SSE), plus the v1 Tauri widget, OSINT map, market tape,
+> and Apollo. **104 engine tests pass; the app typechecks & builds.** Next: VS Code
+> extension, codebase RAG, and the MCP capability platform. Checklists below are
+> code-verified.
 
 A **local-first**, private AI engine for a powerful workstation, with an **explicit
 opt-in cloud escape hatch**. One always-on **engine** (daemon) does the thinking;
