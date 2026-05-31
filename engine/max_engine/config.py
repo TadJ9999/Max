@@ -113,6 +113,17 @@ class PersonalityConfig(BaseModel):
     custom_prefix: str = ""      # used verbatim when persona="custom"
 
 
+class LanConfig(BaseModel):
+    """Share Max on the local network. When enabled, the engine binds 0.0.0.0
+    over HTTPS so phones/Macs on the same WiFi can open Max in a browser.
+    Mic on mobile requires HTTPS — mkcert generates a locally-trusted cert."""
+
+    lan_enabled: bool = False
+    lan_port: int = 8443
+    cert_path: str = ""   # absolute path to TLS certificate PEM
+    key_path: str = ""    # absolute path to TLS private key PEM
+
+
 class DarkNetConfig(BaseModel):
     """Tor-based dark web browser. Tor process managed by Tauri; Python side
     reads its ports to proxy requests and stream circuit status."""
@@ -202,6 +213,7 @@ class EngineConfig(BaseModel):
     personality: PersonalityConfig = Field(default_factory=PersonalityConfig)
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
     darknet: DarkNetConfig = Field(default_factory=DarkNetConfig)
+    lan: LanConfig = Field(default_factory=LanConfig)
 
 
 def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
@@ -274,6 +286,15 @@ def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
         cfg.voice.tts_pitch = max(0.5, min(2.0, float(vo["tts_pitch"])))
     if "tts_voice_name" in vo:
         cfg.voice.tts_voice_name = str(vo["tts_voice_name"])
+    la = data.get("lan") or {}
+    if "lan_enabled" in la:
+        cfg.lan.lan_enabled = bool(la["lan_enabled"])
+    if "lan_port" in la:
+        cfg.lan.lan_port = max(1024, int(la["lan_port"]))
+    if "cert_path" in la:
+        cfg.lan.cert_path = str(la["cert_path"])
+    if "key_path" in la:
+        cfg.lan.key_path = str(la["key_path"])
     ag = data.get("aegis") or {}
     if "scan_enabled" in ag:
         cfg.aegis.scan_enabled = bool(ag["scan_enabled"])
@@ -348,6 +369,12 @@ def save_overrides(cfg: EngineConfig) -> None:
             "tts_rate": cfg.voice.tts_rate,
             "tts_pitch": cfg.voice.tts_pitch,
             "tts_voice_name": cfg.voice.tts_voice_name,
+        },
+        "lan": {
+            "lan_enabled": cfg.lan.lan_enabled,
+            "lan_port": cfg.lan.lan_port,
+            "cert_path": cfg.lan.cert_path,
+            "key_path": cfg.lan.key_path,
         },
         "aegis": {
             "scan_enabled": cfg.aegis.scan_enabled,

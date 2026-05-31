@@ -3,9 +3,10 @@
 Max is a **local-first**, private AI engine for a powerful workstation, with an
 **explicit, opt-in cloud escape hatch**. One always-on **engine** does the thinking;
 thin **clients** (a floating desktop widget today, a VS Code extension later) talk to it.
-It started as a coding assistant and is growing into a general personal assistant —
-parallel task delegation, a live global news/threat map, a market tape, and a
-prediction engine, all behind one local API.
+It started as a coding assistant and has grown into a general personal assistant —
+parallel task delegation, a live global news/threat map, a market tape, a prediction
+engine, 3D space intelligence, Tor dark-web browsing, voice I/O, and a self-repair
+console, all behind one local API.
 
 - 🔒 **Local by default** — runs models on your own GPU via [Ollama](https://ollama.com).
 - ☁️ **Cloud on demand** — the `!` sigil routes to a cloud model (e.g. Claude), clearly marked; gated by `allow_cloud`.
@@ -18,7 +19,10 @@ prediction engine, all behind one local API.
 - 📈 **Market** — a live US-stock tape (Finnhub) with an editable watchlist and on-demand AI **"Ingest"** analysis.
 - 🔭 **Apollo** — a prediction engine with vector memory that fuses OSINT + market into forward-looking SITREPs.
 - 🎲 **Polymarket** — live prediction-market intelligence (Gamma + CLOB APIs, no key), with YES/NO gauges, price charts, order book depth, and Apollo-embedded market sentiment.
-- 🛡️ **Aegis** — self-repair console: captures crashes/errors, streams AI diagnosis (cloud Claude or local), shows a diff preview, and applies approved patches with git-snapshot rollback + test-verify.
+- 🌌 **Sentinel** — 3D interactive Earth globe + heliocentric Solar System view with live satellite tracking (SGP4/CelesTrak), asteroid close-approaches (NASA NeoWs), space weather (NOAA SWPC), rocket launches, and AI chat grounded in live space data.
+- 🎙️ **Voice + Jarvis** — Web Speech API mic button + TTS voice output; configurable Jarvis/Analyst/custom personality injected into every AI call; persistent user-profile memory in `.apollo.db`; Apollo daily predictions with 30-day rolling history.
+- ⬡ **Shadow Net** — a Tor dark-web browser Hub tab: bundled Tor Expert Bundle sidecar, `stem` circuit management, SOCKS5-proxied fetches + BeautifulSoup link rewriter, multi-tab browser, and a TorLock widget always visible above the mascot.
+- 🛡️ **Aegis** — self-repair + security posture: runtime error capture, AI diagnosis, diff preview, apply/rollback with git snapshot + test-verify; **Security Posture** sub-tab runs SAST (10-rule heuristics + AI triage) + SCA (OSV.dev CVE scan over Python/npm/Rust deps), posture score/trend, and "Ask Leo to fix" for any finding.
 - 🎨 **Floating widget UI** — frameless, transparent, always-on-top, top-right, **click-through when idle**, toggled by a global hotkey (`Ctrl+Shift+M`), with a "Jarvis"-style HUD mascot that reacts to engine state.
 
 See **[ROADMAP.md](./ROADMAP.md)** for the phased plan and **[docs/architecture.md](./docs/architecture.md)** for the layered design.
@@ -36,13 +40,15 @@ CLI, LAN) is cheap.
         │  Providers: Ollama (local) · Claude (cloud)   OpenAI-compatible /v1 streaming    │
         │  Delegate: session mgr + VRAM-aware scheduler + coordinator + per-session SSE    │
         │  OSINT (GDELT/RSS/naval)   Market (Finnhub)   Apollo (prediction + vector memory) │
-        │  Polymarket (Gamma+CLOB)   Aegis (self-repair + Leo boot-rescue)                │
+        │  Polymarket (Gamma+CLOB)   Aegis (self-repair + Leo boot-rescue + SAST/SCA)     │
+        │  Sentinel (3D space · satellites · asteroids)   Dark Net (Tor)   User/Voice     │
         └───────────────────────────────────┬─────────────────────────────────────────────┘
                                              │  HTTP + SSE (CORS: local origins)
                        ┌─────────────────────┴───────────────────┐
                        │  Tauri desktop widget (React + TS)       │
                        │  task cards (live) · chat · settings ·   │
-                       │  HUD mascot · OSINT map · market · Apollo│
+                       │  HUD mascot · OSINT · Market · Apollo ·  │
+                       │  Sentinel · Shadow Net · Aegis · Voice   │
                        └──────────────────────────────────────────┘
 ```
 
@@ -52,7 +58,7 @@ CLI, LAN) is cheap.
 Max/
 ├── engine/          # Python + FastAPI — the brain
 │   └── max_engine/  # dsl · router · providers · delegate · rag · osint · market
-│                    # apollo · polymarket · aegis
+│                    # apollo · polymarket · aegis · sentinel · darknet · user
 ├── app/             # Tauri v2 desktop widget (React + TypeScript)
 ├── extension/       # VS Code extension (DSL commands, inline replace, FIM ghost text)
 ├── docs/            # architecture · ui · mascot · setup · aegis
@@ -86,8 +92,11 @@ Examples: `!. add a retry decorator .` (cloud generate) · `@.. document this ..
 | OSINT | `GET /osint/heatmap` · `/osint/articles` · `/osint/sources` · `/osint/events` · `/osint/naval` · `POST /osint/chat` (SSE) |
 | Market | `GET /market/quotes` · `GET/PUT /market/watchlist` · `GET /market/sources` · `POST /market/analyze` (SSE) · `POST /market/chat` (SSE) |
 | Polymarket | `GET /polymarket/board` · `/polymarket/markets` · `GET/PUT /polymarket/watchlist` · `GET /polymarket/prices/{id}` · `GET /polymarket/order-book/{id}` · `GET /polymarket/sources` · `POST /polymarket/ingest` (SSE) · `POST /polymarket/analyze` (SSE) · `POST /polymarket/chat` (SSE) |
-| Apollo | `POST /apollo/osint-report` · `/apollo/market-report` · `/apollo/predict` · `GET /apollo/status` |
-| Aegis | `GET /aegis/events` · `POST /aegis/report` · `POST /aegis/diagnose` (SSE) · `POST /aegis/apply` · `POST /aegis/rollback` · `GET /aegis/log` · `GET /aegis/sources` |
+| Apollo | `POST /apollo/osint-report` · `/apollo/market-report` · `/apollo/predict` · `GET /apollo/status` · `POST /apollo/chat` (SSE) |
+| Sentinel | `GET /sentinel/tle` · `/sentinel/satellites/now` · `/sentinel/neo` · `/sentinel/space-weather` · `/sentinel/launches` · `/sentinel/fireballs` · `/sentinel/iss` · `POST /sentinel/chat` (SSE) |
+| Voice / User | `GET/POST/DELETE /user/profile` · `POST /voice/transcribe` |
+| Shadow Net | `GET /dark/status` · `POST /dark/new-circuit` · `GET /dark/fetch` (SSE) · `GET /dark/search` |
+| Aegis | `GET /aegis/events` · `POST /aegis/report` · `POST /aegis/diagnose` (SSE) · `POST /aegis/apply` · `POST /aegis/rollback` · `GET /aegis/log` · `GET /aegis/sources` · `POST /aegis/scan` · `GET /aegis/scan/status` · `GET /aegis/posture` · `GET /aegis/findings` · `GET /aegis/scans` · `POST /aegis/findings/{id}/fix` (SSE) · `POST /aegis/findings/{id}/status` · `GET /aegis/report` |
 | Lifecycle | `POST /engine/unload` |
 
 ## Quick start
@@ -111,7 +120,7 @@ Then double-click **`Max.cmd`** at the repo root. (Requires the engine venv at
 cd engine
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                  # full suite (185 tests)
+pytest                                  # full suite (268 tests)
 uvicorn max_engine.main:app --reload    # dev server on :8000
 curl http://127.0.0.1:8000/health
 ```
@@ -131,17 +140,41 @@ curl -s localhost:8000/parse -H 'content-type: application/json' \
 - **Secrets** live only in `engine/.env` (gitignored) — never in the UI:
   - `ANTHROPIC_API_KEY` — enables the `!` cloud path.
   - `FINNHUB_API_KEY` — enables live market quotes (free tier).
+  - `NASA_API_KEY` — enables Sentinel asteroid close-approach data (free tier).
 
-**Privacy:** local by default. Cloud (`!`) and outbound news/market fetches are egress
-points; cloud is opt-in, gated, and clearly marked in the UI.
+**Privacy:** local by default. Cloud (`!`) and outbound news/market/space fetches are egress
+points; cloud is opt-in, gated, and clearly marked in the UI. Aegis redacts secrets before
+any diagnosis egress.
 
 ## Status
 
-The engine core, v1 desktop widget, **codebase RAG**, and **VS Code extension** are built
-and working: DSL + routing, Ollama/Claude streaming, the full delegate system (parallel
-sessions, Smart-Auto, coordinator, live SSE), workspace RAG with session memory, FIM
-completion, OSINT map, market tape, Apollo prediction engine, Polymarket prediction-market
-intelligence, and Aegis self-repair (Leo boot-rescue + runtime Hub tab). **185 engine tests
+All sixteen planned phases are built and working: DSL + routing, Ollama/Claude streaming,
+the full delegate system (parallel sessions, Smart-Auto, coordinator, live SSE), workspace
+RAG with session memory, FIM completion, OSINT map, market tape, Apollo prediction engine,
+Polymarket prediction-market intelligence, Sentinel 3D space intelligence, Aegis self-repair
+(Leo boot-rescue + runtime Hub tab + Security Posture SAST/SCA scanner), Voice I/O + Jarvis
+personality + persistent user memory, and Shadow Net Tor dark-web browser. **268 engine tests
 pass**; the app and extension typecheck and build. See [ROADMAP.md](./ROADMAP.md) for
-phase-by-phase detail (next up: Phase 12 Sentinel 3D space intelligence, and
-performance/privacy polish).
+phase-by-phase detail. Next planned: **Phase 17 — LAN access** (Max on iPhone/Mac over WiFi).
+
+---
+
+## Completed Phases
+
+| Phase | Name | What shipped |
+|-------|------|-------------|
+| 0 | Foundations & decisions | Stack locked; Ollama + Claude wired; DSL grammar + parser |
+| 1 | Engine MVP | Provider adapters, routing, OpenAI-compatible `/v1` endpoint, streaming |
+| 2 | Command DSL & routing | All four operators (`. ` `..` `~`) wired end-to-end with sigil routing |
+| 3 | Desktop widget app | Floating transparent widget, Jarvis-style mascot, task cards, settings |
+| 4 | Delegate system | Parallel sessions, Smart-Auto, VRAM-aware scheduler, coordinator, SSE |
+| 5 | VS Code extension | Inline replace, FIM ghost text, sigil routing honored from the editor |
+| 6 | Context & RAG | sqlite-vec workspace indexer, incremental re-index, cited `file:line` answers |
+| 10 | OSINT global news map | GDELT + RSS heat choropleth, severity tiers, terminator, US fleet layer |
+| 11 | Market: live stocks + AI | Finnhub tape, editable watchlist, AI Ingest analysis |
+| 11.5 | Polymarket intelligence | Gamma + CLOB APIs, prediction market UI, Apollo vector embedding |
+| 12 | Sentinel: 3D space intelligence | Three.js globe + solar system, SGP4 Web Worker, CelesTrak/NeoWs/SWPC |
+| 13 | Aegis: AI self-debug & fix | Leo rescue terminal, runtime error capture, diagnose/apply/rollback |
+| 14 | Voice I/O + Jarvis personality | Web Speech mic, TTS, Jarvis persona, persistent user-profile memory |
+| 15 | Shadow Net: Tor dark-web browser | Bundled Tor sidecar, circuit control, proxy renderer, TorLock widget |
+| 16 | Aegis Security Posture | SAST (10-rule heuristics) + SCA (OSV.dev CVE scan), posture score/trend, Ask-Leo-to-fix |

@@ -15,8 +15,10 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-/// The engine port the app + UI agree on (see app/src/engine.ts ENGINE_URL).
+/// Default engine port when LAN mode is off.
 const ENGINE_PORT: u16 = 8001;
+/// LAN/HTTPS port used when LAN mode is on.
+const LAN_PORT: u16 = 8443;
 
 /// Tor SOCKS5 proxy port (must match DarkNetConfig.socks_port in Python config.py).
 const TOR_SOCKS_PORT: u16 = 9050;
@@ -99,6 +101,54 @@ fn kill_port_owner() {
     }
 }
 
+/// Kill whatever process is holding a specific port (best-effort).
+fn kill_port_owner_on(port: u16) {
+    #[cfg(windows)]
+    {
+        let pattern = format!(":{port}");
+        let Ok(out) = std::process::Command::new("cmd")
+            .args(["/C", &format!("netstat -ano | findstr {pattern}")])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        else {
+            return;
+        };
+        let text = String::from_utf8_lossy(&out.stdout);
+        let pids: Vec<String> = text
+            .lines()
+            .filter_map(|line| line.trim().split_whitespace().last().map(|s| s.to_owned()))
+            .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()) && s != "0")
+            .collect();
+        let mut seen = std::collections::HashSet::new();
+        for pid in pids {
+            if seen.insert(pid.clone()) {
+                let mut kill = std::process::Command::new("taskkill");
+                kill.args(["/T", "/F", "/PID", &pid])
+                    .creation_flags(CREATE_NO_WINDOW);
+                let _ = kill.status();
+                println!("[engine] killed zombie process (pid {pid}) on :{port}");
+            }
+        }
+        std::thread::sleep(Duration::from_millis(400));
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = std::process::Command::new("sh")
+            .args(["-c", &format!("fuser -k {port}/tcp 2>/dev/null || true")])
+            .status();
+        std::thread::sleep(Duration::from_millis(400));
+    }
+}
+
+/// Check if a specific port is open (any address on localhost).
+fn port_open(port: u16) -> bool {
+    let addr = format!("127.0.0.1:{port}");
+    addr.parse()
+        .ok()
+        .and_then(|a| TcpStream::connect_timeout(&a, Duration::from_millis(300)).ok())
+        .is_some()
+}
+
 /// Find the engine's venv Python by walking up from a starting dir looking for
 /// `engine/.venv/Scripts/python.exe` (Windows) / `engine/.venv/bin/python`.
 fn find_engine_python(start: &Path) -> Option<PathBuf> {
@@ -116,18 +166,233 @@ fn find_engine_python(start: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Start the FastAPI engine if it isn't already up. Returns the child handle when
-/// we spawned it (so we own its lifecycle), or `None` if it was already running
-/// or we couldn't locate the venv.
+// ---- LAN helpers ---------------------------------------------------------
+
+/// Walk ancestors of exe + cwd to find the existing .maxconfig.json.
+fn find_maxconfig_path() -> Option<PathBuf> {
+    let rel = Path::new("engine/.maxconfig.json");
+    let roots = [
+        std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)),
+        std::env::current_dir().ok(),
+    ];
+    for root in roots.into_iter().flatten() {
+        for dir in root.ancestors() {
+            let c = dir.join(rel);
+            if c.exists() {
+                return Some(c);
+            }
+        }
+    }
+    None
+}
+
+/// Return the path where .maxconfig.json lives (or should be created).
+fn maxconfig_path() -> PathBuf {
+    if let Some(p) = find_maxconfig_path() {
+        return p;
+    }
+    // Derive from the engine .venv location
+    let from_exe = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().and_then(find_engine_python));
+    let py = from_exe
+        .or_else(|| std::env::current_dir().ok().and_then(|d| find_engine_python(&d)));
+    if let Some(py) = py {
+        if let Some(engine_dir) = py.ancestors().nth(3) {
+            return engine_dir.join(".maxconfig.json");
+        }
+    }
+    std::env::current_dir()
+        .unwrap_or_default()
+        .join("engine/.maxconfig.json")
+}
+
+/// Read LAN settings from .maxconfig.json.
+/// Returns (enabled, port, cert_path, key_path).
+fn read_lan_from_config() -> (bool, u16, String, String) {
+    let path = match find_maxconfig_path() {
+        Some(p) => p,
+        None => return (false, LAN_PORT, String::new(), String::new()),
+    };
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(_) => return (false, LAN_PORT, String::new(), String::new()),
+    };
+    let data: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(_) => return (false, LAN_PORT, String::new(), String::new()),
+    };
+    let lan = match data.get("lan") {
+        Some(v) => v,
+        None => return (false, LAN_PORT, String::new(), String::new()),
+    };
+    let enabled = lan.get("lan_enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+    let port = lan.get("lan_port").and_then(|v| v.as_u64()).map(|n| n as u16).unwrap_or(LAN_PORT);
+    let cert = lan.get("cert_path").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let key = lan.get("key_path").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    (enabled, port, cert, key)
+}
+
+/// Write LAN fields into .maxconfig.json (merges into existing JSON).
+fn update_maxconfig_lan_fields(
+    cert_path: Option<&str>,
+    key_path: Option<&str>,
+    enabled: Option<bool>,
+    port: Option<u16>,
+) -> Result<(), String> {
+    let cfg_path = maxconfig_path();
+    let mut data: serde_json::Value = if cfg_path.exists() {
+        let text = std::fs::read_to_string(&cfg_path).map_err(|e| e.to_string())?;
+        serde_json::from_str(&text).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    if data.get("lan").is_none() {
+        data["lan"] = serde_json::json!({});
+    }
+    let lan = data["lan"].as_object_mut().ok_or("lan not an object")?;
+    if let Some(c) = cert_path { lan.insert("cert_path".to_string(), serde_json::json!(c)); }
+    if let Some(k) = key_path { lan.insert("key_path".to_string(), serde_json::json!(k)); }
+    if let Some(e) = enabled { lan.insert("lan_enabled".to_string(), serde_json::json!(e)); }
+    if let Some(p) = port { lan.insert("lan_port".to_string(), serde_json::json!(p)); }
+
+    let pretty = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+    if let Some(parent) = cfg_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(&cfg_path, pretty).map_err(|e| e.to_string())
+}
+
+/// Find the mkcert binary: check PATH, then WinGet links dir.
+fn find_mkcert() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        // Try where.exe first
+        if let Ok(out) = Command::new("where")
+            .arg("mkcert")
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        {
+            if out.status.success() {
+                let s = String::from_utf8_lossy(&out.stdout);
+                let line = s.lines().next().unwrap_or("").trim();
+                if !line.is_empty() {
+                    return Some(PathBuf::from(line));
+                }
+            }
+        }
+        // WinGet links dir
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            let candidate = PathBuf::from(&local)
+                .join("Microsoft/WinGet/Links/mkcert.exe");
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        if let Ok(out) = Command::new("which").arg("mkcert").output() {
+            if out.status.success() {
+                let s = String::from_utf8_lossy(&out.stdout);
+                let line = s.trim();
+                if !line.is_empty() {
+                    return Some(PathBuf::from(line));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Get the first non-loopback LAN IPv4 address from ipconfig/ip.
+fn get_lan_ip() -> String {
+    #[cfg(windows)]
+    {
+        let out = Command::new("ipconfig")
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .ok();
+        if let Some(out) = out {
+            let text = String::from_utf8_lossy(&out.stdout);
+            for line in text.lines() {
+                let line = line.trim();
+                if (line.contains("IPv4") || line.contains("IPv4-Adresse")) && line.contains(':') {
+                    if let Some(ip) = line.splitn(2, ':').nth(1) {
+                        let ip = ip.trim();
+                        if !ip.starts_with("127.") && !ip.starts_with("169.254")
+                            && ip.chars().all(|c| c.is_ascii_digit() || c == '.')
+                            && ip.contains('.')
+                        {
+                            return ip.to_string();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let out = Command::new("sh")
+            .args(["-c", "ip -4 addr show scope global | grep -oP '(?<=inet )\\d+\\.\\d+\\.\\d+\\.\\d+'"])
+            .output()
+            .ok();
+        if let Some(out) = out {
+            let s = String::from_utf8_lossy(&out.stdout);
+            if let Some(line) = s.lines().next() {
+                let ip = line.trim();
+                if !ip.is_empty() {
+                    return ip.to_string();
+                }
+            }
+        }
+    }
+    "127.0.0.1".to_string()
+}
+
+/// Run mkcert -CAROOT and return the directory path.
+fn get_mkcert_caroot(mkcert: &Path) -> Option<String> {
+    let mut cmd = Command::new(mkcert);
+    cmd.arg("-CAROOT");
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let out = cmd.output().ok()?;
+    if out.status.success() {
+        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !s.is_empty() { Some(s) } else { None }
+    } else {
+        None
+    }
+}
+
+/// Start the FastAPI engine. Reads LAN config from .maxconfig.json to decide
+/// host/port/TLS. Returns the child handle when we spawned it, or `None` when
+/// the engine was already running or we couldn't locate the venv.
 fn spawn_engine() -> Option<Child> {
-    if port_in_use() {
-        if engine_healthy() {
+    let (lan_enabled, lan_port, cert_path, key_path) = read_lan_from_config();
+    let use_tls = lan_enabled
+        && !cert_path.is_empty()
+        && !key_path.is_empty()
+        && Path::new(&cert_path).exists()
+        && Path::new(&key_path).exists();
+    let (host, port) = if use_tls {
+        ("0.0.0.0", lan_port)
+    } else {
+        ("127.0.0.1", ENGINE_PORT)
+    };
+
+    if port_open(port) {
+        if use_tls {
+            // For HTTPS mode port-open is sufficient — we can't do raw HTTP health check
+            println!("[engine] already running on :{port} (TLS) — reusing");
+            return None;
+        } else if engine_healthy() {
             println!("[engine] already running and healthy on :{ENGINE_PORT} — reusing");
             return None;
         }
-        // Port held by an unresponsive zombie — kill it and start fresh.
-        println!("[engine] port :{ENGINE_PORT} occupied but engine unresponsive — killing zombie...");
-        kill_port_owner();
+        println!("[engine] port :{port} occupied but unresponsive — killing zombie...");
+        kill_port_owner_on(port);
     }
 
     // Search from the executable's dir and the current working dir (Max.cmd sets
@@ -137,24 +402,20 @@ fn spawn_engine() -> Option<Child> {
     });
     let py = from_exe
         .or_else(|| std::env::current_dir().ok().and_then(|d| find_engine_python(&d)))?;
-    // engine dir = the folder that contains `.venv` (python is .../engine/.venv/Scripts/python.exe)
     let engine_dir = py.ancestors().nth(3)?.to_path_buf();
 
     let mut cmd = Command::new(&py);
-    cmd.args([
-        "-m",
-        "uvicorn",
-        "max_engine.main:app",
-        "--port",
-        &ENGINE_PORT.to_string(),
-    ])
-    .current_dir(&engine_dir);
+    cmd.args(["-m", "uvicorn", "max_engine.main:app", "--host", host, "--port", &port.to_string()])
+        .current_dir(&engine_dir);
+    if use_tls {
+        cmd.args(["--ssl-certfile", &cert_path, "--ssl-keyfile", &key_path]);
+    }
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
     match cmd.spawn() {
         Ok(child) => {
-            println!("[engine] started ({}) from {}", child.id(), engine_dir.display());
+            println!("[engine] started ({}) on {host}:{port} from {}", child.id(), engine_dir.display());
             Some(child)
         }
         Err(e) => {
@@ -344,6 +605,249 @@ fn tor_running() -> bool {
     tor_port_open()
 }
 
+// ---- LAN commands --------------------------------------------------------
+
+/// Return the base URL the Tauri WebView should use to reach the engine.
+/// Reads .maxconfig.json at call time so it reflects the current LAN state.
+#[tauri::command]
+fn engine_base() -> String {
+    let (enabled, port, cert_path, key_path) = read_lan_from_config();
+    if enabled
+        && !cert_path.is_empty()
+        && !key_path.is_empty()
+        && Path::new(&cert_path).exists()
+        && Path::new(&key_path).exists()
+    {
+        format!("https://127.0.0.1:{port}")
+    } else {
+        format!("http://127.0.0.1:{ENGINE_PORT}")
+    }
+}
+
+#[derive(serde::Serialize)]
+struct LanStatus {
+    enabled: bool,
+    port: u16,
+    cert_ready: bool,
+    cert_path: String,
+    key_path: String,
+    url: String,
+    lan_url: String,
+    pc_name: String,
+    lan_ip: String,
+    root_ca_path: String,
+}
+
+/// Full LAN status used by the Settings panel.
+#[tauri::command]
+fn get_lan_status() -> LanStatus {
+    let (enabled, port, cert_path, key_path) = read_lan_from_config();
+    let cert_ready = !cert_path.is_empty()
+        && Path::new(&cert_path).exists()
+        && !key_path.is_empty()
+        && Path::new(&key_path).exists();
+    let pc_name = std::env::var("COMPUTERNAME")
+        .unwrap_or_else(|_| hostname_fallback());
+    let lan_ip = get_lan_ip();
+    let url = format!("https://{pc_name}.local:{port}");
+    let lan_url = format!("https://{lan_ip}:{port}");
+    let root_ca_path = find_mkcert()
+        .and_then(|m| get_mkcert_caroot(&m))
+        .unwrap_or_default();
+    LanStatus { enabled, port, cert_ready, cert_path, key_path, url, lan_url, pc_name, lan_ip, root_ca_path }
+}
+
+fn hostname_fallback() -> String {
+    #[cfg(windows)]
+    {
+        Command::new("hostname")
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "DESKTOP".to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        Command::new("hostname")
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "localhost".to_string())
+    }
+}
+
+/// Install mkcert (via winget if needed), generate a cert trusted for this PC's
+/// LAN hostname, IP, localhost, and 127.0.0.1. Saves cert paths to .maxconfig.json.
+#[tauri::command]
+fn setup_cert() -> Result<String, String> {
+    // 1. Find or install mkcert
+    let mkcert = if let Some(p) = find_mkcert() {
+        p
+    } else {
+        // Try winget (Windows 11 has it by default)
+        let _ = Command::new("winget")
+            .args(["install", "FiloSottile.mkcert",
+                   "--silent", "--accept-package-agreements", "--accept-source-agreements"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+        // Pause a moment for the install to settle
+        std::thread::sleep(Duration::from_millis(2000));
+        find_mkcert().ok_or_else(|| {
+            "mkcert not found after winget install.\n\
+             Please download mkcert.exe from https://github.com/FiloSottile/mkcert/releases, \
+             place it on PATH, then click 'Setup Certs' again.".to_string()
+        })?
+    };
+
+    // 2. Install root CA into system trust store (needs UAC on Windows).
+    //    Use PowerShell Start-Process -Verb RunAs so the user sees a UAC prompt.
+    #[cfg(windows)]
+    {
+        let mkcert_str = mkcert.to_string_lossy().to_string();
+        let ps_cmd = format!("Start-Process '{}' -ArgumentList '-install' -Verb RunAs -Wait", mkcert_str);
+        let status = Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &ps_cmd])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+            .map_err(|e| format!("PowerShell elevation failed: {e}"))?;
+        if !status.success() {
+            return Err("mkcert -install was cancelled or failed. UAC elevation required.".to_string());
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let status = Command::new(&mkcert)
+            .arg("-install")
+            .status()
+            .map_err(|e| format!("mkcert -install failed: {e}"))?;
+        if !status.success() {
+            return Err("mkcert -install failed — may need sudo.".to_string());
+        }
+    }
+
+    // 3. Determine output directory (engine/ dir, next to .maxconfig.json)
+    let engine_dir = maxconfig_path()
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("engine"));
+
+    let cert_file = engine_dir.join("lan-cert.pem");
+    let key_file = engine_dir.join("lan-key.pem");
+
+    // 4. Get LAN identifiers for the cert SANs
+    let pc_name = std::env::var("COMPUTERNAME").unwrap_or_else(|_| hostname_fallback());
+    let lan_ip = get_lan_ip();
+    let mdns_name = format!("{pc_name}.local");
+
+    // 5. Generate cert
+    let mut cmd = Command::new(&mkcert);
+    cmd.args([
+        "-key-file", key_file.to_str().unwrap_or("lan-key.pem"),
+        "-cert-file", cert_file.to_str().unwrap_or("lan-cert.pem"),
+        &mdns_name,
+        &lan_ip,
+        "localhost",
+        "127.0.0.1",
+    ]);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let out = cmd.output().map_err(|e| format!("mkcert cert generation failed: {e}"))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return Err(format!("mkcert failed: {stderr}"));
+    }
+
+    // 6. Save cert paths into .maxconfig.json
+    update_maxconfig_lan_fields(
+        Some(cert_file.to_str().unwrap_or("")),
+        Some(key_file.to_str().unwrap_or("")),
+        None,
+        None,
+    )?;
+
+    Ok(format!(
+        "Certificate ready!\n\
+         Trusted names: {mdns_name}, {lan_ip}, localhost, 127.0.0.1\n\
+         Cert: {}\n\
+         Key: {}",
+        cert_file.display(),
+        key_file.display()
+    ))
+}
+
+/// Open the mkcert root CA directory in Explorer so the user can find rootCA.pem
+/// to AirDrop to their iPhone for trust installation.
+#[tauri::command]
+fn reveal_root_ca() -> Result<(), String> {
+    let mkcert = find_mkcert()
+        .ok_or_else(|| "mkcert not found — run cert setup first.".to_string())?;
+    let ca_dir = get_mkcert_caroot(&mkcert)
+        .ok_or_else(|| "Could not determine mkcert CA root.".to_string())?;
+
+    #[cfg(windows)]
+    {
+        Command::new("explorer")
+            .arg(&ca_dir)
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| format!("Could not open Explorer: {e}"))?;
+    }
+    #[cfg(not(windows))]
+    {
+        Command::new("xdg-open")
+            .arg(&ca_dir)
+            .spawn()
+            .map_err(|e| format!("Could not open file manager: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Toggle LAN mode and restart the engine with the new config.
+/// `enabled=true` starts the engine on 0.0.0.0:8443 with HTTPS.
+/// `enabled=false` returns to 127.0.0.1:8001 HTTP.
+#[tauri::command]
+fn restart_engine_for_lan(
+    enabled: bool,
+    engine_state: tauri::State<'_, EngineProcess>,
+) -> Result<(), String> {
+    // 1. Persist the toggle
+    update_maxconfig_lan_fields(None, None, Some(enabled), None)?;
+
+    // 2. Kill the current engine by PID
+    {
+        let mut guard = engine_state.0.lock().map_err(|e| e.to_string())?;
+        if let Some(mut child) = guard.take() {
+            let pid = child.id();
+            #[cfg(windows)]
+            {
+                let mut kill = Command::new("taskkill");
+                kill.args(["/T", "/F", "/PID", &pid.to_string()])
+                    .creation_flags(CREATE_NO_WINDOW);
+                let _ = kill.status();
+            }
+            #[cfg(not(windows))]
+            { let _ = child.kill(); }
+            let _ = child.wait();
+            println!("[engine] stopped for LAN restart (pid {pid})");
+        }
+    }
+
+    // 3. Brief pause so the port is freed before respawn
+    std::thread::sleep(Duration::from_millis(600));
+
+    // 4. Respawn with updated config
+    let child = spawn_engine();
+    {
+        let mut guard = engine_state.0.lock().map_err(|e| e.to_string())?;
+        *guard = child;
+    }
+    Ok(())
+}
+
 // --------------------------------------------------------------------------
 
 /// Live system meters shown in the widget's top bar. Percentages are 0..100.
@@ -498,6 +1002,11 @@ pub fn run() {
             start_tor,
             stop_tor,
             tor_running,
+            engine_base,
+            get_lan_status,
+            setup_cert,
+            reveal_root_ca,
+            restart_engine_for_lan,
         ])
         .setup(|app| {
             // Own the engine lifecycle: start it on launch (if not already up) and

@@ -4,9 +4,25 @@
 
 import type { Session, SessionState } from "./types";
 
-// The engine runs on 8001 (8000 is commonly taken by other local dev servers).
-// Market, OSINT, and chat all share this single base URL.
-export const ENGINE_URL = "http://127.0.0.1:8001";
+// The engine runs on 8001 by default. In LAN mode it switches to 8443 with HTTPS.
+// initEngineBase() must be called before the first API call; the Tauri command
+// engine_base() returns the right URL based on .maxconfig.json. In a browser
+// served by the engine (mobile) we use relative URLs (same-origin).
+export let ENGINE_URL = "http://127.0.0.1:8001";
+
+export async function initEngineBase(): Promise<void> {
+  if ("__TAURI_INTERNALS__" in window) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      ENGINE_URL = await invoke<string>("engine_base");
+    } catch {
+      // keep default if Tauri invoke fails
+    }
+  } else {
+    // Served from the engine directly (LAN mobile browser) — same-origin
+    ENGINE_URL = "";
+  }
+}
 
 export type Health = { status: string; version: string };
 

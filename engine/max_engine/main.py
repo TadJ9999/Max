@@ -19,7 +19,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
@@ -1681,3 +1682,43 @@ async def dark_search(q: str) -> dict:
     """Search Ahmia for onion results, routed through Tor."""
     results = await dark_svc.search(q)
     return {"results": [r.model_dump() for r in results]}
+
+
+# ---- LAN access ---------------------------------------------------------
+
+
+@app.get("/lan/status")
+def lan_status() -> dict:
+    """Current LAN-sharing state. Consumed by the Settings panel to show URL/cert."""
+    cert_ready = bool(
+        config.lan.cert_path and Path(config.lan.cert_path).exists()
+        and config.lan.key_path and Path(config.lan.key_path).exists()
+    )
+    return {
+        "enabled": config.lan.lan_enabled,
+        "port": config.lan.lan_port,
+        "cert_path": config.lan.cert_path,
+        "key_path": config.lan.key_path,
+        "cert_ready": cert_ready,
+    }
+
+
+# ---- Static files (LAN mobile access) -----------------------------------
+
+_dist_path = Path(__file__).resolve().parent.parent.parent / "app" / "dist"
+
+
+@app.get("/m")
+def mobile_index() -> FileResponse:
+    """Serve the mobile-first shell. The path /m tells main.tsx to render MobileApp."""
+    html = _dist_path / "index.html"
+    if html.exists():
+        return FileResponse(str(html), media_type="text/html")
+    raise HTTPException(status_code=404, detail="UI not built — run npm run build in app/")
+
+
+# Serve the built Vite dist/ so mobile browsers hitting https://<pc>.local:8443/
+# get the full Max UI. API routes above take priority; this is the catch-all.
+# Only mounted when the dist/ directory exists (i.e. after `npm run build`).
+if _dist_path.exists():
+    app.mount("/", StaticFiles(directory=str(_dist_path), html=True), name="static")

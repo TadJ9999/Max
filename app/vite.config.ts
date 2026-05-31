@@ -11,6 +11,8 @@ export default defineConfig(async () => ({
   // Bundle module workers (satellite.js SGP4 propagation) as ES modules.
   worker: { format: "es" },
 
+
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

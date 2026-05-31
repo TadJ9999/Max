@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { initEngineBase } from "./engine";
 import App from "./App";
 import { OsintView } from "./osint/OsintView";
 import { MarketView } from "./market/MarketView";
@@ -8,6 +9,11 @@ import { PolymarketView } from "./polymarket/PolymarketView";
 import { AegisView } from "./aegis/AegisView";
 import { ShadowNetView } from "./darknet/ShadowNetView";
 import { HubView, type HubTab } from "./hub/HubView";
+import { MobileApp } from "./mobile/MobileApp";
+import "./mobile/Mobile.css";
+
+// /m serves the mobile-first shell (LAN access from phones/Macs).
+const isMobile = window.location.pathname === "/m" || window.location.pathname.startsWith("/m/");
 
 // The features open in the unified Hub window (#hub or #hub:<tab>). The legacy
 // per-feature hashes (#osint / #market / #apollo) still resolve to their
@@ -15,6 +21,7 @@ import { HubView, type HubTab } from "./hub/HubView";
 const hash = window.location.hash;
 
 function pickRoot() {
+  if (isMobile) return <MobileApp />;
   if (hash.startsWith("#hub")) {
     const tab = hash.split(":")[1] as HubTab | undefined;
     return <HubView initialTab={tab ?? "apollo"} />;
@@ -28,9 +35,13 @@ function pickRoot() {
   return <App />;
 }
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>{pickRoot()}</React.StrictMode>,
-);
+// Resolve the engine base URL (Tauri vs same-origin mobile browser) before
+// the first component renders so all API calls use the right URL from the start.
+void initEngineBase().then(() => {
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <React.StrictMode>{pickRoot()}</React.StrictMode>,
+  );
+});
 
 // Safety net: the main widget window starts hidden and is revealed after mount
 // (see window.ts). If that path ever fails, force-show shortly after load so the

@@ -355,6 +355,184 @@ function ProfileSection() {
   );
 }
 
+// ── LAN section ──────────────────────────────────────────────────────────────
+
+type LanStatus = {
+  enabled: boolean;
+  port: number;
+  cert_ready: boolean;
+  cert_path: string;
+  key_path: string;
+  url: string;
+  lan_url: string;
+  pc_name: string;
+  lan_ip: string;
+  root_ca_path: string;
+};
+
+const IS_TAURI = "__TAURI_INTERNALS__" in window;
+
+async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<T>(cmd, args ?? {});
+}
+
+function LanSection() {
+  const [status, setStatus] = useState<LanStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [QRCodeSVG, setQRCodeSVG] = useState<React.ComponentType<any> | null>(null);
+
+  useEffect(() => {
+    void import("qrcode.react").then((m) => setQRCodeSVG(() => m.QRCodeSVG));
+  }, []);
+
+  const load = useCallback(async () => {
+    try {
+      const s = await tauriInvoke<LanStatus>("get_lan_status");
+      setStatus(s);
+    } catch { /* Tauri not available */ }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const flash = (text: string, ok: boolean) => {
+    setMsg({ text, ok });
+    window.setTimeout(() => setMsg(null), 6000);
+  };
+
+  const runSetupCert = async () => {
+    setBusy(true);
+    try {
+      const result = await tauriInvoke<string>("setup_cert");
+      flash(result, true);
+      await load();
+    } catch (e) { flash(String(e), false); }
+    setBusy(false);
+  };
+
+  const toggleLan = async (next: boolean) => {
+    if (next && !status?.cert_ready) {
+      flash("Set up certificates first before enabling LAN sharing.", false);
+      return;
+    }
+    setBusy(true);
+    try {
+      await tauriInvoke("restart_engine_for_lan", { enabled: next });
+      const { initEngineBase, getHealth } = await import("../engine");
+      await initEngineBase();
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 800));
+        if (await getHealth()) break;
+      }
+      flash(next ? "LAN sharing enabled — scan the QR code on your phone." : "LAN sharing disabled.", true);
+      await load();
+    } catch (e) { flash(String(e), false); }
+    setBusy(false);
+  };
+
+  const revealRootCa = async () => {
+    try { await tauriInvoke("reveal_root_ca"); }
+    catch (e) { flash(String(e), false); }
+  };
+
+  if (!IS_TAURI || status === null) return null;
+
+  return (
+    <Section title="Share on LAN" glyph="📱" defaultOpen={false}>
+      <p className="stg-hint">
+        Open Max from your iPhone or Mac on the same WiFi.
+        All compute stays on this PC. HTTPS is required so the mic works on mobile.
+      </p>
+
+      {!status.cert_ready && (
+        <div className="stg-lan-setup">
+          <p className="stg-hint stg-hint--warn">
+            Step 1: Install a locally-trusted certificate (requires admin/UAC).
+          </p>
+          <button className="stg-lan-btn" onClick={() => void runSetupCert()} disabled={busy}>
+            {busy ? "Installing…" : "Install mkcert & generate cert"}
+          </button>
+          <p className="stg-hint">
+            mkcert is fetched via winget. A UAC prompt will appear to trust the root CA.
+          </p>
+        </div>
+      )}
+
+      {status.cert_ready && (
+        <div className="stg-row">
+          <span className="stg-row__label">
+            LAN sharing
+            <span className={`stg-badge${status.enabled ? " stg-badge--ok" : ""}`}>
+              {status.enabled ? "active" : "off"}
+            </span>
+          </span>
+          <Toggle on={status.enabled} onChange={(v) => void toggleLan(v)} />
+        </div>
+      )}
+
+      {status.enabled && status.cert_ready && (
+        <div className="stg-lan-active">
+          <div className="stg-lan-url-row">
+            <span className="stg-lan-url">{status.url}/m</span>
+            <button className="stg-lan-copy" onClick={() => void navigator.clipboard.writeText(`${status.url}/m`)}>
+              copy
+            </button>
+          </div>
+          {QRCodeSVG && (
+            <div className="stg-lan-qr">
+              <QRCodeSVG value={`${status.url}/m`} size={140} bgColor="#03080d" fgColor="#22d3ee" />
+            </div>
+          )}
+          <p className="stg-hint">
+            Scan for mobile UI · Desktop at <code>{status.url}/</code>
+          </p>
+        </div>
+      )}
+
+      {status.cert_ready && (
+        <div className="stg-lan-cert">
+          <p className="stg-hint stg-hint--section">Certificate</p>
+          <p className="stg-hint">
+            Trusted: <code>{status.pc_name}.local</code> · <code>{status.lan_ip}</code> ·{" "}
+            <code>localhost</code> · <code>127.0.0.1</code>
+          </p>
+          <button className="stg-lan-btn stg-lan-btn--sm" onClick={() => void runSetupCert()} disabled={busy}>
+            {busy ? "Running…" : "Regenerate cert"}
+          </button>
+        </div>
+      )}
+
+      {status.cert_ready && (
+        <div className="stg-lan-trust">
+          <p className="stg-hint stg-hint--section">One-time iPhone setup</p>
+          <ol className="stg-lan-steps">
+            <li>
+              <button className="stg-lan-link" onClick={() => void revealRootCa()}>
+                Show rootCA.pem in Explorer
+              </button>{" "}
+              → AirDrop to iPhone
+            </li>
+            <li>iPhone: <strong>Settings → General → VPN & Device Management</strong></li>
+            <li>Tap mkcert profile → <strong>Install</strong></li>
+            <li><strong>Settings → About → Certificate Trust Settings</strong> → enable full trust</li>
+          </ol>
+          {status.root_ca_path && (
+            <p className="stg-hint">CA path: <code className="stg-lan-path">{status.root_ca_path}</code></p>
+          )}
+        </div>
+      )}
+
+      {msg && (
+        <p className={`stg-lan-msg${msg.ok ? " stg-lan-msg--ok" : " stg-lan-msg--err"}`}>
+          {msg.text}
+        </p>
+      )}
+    </Section>
+  );
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export function SettingsView() {
@@ -751,6 +929,9 @@ export function SettingsView() {
             />
           </label>
         </Section>
+
+        {/* ── Share on LAN ─────────────────────────────────────────── */}
+        <LanSection />
 
         {/* ── Workspace Allowlist ───────────────────────────────────── */}
         <Section title="Workspace Allowlist" glyph="📁" defaultOpen={false}>

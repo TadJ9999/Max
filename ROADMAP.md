@@ -1,11 +1,12 @@
 # Max — Local-First AI Engine · Roadmap & Brainstorm
 
-> Status: **living document** — Phases 1–15 are **built & working** (DSL + routing,
+> Status: **living document** — Phases 1–17 are **built & working** (DSL + routing,
 > Ollama/Claude streaming, the full delegate system, v1 Tauri widget, OSINT map,
 > market tape, Apollo prediction engine, Polymarket intelligence, Sentinel 3D space view,
-> Aegis self-repair + Leo boot-rescue terminal, Voice I/O + Jarvis personality + Apollo
-> chat, and Phase 15: Shadow Net Tor dark-web browser). **185+ engine tests pass; the
-> app typechecks & builds.** Checklists below are code-verified.
+> Aegis self-repair + Leo boot-rescue terminal + Security Posture SAST/SCA scanner,
+> Voice I/O + Jarvis personality + user memory, Shadow Net Tor dark-web browser, and
+> Phase 17: LAN access — HTTPS via mkcert, Settings toggle + QR code, mobile-first
+> shell at `/m`). **268 engine tests pass; the app typechecks & builds.**
 
 A **local-first**, private AI engine for a powerful workstation, with an **explicit
 opt-in cloud escape hatch**. One always-on **engine** (daemon) does the thinking;
@@ -39,8 +40,8 @@ model on a different task, in parallel.
 - **Intent router:** generalize the delegate from "local vs cloud" → **skill domain + model + locality**; the sigil DSL stays the explicit/manual path ✅
 - **Voice:** orchestration via capabilities, but **audio on a dedicated realtime WS channel** (not MCP) ✅
 - **Home/LAN:** networked engine adds **bearer-token auth**; MCP skills run as local subprocess *or* networked service ✅
-- **OSINT news map:** a glowing 2D world map with a **news heat choropleth** (GDELT + RSS, free/key-less) and a **live day/night terminator**, opened in a dedicated large window from below the chat bar; news egress lives in the engine (see [Phase 10](#phase-10--osint-global-news-map---a-glowing-world-map-of-where-the-news-is-happening-with-a-live-daynight-terminator)) ✅
-- **Aegis (self-debug & fix):** Max watches its own logs/crashes, **asks before touching anything**, AI-diagnoses the root cause (cloud Claude default, local fallback), shows a **diff preview**, applies only on approval with **git-snapshot rollback** + test-verify, and records every action in an organized [`selfdiagnosefixes.md`](selfdiagnosefixes.md). **Two layers**: **Leo**, a bubbly, all-red boot-time **rescue terminal 🐩** that opens from `Max.cmd` when the engine won't start — looping until it's back up, then signing off with "My job is done!" + a smiling toy-poodle — plus the in-engine runtime layer (full design in [docs/aegis.md](docs/aegis.md); Phase 13) ✅
+- **OSINT news map:** a glowing 2D world map with a **news heat choropleth** (GDELT + RSS, free/key-less) and a **live day/night terminator**, opened in a dedicated large window from below the chat bar; news egress lives in the engine ✅
+- **Aegis (self-debug & fix):** Max watches its own logs/crashes, **asks before touching anything**, AI-diagnoses the root cause (cloud Claude default, local fallback), shows a **diff preview**, applies only on approval with **git-snapshot rollback** + test-verify, and records every action in an organized [`selfdiagnosefixes.md`](selfdiagnosefixes.md). **Two layers**: **Leo**, a bubbly, all-red boot-time **rescue terminal 🐩** that opens from `Max.cmd` when the engine won't start, plus the in-engine runtime layer. **Phase 16** extends Aegis with proactive SAST + SCA security scanning ✅
 - *(Full layered design in [docs/architecture.md](docs/architecture.md).)*
 
 ---
@@ -152,43 +153,9 @@ Parser rules:
 
 ---
 
-## 3. Phases, milestones & checklist
+## 3. Upcoming phases
 
 > Legend: `[x]` done · `[~]` partial (note explains what's left) · `[ ]` not started.
-
-### Phase 0 — Foundations & decisions  🎯 *stack locked, models benchmarked*
-- [x] Engine language = Python/FastAPI
-- [x] Desktop UI shell decision — **Tauri** (locked)
-- [x] Monorepo structure (`/engine`, `/app`, `/docs` exist; `/extension` lands in Phase 5)
-- [x] Install + smoke-test Ollama ✅ (0.24; `qwen2.5-coder:3b`+`:14b`, smoke all PASS); Anthropic API access for `!` ✅ (key in `engine/.env`)
-- [ ] **Benchmark local models on the 4070 Ti** (tokens/s, VRAM, quality) → shortlist
-- [~] Dev tooling: lint/format/test done (**ruff + pytest, 29 passing**); **CI** + SessionStart hook pending
-- [x] Lock the DSL grammar (sigils + operators + escaping) — parser implemented + tested
-
-### Phase 1 — Engine MVP (the brain)  🎯 *`curl` can chat with Max via any provider*
-- [x] Provider adapter interface
-- [x] Ollama (local) adapter (streaming) — **verified end-to-end** against live Ollama (`/command` + `/v1/chat/completions` stream real tokens; sessions run → done)
-- [x] Anthropic/Claude (cloud) adapter (streaming) — **verified end-to-end** (`!` + cloud sessions stream real Claude output; API errors surfaced)
-- [x] OpenAI-compatible `/v1/chat/completions` with **streaming** (SSE); `provider` selectable
-- [x] `/command` endpoint: full DSL → router → provider stream (sigil picks local/cloud)
-- [x] Per-provider model overrides (cloud `!` → Claude model, local → coder model)
-- [x] Provider router (sigil → adapter+model) + per-task default model config (`router.py`; per-task default *provider* still TODO)
-- [~] Config system — defaults + **file-backed persistence for UI settings** (`/config` GET/PUT → `.maxconfig.json`: cloud, delegate mode, parallel limits, workspace allowlist); models/sigils/keys + hot-reload still pending
-- [~] **Privacy guard** — cloud routes flagged (`is_cloud`) + `allow_cloud` gate + keys from env; **egress audit log + secure key store pending**
-- [~] Health/status endpoint (`/health` ✅); **background daemon mode pending**
-
-### Phase 3 — Desktop widget app  🎯 **v1 — floating widget + configure everything** ([UI design](docs/ui.md))
-- [x] **Floating transparent widget** — frameless/transparent/always-on-top/skip-taskbar window, **top-right anchoring**, **global hotkey toggle** (`Ctrl+Shift+M`), and **click-through-when-idle** (Rust cursor-poll). ✅ *Confirmed on-screen (placement, hotkey, hover interactivity).*
-- [x] **Live vector mascot** ("X") reacting to engine state (idle / thinking / busy / done / error) — built as a **"Jarvis"-style SVG + CSS HUD** (not Rive; same state API)
-- [x] **Task cards** per session (model · provider · state · ☁ marker · cancel/promote) — **live**: polls the engine's `/sessions` (~2s), cancel/promote call the engine; mascot reacts to real session states. Falls back to placeholders when the engine is offline.
-- [x] **SYS INFO** meters (CPU · GPU · **VRAM** · RAM) + **⚙ settings** cog — **live** values (Rust `sysinfo` for CPU/RAM, `nvidia-smi` for GPU/VRAM, polled ~1.5s); mascot reacts to real VRAM
-- [x] Chat UI — plain chat (`/chat`) + DSL commands (`/command`), **markdown with code blocks + copy button**, cloud (`!`) indicator, SSE streaming, `/health` status dot
-- [ ] **Model manager**: list / download / switch / params (temp, ctx, quant)
-- [ ] **Routing config**: map sigils → providers/models, set **per-task defaults**, assign **hotkeys**
-- [~] **Provider/key management** — cloud on/off ✅ + **key-set status** shown in settings; per-provider key *entry* stays in `engine/.env` by design (no secret-handling in the UI)
-- [ ] Engine start/stop/restart + live VRAM/RAM meters
-- [x] Settings: **auto-delegate toggle (Manual / Smart-Auto)** + cloud on/off + **parallel limits** — live via `/config`, persisted to `.maxconfig.json`
-- [x] **Workspace folder allowlist** — add/remove paths in settings, persisted
 
 ### Phase 7 — Performance & privacy polish  🎯 *snappy, stable, provably local-by-default*
 - [ ] **Two-model routing**: tiny resident completer + heavy on-demand gen/chat
@@ -213,166 +180,20 @@ Parser rules:
 - [ ] **Auth for home/LAN** — bearer-token on the API once it leaves localhost-only; per-skill placement (local subprocess vs networked)
 - [ ] **Outward MCP façade (optional)** — expose Max *itself* as an MCP server so external agents (Claude Desktop, Cursor) can "ask Max" / use its local models
 
-### Phase 10 — OSINT global news map  🎯 *a glowing world map of where the news is happening, with a live day/night terminator*
-*A button below the chat bar opens a large dedicated window (the 360×640 widget is too small) with a 2D world map: glowing-blue country wireframe, a news-driven heat choropleth, and a real-time day/night terminator. All news egress lives in the engine (clients stay thin), consistent with the privacy-marked model; the map atlas is bundled locally so only news data touches the network.*
+### Phase 17 — LAN Access: Max on your iPhone & Mac over WiFi  📱 *open Max in a phone/Mac browser on the same network — all compute stays on this PC* — **PLANNED**
 
-**Decisions locked:** 2D flat (equirectangular) map · dedicated large window (browser-preview falls back to an in-page overlay) · **GDELT + RSS** from day one (free, no key) · engine-side egress · bundled atlas.
+*Today Max only runs as the desktop widget. This phase lets you open Max from your iPhone and Mac in a browser over the same WiFi, while the engine, Ollama, Tor, and cloud-API keys stay on this desktop. The frontend already talks to the engine purely over HTTP `fetch` (no Tauri IPC for backend calls), so a plain browser can drive the whole engine — the work is exposing it safely and giving phones a touch-first UI. A **"Share on LAN" toggle** in Settings flips the engine from safe localhost to `0.0.0.0:8443` over HTTPS, serves a dedicated **mobile web UI**, and shows the `https://<pc-name>.local:8443` URL plus a scannable QR code. The desktop widget keeps working unchanged. First step toward a later "accessible from anywhere" phase (Tailscale/Cloudflare) — explicitly out of scope here. Full plan: `C:\Users\tadjo\.claude\plans\lets-plan-a-new-enumerated-parnas.md`.*
 
-- [x] **Engine OSINT module** (`engine/max_engine/osint/`): GDELT DOC 2.0 client + stdlib RSS/Atom fetcher + country gazetteer (name/demonym → ISO-A3) + importance scorer (volume × source-diversity × recency) + TTL-cached aggregator service
-- [x] **Endpoints**: `GET /osint/heatmap` (per-country 0..1 intensity), `GET /osint/articles?country=&limit=` (ranked, newest-first), `GET /osint/sources`
-- [x] **Config**: `OsintConfig` (GDELT query/timespan/max-records, feed list, cache TTL); no new Python deps (stdlib XML, existing httpx)
-- [x] **Tests**: `tests/test_osint.py` — gazetteer, GDELT/RSS parsing, scoring, dedup, caching, endpoints (13 tests, network mocked) — full suite 50 passing, ruff clean
-- [x] **Desktop map** (`app/src/osint/`): `WorldMap` (d3-geo equirectangular + `world-atlas` TopoJSON, glow wireframe, heat choropleth, hover/select), `terminator.ts` (subsolar point + night ring, refreshed each minute), `OsintView` (map + ranked countries + article panel), `OsintButton` (below chat bar)
-- [x] **Dedicated window**: `#osint` hash route in `main.tsx`; Tauri `WebviewWindow` (1180×760, resizable) + `core:webview:allow-create-webview-window` capability; in-page overlay fallback outside Tauri
-- [x] **Severity classification** — Critical / High / Medium / Low from headline *content* (word-boundary keyword tiers, `osint/severity.py`); country badge = **recency-weighted mean** so one outlier story can't flip a whole country; filter bar (top of view) gates map + hotspots + articles by tier
-- [x] **Sleeker "threat-intercept" redesign** — dropped the rainbow heat ramp for a discrete dark-ops threat scale (cyan→amber→orange→rose) with per-tier glow; tactical graticule; severity-coded hotspot bars + article edges (shadowbroker-style aesthetic)
-- [x] **Naval layer (US fleet positions)** — `osint/naval.py`: parses the latest USNI Fleet Tracker (read via its WordPress *feed*, which dodges Cloudflare) + TWZ Carrier Tracker, anchors on hull tokens (`CVN-73`) with name fallback, geocodes the nearest region phrase via a sea/port/AOR gazetteer (open-water beats homeport), and serves `GET /osint/naval`. Carrier (gold chevron) + amphib (steel diamond) markers with a `⚓ Fleet` toggle; positions flagged **estimated / region-level / dated** (no real-time GPS exists publicly). 6 naval tests. Groundwork for future track prediction.
-- [x] **Verified end-to-end**: live GDELT+RSS (e.g. 360 signals / 61 countries), severity tiers (Zaporizhzhia/Iran/Israel → Critical/High), threat shading, moving terminator + subsolar marker, filter toggles, country click → filtered articles; `npm run build` + `tsc` clean
-- [x] **Surface egress in settings/privacy guard** — amber egress warning added to OSINT, Market, Polymarket, Aegis settings sections ✅
-- [x] **Tauri external links** via the opener plugin — article links now use `@tauri-apps/plugin-opener`; falls back to `window.open` in browser ✅
-- [ ] **Tuning & breadth**: GDELT theme-query tuning for "most important"; expand the gazetteer beyond the newsworthy core; per-source toggles in the UI; optional GDELT tone signal in the score
-- [ ] *(stretch)* time-scrubber to replay the last 24h of heat; cluster/event detail on click
+**The load-bearing gotcha:** iOS Safari treats a LAN IP/host over plain HTTP as an *insecure context*, which **silently disables the mic / Web Speech / clipboard** (`localhost` is exempt, `192.168.x.x` and `*.local` are not). Voice on mobile is required → **HTTPS via a locally-trusted cert is mandatory**, not optional polish.
 
----
+**Decisions locked:** mic on mobile required → **HTTPS mandatory** · **engine serves the built frontend** (single origin → no CORS) · desktop Tauri app **stays open** (LAN is an in-app toggle, no standalone launcher) · **no app token** — rely on home LAN + a subnet-scoped Windows firewall rule (`profile=private`, `remoteip=LocalSubnet`) · HTTPS via **mkcert** + install/trust root CA on the iPhone (pure LAN, no internet/accounts) · reach the PC at **`<computer-name>.local`** via mDNS (cert SANs also cover LAN IP + `localhost` + `127.0.0.1`) · **uvicorn built-in TLS** (`--ssl-keyfile/--ssl-certfile`, no Caddy) on port **8443** · connect UX = **toggle + URL + QR** in Settings · **dedicated mobile build** (separate Vite entry, built alongside desktop) · cert setup is **app-assisted** (run mkcert, generate cert w/ SANs, reveal/AirDrop root CA + short trust doc) · LAN state **remembered** across launches · phone feature priority **Chat+Voice · Market/Polymarket · OSINT/Sentinel** (Aegis/Shadow Net deferred).
 
-### Phase 11 — Market: live stocks + AI Ingest  🎯 *a live US-stock tape with an on-demand AI read*
-*A `$` button below the chat bar (next to OSINT) opens a large dedicated window: a live US-stock board on the left and an AI analysis panel on the right. Quote egress lives in the engine. Mirrors the OSINT feature's shape.*
+- [ ] **17.A — Engine serve + dynamic base + HTTP LAN bind**: `main.py` mounts the Vite `dist/` as `StaticFiles` (single origin) with a UA-based mobile redirect (`/` → `/m`); narrow CORS `allow_origins=["*"]` → LAN `allow_origin_regex`; new `EngineConfig` fields (`lan_enabled`, `lan_host`, `lan_port`, `tls_cert`, `tls_key`) round-tripping through `.maxconfig.json`; make `app/src/engine.ts` base URL dynamic (same-origin in a served browser, absolute via a new `engine_base()` Tauri command in the webview); parametrize Rust `spawn_engine()` to bind `0.0.0.0` (HTTP first, to validate).
+- [x] **17.B — Mobile-first shell**: `src/mobile/` — `MobileApp.tsx` with bottom-tab nav (Chat+Voice · Markets · Intel · Space); `ChatTab.tsx` (streaming chat + Web Speech API mic + TTS); `MarketsTab.tsx` (live quotes + AI read); `OsintTab.tsx` (severity hotspots + articles); `SentinelTab.tsx` (ISS live + space weather + launches); `Mobile.css` dark touch-first styles. Served at engine `/m` (FastAPI `FileResponse(index.html)`) — `main.tsx` detects `pathname === "/m"` and renders `MobileApp` instead of the desktop shell; same bundle, zero separate build step.
+- [ ] **17.C — HTTPS: certs + TLS + firewall**: `setup_cert()` / `reveal_root_ca()` Tauri commands run mkcert (`-install`, then SANs `<pc>.local <lan-ip> localhost 127.0.0.1`); Rust spawns uvicorn with `--ssl-keyfile/--ssl-certfile` on `:8443` when LAN-enabled; health/port checks speak HTTPS to `127.0.0.1:8443` (keep `127.0.0.1`, never `localhost`); add/remove the subnet-scoped firewall rule (elevated/UAC) on toggle; `docs/lan.md` with the iPhone "enable full trust" steps.
+- [ ] **17.D — Settings "Share on LAN"**: section in `settings/SettingsView.tsx` with the toggle (`set_lan_mode`), live `lan_status` (`{enabled, url, pc_name, lan_ip, cert_ready}`), copyable `https://<pc-name>.local:8443` URL, **QR code**, cert-helper buttons + trust steps, firewall/Private-network hint; LAN state remembered across launches.
 
-**Decisions locked:** **Finnhub** as the source (free `FINNHUB_API_KEY` in `engine/.env`, treated like the cloud key — never stored) · **user-editable** watchlist (curated megacap default, persisted) · AI analysis runs **only** on the top **"Ingest"** button (cloud Claude when `allow_cloud`, else local) · "live" = frontend polls every ~10s against a 10s engine TTL cache.
-
-- [x] **Engine market module** (`engine/max_engine/market/`): Finnhub `/quote` + `/stock/profile2` client (per-symbol failures swallowed), `MarketService` with concurrent fetch + TTL cache + watchlist mutation, `Quote`/`MarketBoard` models
-- [x] **Endpoints**: `GET /market/quotes` (live board), `GET`/`PUT /market/watchlist` (editable + persisted), `GET /market/sources` (provider + `key_set`), `POST /market/analyze` (SSE — the "Ingest" read, reuses `_sse_stream` + the `market` analyst prompt)
-- [x] **Config**: `MarketConfig` (watchlist + cache TTL); watchlist round-trips through the persisted-override subset; no new Python deps (existing httpx)
-- [x] **Tests**: `tests/test_market.py` — quote parsing, unknown-symbol/HTTP-error skip, board aggregation + caching, no-key empty board, watchlist round-trip/dedup, endpoints (network mocked)
-- [x] **Desktop board** (`app/src/market/`): `MarketView` (polling stock rows, green-up/red-down, watchlist add/remove, streaming Ingest panel), `MarketButton` (`$` icon, next to OSINT), `market.ts` client; `#market` hash route + `market` Tauri window capability; in-page overlay fallback
-- [x] **Surface egress in settings/privacy guard** — amber egress warning added to Market settings section ✅
-- [ ] *(stretch)* WebSocket trade stream for true real-time ticks; per-ticker AI drill-down; sparkline charts; intraday history
-
----
-
-### Phase 11.5 — Polymarket: Prediction Markets Intelligence  🎯 *full Polymarket data view with local AI embedding*
-*A new Hub tab (Ψ Poly) alongside Apollo/OSINT/Market/Settings. Full Polymarket data view matching their own UI: active prediction markets, YES/NO probability gauges, price history chart, order book depth, category filtering, and a user watchlist. Market data is locally embedded into Apollo's sqlite-vec store so AI across the app (Apollo chat, OSINT chat, Poly chat) can reason about prediction market sentiment alongside news and stocks.*
-
-**Decisions locked:** **Gamma API** (`gamma-api.polymarket.com`) for market listings/metadata · **CLOB API** (`clob.polymarket.com`) for order book and price history · **no API key required** (public read access) · **Apollo bridge** — markets embedded with `source="polymarket"` into the shared sqlite-vec store (24h TTL, same embed model) so retrieval is tag-agnostic · AI routes cloud Claude when `allow_cloud`, else local (same `_ai_route()` helper) · same Hub tab/lazy-mount pattern as existing modules.
-
-**Data sources (all free, no key):**
-| Source | Data |
-|--------|------|
-| Gamma API | Market listings, categories, outcome prices, volume, liquidity |
-| CLOB API | Price history (1D/1W/1M/Max intervals), order book bid/ask depth |
-
-- [x] **Engine polymarket module** (`engine/max_engine/polymarket/`): Gamma + CLOB `httpx` clients, `PolymarketService` with TTL cache (120s board / 1h history) + async lock + watchlist mutation, `Market`/`Outcome`/`PricePoint`/`OrderBook`/`PolymarketBoard` models, Apollo bridge `embedder.py` (`embed_markets()` → `store.upsert()` with `kind="polymarket"`)
-- [x] **Config**: `PolymarketConfig` (watchlist, ttl_seconds, embed_enabled, categories) in `config.py`; round-trips through `_apply_overrides` + `save_overrides`; persisted in `.maxconfig.json`
-- [x] **Endpoints**: `GET /polymarket/board`, `GET /polymarket/markets?category=`, `GET/PUT /polymarket/watchlist`, `GET /polymarket/prices/{condition_id}?interval=`, `GET /polymarket/order-book/{token_id}`, `GET /polymarket/sources`, `POST /polymarket/ingest` (SSE embed), `POST /polymarket/analyze` (SSE AI brief), `POST /polymarket/chat` (SSE conversational)
-- [x] **Prompts**: `"polymarket"` analyst prompt + `"polymarket_chat"` conversational prompt in `prompts.py`; `polymarket_chat_messages()` helper
-- [x] **Tests** (`tests/test_polymarket.py`): market parsing (JSON string + list fields), yes_price property, price history, order book, board caching + TTL, force-refresh, watchlist dedup, embed call mocked (store.upsert asserted), embed with no store/empty embeddings, all 9 endpoints — **24 tests passing**, full suite 164 tests green
-- [x] **Desktop board** (`app/src/polymarket/`): `PolymarketView` (category tabs All/Politics/Crypto/Sports/Economics/Entertainment/Science/World/★ Watchlist, three-column layout: market list · detail · AI panel), `PriceChart` (SVG probability chart, interval selector 1D/1W/1M/Max), `OrderBookPanel` (bid/ask depth ladder), `polymarket.ts` client (null on error), `Polymarket.css` (dark theme, gold accent, probability gauges green/amber/red)
-- [x] **Hub integration**: `"polymarket"` tab added to `HubTab` union + TABS array (glyph Ψ, label "Poly", gold accent in `Hub.css`); lazy-mount `<PolymarketView />`; Ψ launcher button in `HubButtons.tsx`; `#polymarket` hash route in `main.tsx`; `widget-action-btn--polymarket` style in `Market.css`
-- [x] **Surface egress in settings/privacy guard** — amber egress warning + new Polymarket settings section added ✅
-- [ ] *(stretch)* Real-time price streaming via Polymarket WebSocket; per-market news feed from Gamma `events` field; portfolio tracking (read-only via wallet address)
-
----
-
-### Phase 12 — Sentinel: 3D Space Intelligence  ✅ *interactive 3D Earth globe + live solar system with asteroid tracking*
-*A new Hub tab (◈ Sentinel) alongside Apollo/OSINT/Market/Settings. Two internal sub-views: Earth View (live satellite tracking on a 3D globe) and Solar System View (heliocentric planets + asteroid orbits). Mirrors the OSINT module pattern — thin React frontend, thick cached Python backend, SSE for AI chat. Adds Three.js as the first 3D library in the project.*
-
-**Decisions locked:** **Three.js** for 3D rendering (both views) · **satellite.js Web Worker** for client-side SGP4 propagation off the main thread (5000+ satellites at 30fps) · **CelesTrak TLEs** (free, no key) as the satellite data source · **NASA NeoWs** (free NASA API key) for asteroid close approaches · **VSOP87 truncated coefficients** hardcoded in `solarUtils.ts` for planet positions (no external call) · same Hub tab/lazy-mount pattern as existing modules · extra data layers beyond the reference sites (NOAA SWPC, NASA CNEOS, RocketLaunch.live, open-notify.org ISS).
-
-**Data sources (all free):**
-| Source | Data | Key? |
-|---|---|---|
-| CelesTrak | TLE data for ISS, Starlink, GPS, Galileo, weather sats | None |
-| NASA NeoWs | Near-Earth asteroid close approaches + orbital elements | Free NASA key |
-| JPL SBDB | Asteroid orbital elements for 3D rendering | None |
-| NOAA SWPC | Solar wind speed, Kp index, CME alerts, X-ray flux | None |
-| NASA CNEOS | Fireball/meteor events (last 30 days) plotted on Earth | None |
-| RocketLaunch.live | Next 5 rocket launches with pad lat/lon | Free tier, no key |
-| open-notify.org | ISS crew roster + live ISS position (5s poll) | None |
-
-**Extra data layers beyond the reference sites:**
-- NOAA space weather → aurora ring overlay on Earth globe (visible when Kp ≥ 5), space weather badge
-- NASA CNEOS fireballs → cone markers on Earth surface
-- RocketLaunch.live → launch pad markers + countdown sidebar panel
-- ISS crew via open-notify.org → crew panel in Earth View info sidebar
-
-- [x] **Engine sentinel module** (`engine/max_engine/sentinel/`): `tle.py` (CelesTrak group fetcher + 3-line parser), `asteroids.py` (NeoWs close-approaches + JPL SBDB orbital elements), `space_weather.py` (NOAA SWPC JSON), `fireballs.py` (CNEOS), `launches.py` (RocketLaunch.live), `iss.py` (open-notify.org); `SentinelService` with per-feed TTL cache + async locks
-- [x] **New Python deps**: `sgp4>=2.22` (SGP4 propagation for backend `/sentinel/satellites/now`), `numpy>=1.26` (vectorized batch propagation)
-- [x] **Endpoints**: `GET /sentinel/tle`, `GET /sentinel/satellites/now`, `GET /sentinel/neo`, `GET /sentinel/space-weather`, `GET /sentinel/launches`, `GET /sentinel/fireballs`, `GET /sentinel/iss`, `POST /sentinel/chat` (SSE, same `_sse_stream` helper)
-- [x] **Config**: `SentinelConfig` in `config.py` (TLE groups, TTLs, `neo_days_ahead`, `fireball_days`); `NASA_API_KEY` from env
-- [x] **New npm deps**: `three ^0.167.0`, `@types/three`, `satellite.js ^5.0.0`, `@types/satellite.js`
-- [x] **Frontend** (`app/src/sentinel/`): `SentinelView.tsx` (Earth/Solar sub-tab toggle + AI chat slide-in), `EarthView.tsx` (Three.js globe), `SolarView.tsx` (Three.js heliocentric), `earthUtils.ts`, `solarUtils.ts` (VSOP87 constants + Kepler solver), `satelliteWorker.ts` (Web Worker), `useThreeScene.ts` (shared Three.js lifecycle hook), `sentinel.ts` (API client), `Sentinel.css`
-- [x] **Earth View**: neon-hologram Earth sphere + day/night textures, Fresnel atmosphere glow, `DirectionalLight` from subsolar point, satellite `Points` geometry (SGP4 Web Worker ~100ms), selected satellite orbit `Line`, aurora `TorusGeometry` rings at ±65° (Kp-driven), fireball `ConeGeometry` markers, launch pad markers, `OrbitControls`
-- [x] **Solar System View**: Sun + `PointLight` at origin, planet orbit `RingGeometry`, planet spheres at VSOP87 positions (log-scale radii), main-belt asteroid `InstancedMesh`, NEA `Line` tracks, time scrubber, hazardous NEA red glow, `OrbitControls` default top-down
-- [x] **Hub integration**: `"sentinel"` Hub tab (🛰 Sentinel) + launcher button in `HubButtons.tsx`; `#sentinel` hash route in `main.tsx`
-- [x] **AI chat** (`POST /sentinel/chat`): grounded in live snapshot (space weather, ISS crew, NEA close approaches, next launch); mascot `mascot:signal` on submit
-- [x] **Tests**: `tests/test_sentinel.py` — TLE parsing, SGP4 propagation, space weather parsing, asteroid model, endpoints (network mocked); `sgp4`/`numpy` in test env
-
----
-
-### Phase 13 — Aegis: AI self-debug & fix engine  🎯 *Max watches its own logs, explains what broke, and — with your OK — fixes itself* ([design](docs/aegis.md))
-*Max becomes self-healing. An **observability** layer captures crashes/errors/log
-signals into a persistent store; an **AI diagnosis** layer (cloud Claude by default,
-local fallback) reads the signal + relevant source and proposes a root cause and a
-concrete patch; a **human gate** asks before anything is touched; an **apply/verify/
-rollback** layer commits the fix only if tests pass and reverts otherwise. Every action
-is recorded in an organized [`selfdiagnosefixes.md`](selfdiagnosefixes.md). Mirrors the
-OSINT/Market/Sentinel feature shape (engine module → endpoints → config → tests → desktop
-view) and reuses the router/delegate, `_sse_stream`, prompt templates, and the
-`workspace_allowlist` guard already in place.*
-
-**Decisions locked:** **two layers** — **Leo**, a **boot-time rescue terminal (build
-first)** that opens when the engine won't even start (or any launch issue), plus the
-**in-engine runtime layer** · **diagnose → ask → apply** (never silent) with a mandatory
-**diff preview + git-snapshot rollback** · fix scope = **engine (Python) + frontend
-(TS/React) first**, **whole-repo incl Rust/Tauri the stated target** · brain = **cloud
-Claude by default, local model fallback** (code/log egress marked like the `!` sigil,
-gated by `allow_cloud`) · all edits constrained to the **workspace allowlist** · **loop
-protection** (dedupe + cooldown) so a bad fix can't trigger infinite re-diagnosis ·
-secrets redacted before any store or egress.
-
-**Leo — boot-time rescue terminal 🐩 (build first):** *a bubbly, all-red rescue dog who works when nothing else is up.*
-- [x] **Launcher health gate** — `Max.cmd` launches the app (which owns the engine on
-  port 8001), polls `/health` (~40s), and on launch failure (or any startup issue) opens
-  Leo's terminal; preserves the app-owns-engine model
-- [x] **Leo rescue console** — red `LEO · SELF-DIAGNOSE MODE` banner, **all output red**,
-  animated sprite + live status, gathers env + stderr signal, **redacts secrets**,
-  diagnoses (cloud Claude → local Ollama → offline heuristics), records to
-  `selfdiagnosefixes.md`, and **loops with you (retry → relaunch app → `/health`)
-  until the engine is back up**; suggest-by-default (no silent edits)
-- [x] **Happy finale** — on green `/health`, Leo prints **"My job is done!"** + a tiny
-  smiling toy-poodle ASCII image, then exits; bubbly encouraging voice throughout
-- [x] **Polish**: fixed PowerShell 5.1 encoding bug (em-dash/box-chars with 0x94 byte read as curly-quote by Windows-1252, breaking string parsing); added `-ExecutionPolicy Bypass` to launcher ✅
-- [ ] Stream diagnosis token-by-token; one-click "apply suggested commands"; cross-platform launcher (`.sh`) once non-Windows lands
-
-**Runtime layer (engine up):**
-- [x] **Observability module** (`engine/max_engine/aegis/`): structured logger + ring
-  buffer + SQLite event store (survives restart); FastAPI exception handler; taps on
-  delegate `ERROR` sessions, provider errors, and startup failures; **secret redaction**
-  before store/egress
-- [x] **Client error capture**: `POST /aegis/report` ← frontend `window.onerror` /
-  `unhandledrejection`; Tauri/Rust engine-stderr forwarded as a signal
-- [x] **Endpoints**: `GET /aegis/events`, `POST /aegis/report`,
-  `POST /aegis/diagnose` (**SSE**, reuses `_sse_stream`), `POST /aegis/apply`,
-  `POST /aegis/rollback`, `GET /aegis/log`, `GET /aegis/sources`
-- [x] **Config**: `AegisConfig` (autonomy level, severity threshold, retention) in
-  `config.py`; round-trips through the persisted-override subset
-- [x] **Diagnosis**: `aegis` diagnostic prompt template in `prompts.py`; routes via the
-  existing router/delegate (cloud Claude default, local fallback); structured output =
-  root cause · severity · affected files · **unified diff**
-- [x] **Apply / verify / rollback**: git-snapshot patcher with **allowlist guard**; verify
-  runner (`pytest` for engine, `tsc && vite build` for frontend); keep on green,
-  **auto-revert** on failure or rejection
-- [x] **Logbook**: organized append-only [`selfdiagnosefixes.md`](selfdiagnosefixes.md)
-  (status legend: proposed / applied / verified / rolled-back)
-- [x] **Hub integration** (`app/src/aegis/`): `AegisView` (issues list · diagnosis stream ·
-  diff viewer · approve/apply/rollback); `"aegis"` Hub tab (🛡 Aegis) + launcher button;
-  `#aegis` hash route; mascot **error** state deep-links here
-- [x] **Tests** (`engine/tests/test_aegis_*.py`): capture, event ranking, redaction, store
-  operations — 21 tests passing
-- [x] **Surface egress in settings/privacy guard** — amber egress warning + Aegis section in Settings; notes secrets are redacted before egress ✅
-- [ ] *(stretch)* opt-in **full-auto mode** (detect→fix→test→restart, logged after the fact)
-  behind a flag · Rust/Tauri auto-fix · learn from past fixes (embed `selfdiagnosefixes.md`
-  into Apollo memory so recurring bugs are recognized)
+> **Future phase (out of scope here):** remote/internet access (Tailscale `*.ts.net` or Cloudflare Tunnel), app-level auth tokens, and multi-user — noted only as the upgrade path that this single-origin HTTPS app extends into cleanly.
 
 ---
 
@@ -390,6 +211,188 @@ secrets redacted before any store or egress.
 - Does v1 chat app need **codebase RAG**, or is plain chat + model config enough to start?
 - Default per-task models — propose a concrete default mapping after the Phase 0 benchmark?
 - **Engine end-to-end verification** (next milestone): which local model(s) to pull first for the smoke test, and do we test the `!` cloud path now or after a key is set up?
+
+---
+
+## ✅ Completed Phases
+
+### Phase 0 — Foundations & decisions  🎯 *stack locked, models benchmarked*
+- [x] Engine language = Python/FastAPI
+- [x] Desktop UI shell decision — **Tauri** (locked)
+- [x] Monorepo structure (`/engine`, `/app`, `/docs` exist; `/extension` lands in Phase 5)
+- [x] Install + smoke-test Ollama ✅ (0.24; `qwen2.5-coder:3b`+`:14b`, smoke all PASS); Anthropic API access for `!` ✅ (key in `engine/.env`)
+- [ ] **Benchmark local models on the 4070 Ti** (tokens/s, VRAM, quality) → shortlist *(deferred)*
+- [~] Dev tooling: lint/format/test done (**ruff + pytest, 268 passing**); **CI** + SessionStart hook pending
+- [x] Lock the DSL grammar (sigils + operators + escaping) — parser implemented + tested
+
+### Phase 1 — Engine MVP (the brain)  🎯 *`curl` can chat with Max via any provider*
+- [x] Provider adapter interface
+- [x] Ollama (local) adapter (streaming) — **verified end-to-end** against live Ollama (`/command` + `/v1/chat/completions` stream real tokens; sessions run → done)
+- [x] Anthropic/Claude (cloud) adapter (streaming) — **verified end-to-end** (`!` + cloud sessions stream real Claude output; API errors surfaced)
+- [x] OpenAI-compatible `/v1/chat/completions` with **streaming** (SSE); `provider` selectable
+- [x] `/command` endpoint: full DSL → router → provider stream (sigil picks local/cloud)
+- [x] Per-provider model overrides (cloud `!` → Claude model, local → coder model)
+- [x] Provider router (sigil → adapter+model) + per-task default model config (`router.py`)
+- [~] Config system — defaults + **file-backed persistence for UI settings** (`/config` GET/PUT → `.maxconfig.json`); models/sigils/keys + hot-reload still pending
+- [~] **Privacy guard** — cloud routes flagged (`is_cloud`) + `allow_cloud` gate + keys from env; **egress audit log + secure key store pending**
+- [~] Health/status endpoint (`/health` ✅); **background daemon mode pending**
+
+### Phase 2 — Command DSL & routing ✅
+*All four DSL operators wired end-to-end; post-processor ships in both engine and extension.*
+- [x] DSL parser (sigils + `.`/`..`/`~`, escaping, nested code) — `dsl/parser.py`, tested
+- [x] Wire parser → router → adapter — the `/command` endpoint
+- [x] `.` → code generation; `..` → docstring/README; `~` → fix/refactor — system prompts in `prompts.py`
+- [x] Output post-processing — `engine/max_engine/postprocess.py` (strip_fences + reindent, 14 tests); `extension/src/extension.ts` applies `postProcess(acc, baseIndent)` on every streaming chunk: opening fence never shows, closing fence stripped on arrival, all continuation lines aligned to the command's column
+
+### Phase 3 — Desktop widget app  🎯 **v1 — floating widget + configure everything** ([UI design](docs/ui.md))
+- [x] **Floating transparent widget** — frameless/transparent/always-on-top/skip-taskbar window, **top-right anchoring**, **global hotkey toggle** (`Ctrl+Shift+M`), and **click-through-when-idle** (Rust cursor-poll). ✅
+- [x] **Live vector mascot** ("X") reacting to engine state (idle / thinking / busy / done / error) — built as a **"Jarvis"-style SVG + CSS HUD** (not Rive; same state API)
+- [x] **Task cards** per session (model · provider · state · ☁ marker · cancel/promote) — **live**: polls the engine's `/sessions` (~2s), cancel/promote call the engine; mascot reacts to real session states.
+- [x] **SYS INFO** meters (CPU · GPU · **VRAM** · RAM) + **⚙ settings** cog — **live** values (Rust `sysinfo` for CPU/RAM, `nvidia-smi` for GPU/VRAM, polled ~1.5s)
+- [x] Chat UI — plain chat (`/chat`) + DSL commands (`/command`), **markdown with code blocks + copy button**, cloud (`!`) indicator, SSE streaming, `/health` status dot
+- [ ] **Model manager**: list / download / switch / params (temp, ctx, quant) *(deferred)*
+- [ ] **Routing config**: map sigils → providers/models, set **per-task defaults**, assign **hotkeys** *(deferred)*
+- [~] **Provider/key management** — cloud on/off ✅ + **key-set status** shown in settings; per-provider key *entry* stays in `engine/.env` by design
+- [x] Settings: **auto-delegate toggle (Manual / Smart-Auto)** + cloud on/off + **parallel limits** — live via `/config`, persisted to `.maxconfig.json`
+- [x] **Workspace folder allowlist** — add/remove paths in settings, persisted
+
+### Phase 4 — Delegate system: parallel sessions & multi-model orchestration ✅
+*Engine side built + tested (29 tests); dashboard/streaming UI wired in the Tauri app.*
+- [x] Session manager: spawn / track / cancel concurrent sessions, each bound to a provider+model
+- [x] **Mode (config): Manual** (you assign model+task) **and Smart-Auto** (engine decides local vs cloud)
+- [x] Smart-Auto router: choose local vs cloud per task by **task complexity** (+ local queue depth)
+- [x] Task scheduler aware of the **12 GB VRAM limit** (cloud + small-local run in parallel; heavy local models queue)
+- [x] Manual override (backend): `promote` a queued session to cloud when local is backed up
+- [x] **Isolated sessions** — each tracked + retrieved separately (`/sessions` API)
+- [x] **Queue dashboard** (UI) — live task cards poll `/sessions`; cancel/promote wired; **cards now render live output** (per-session SSE: `snapshot` then `chunk` deltas, blinking caret while running)
+- [x] Streaming each session's output concurrently to the client — **SSE** `GET /sessions/{id}/stream`; engine fan-out via per-session subscribers
+- [x] **Delegator/coordinator**: `POST /sessions/coordinate` — planner decomposes request into parallel subtasks (defensive JSON parse + single-task fallback)
+
+### Phase 5 — VS Code extension ✅
+*Built in `extension/` (TypeScript, esbuild; typecheck + build clean). Run with F5.*
+- [x] **Trigger (configurable)** — `auto` fires on closing delimiter (debounced); `manual` uses `ctrl/cmd+enter`
+- [x] **Sigil routing honored from the editor** — raw command sent to `/command`; engine parses `@`/`#`/`!` and routes
+- [x] Stream results; **inline replace** — command span replaced with streamed output as it arrives (single undo)
+- [x] Engine status + active-model surface; **cloud (☁) indicator** while a `!` command runs
+- [x] Ghost-text **FIM autocomplete** — `InlineCompletionItemProvider` → engine `POST /complete` (Ollama FIM), debounced/cancellable, toggleable
+
+### Phase 6 — Context & RAG (Max knows your codebase) ✅
+*Engine side built + tested (`engine/max_engine/rag/`, 17 tests). Scoped to workspace allowlist for privacy.*
+- [x] Workspace indexer — file walk with noise-dir pruning + text/size filters; line-aligned overlapping chunker
+- [x] Embeddings + local vector store (sqlite-vec); **incremental re-index** keyed on per-file content hash
+- [x] Retrieval injected into prompts — `POST /rag/ask` streams grounded answers **cited by `file:line`**
+- [x] **UI**: 🧠 toggle routes questions to `/rag/ask`; ⟳ index button shows live `files / chunks` counts; ✕ clears session memory
+- [x] **Session memory** — `SessionMemory` carries prior turns per `session_id`; fed to model + used to widen retrieval so terse follow-ups still pull the right code
+
+---
+
+### Phase 10 — OSINT global news map  ✅ *a glowing world map of where the news is happening, with a live day/night terminator*
+*A button below the chat bar opens a large dedicated window with a 2D world map: glowing-blue country wireframe, a news-driven heat choropleth, and a real-time day/night terminator. All news egress lives in the engine; the map atlas is bundled locally so only news data touches the network.*
+
+**Decisions locked:** 2D flat (equirectangular) map · dedicated large window · **GDELT + RSS** from day one (free, no key) · engine-side egress · bundled atlas.
+
+- [x] **Engine OSINT module** (`engine/max_engine/osint/`): GDELT DOC 2.0 client + stdlib RSS/Atom fetcher + country gazetteer (name/demonym → ISO-A3) + importance scorer (volume × source-diversity × recency) + TTL-cached aggregator service
+- [x] **Endpoints**: `GET /osint/heatmap` (per-country 0..1 intensity), `GET /osint/articles?country=&limit=` (ranked, newest-first), `GET /osint/sources`, `GET /osint/events`, `GET /osint/naval`, `POST /osint/chat` (SSE)
+- [x] **Config**: `OsintConfig` (GDELT query/timespan/max-records, feed list, cache TTL); no new Python deps (stdlib XML, existing httpx)
+- [x] **Tests**: `tests/test_osint.py` — gazetteer, GDELT/RSS parsing, scoring, dedup, caching, endpoints (13 tests, network mocked)
+- [x] **Desktop map** (`app/src/osint/`): `WorldMap` (d3-geo equirectangular + `world-atlas` TopoJSON, glow wireframe, heat choropleth, hover/select), `terminator.ts` (subsolar point + night ring, refreshed each minute), `OsintView` (map + ranked countries + article panel), `OsintButton` (below chat bar)
+- [x] **Dedicated window**: `#osint` hash route in `main.tsx`; Tauri `WebviewWindow` (1180×760, resizable) + `core:webview:allow-create-webview-window` capability; in-page overlay fallback outside Tauri
+- [x] **Severity classification** — Critical / High / Medium / Low from headline *content* (word-boundary keyword tiers, `osint/severity.py`); country badge = **recency-weighted mean** so one outlier story can't flip a whole country; filter bar gates map + hotspots + articles by tier
+- [x] **Sleeker "threat-intercept" redesign** — dropped the rainbow heat ramp for a discrete dark-ops threat scale (cyan→amber→orange→rose) with per-tier glow; tactical graticule; severity-coded hotspot bars + article edges (shadowbroker-style aesthetic)
+- [x] **Naval layer (US fleet positions)** — `osint/naval.py`: parses the latest USNI Fleet Tracker + TWZ Carrier Tracker; anchors on hull tokens (`CVN-73`) with name fallback, geocodes the nearest region phrase via a sea/port/AOR gazetteer; `GET /osint/naval`. Carrier (gold chevron) + amphib (steel diamond) markers with a `⚓ Fleet` toggle; 6 naval tests
+- [x] **Verified end-to-end**: live GDELT+RSS (e.g. 360 signals / 61 countries), severity tiers, threat shading, moving terminator + subsolar marker, filter toggles, country click → filtered articles; `npm run build` + `tsc` clean
+- [x] **Surface egress in settings/privacy guard** — amber egress warning added to OSINT settings section ✅
+- [x] **Tauri external links** via the opener plugin — article links now use `@tauri-apps/plugin-opener`; falls back to `window.open` in browser ✅
+- [ ] *(stretch)* GDELT theme-query tuning; expand the gazetteer beyond the newsworthy core; per-source toggles in the UI; optional GDELT tone signal in the score
+- [ ] *(stretch)* time-scrubber to replay the last 24h of heat; cluster/event detail on click
+
+---
+
+### Phase 11 — Market: live stocks + AI Ingest  ✅ *a live US-stock tape with an on-demand AI read*
+*A `$` button opens a large dedicated window: a live US-stock board on the left and an AI analysis panel on the right. Quote egress lives in the engine.*
+
+**Decisions locked:** **Finnhub** as the source (free `FINNHUB_API_KEY` in `engine/.env`) · **user-editable** watchlist (curated megacap default, persisted) · AI analysis runs **only** on the top **"Ingest"** button · "live" = frontend polls every ~10s against a 10s engine TTL cache.
+
+- [x] **Engine market module** (`engine/max_engine/market/`): Finnhub `/quote` + `/stock/profile2` client (per-symbol failures swallowed), `MarketService` with concurrent fetch + TTL cache + watchlist mutation, `Quote`/`MarketBoard` models
+- [x] **Endpoints**: `GET /market/quotes` (live board), `GET`/`PUT /market/watchlist` (editable + persisted), `GET /market/sources` (provider + `key_set`), `POST /market/analyze` (SSE), `POST /market/chat` (SSE)
+- [x] **Config**: `MarketConfig` (watchlist + cache TTL); watchlist round-trips through the persisted-override subset; no new Python deps (existing httpx)
+- [x] **Tests**: `tests/test_market.py` — quote parsing, unknown-symbol/HTTP-error skip, board aggregation + caching, no-key empty board, watchlist round-trip/dedup, endpoints (network mocked)
+- [x] **Desktop board** (`app/src/market/`): `MarketView` (polling stock rows, green-up/red-down, watchlist add/remove, streaming Ingest panel), `MarketButton` (`$` icon, next to OSINT), `market.ts` client; `#market` hash route + `market` Tauri window capability; in-page overlay fallback
+- [x] **Surface egress in settings/privacy guard** — amber egress warning added to Market settings section ✅
+- [ ] *(stretch)* WebSocket trade stream for true real-time ticks; per-ticker AI drill-down; sparkline charts; intraday history
+
+---
+
+### Phase 11.5 — Polymarket: Prediction Markets Intelligence  ✅ *full Polymarket data view with local AI embedding*
+*A new Hub tab (Ψ Poly). Full Polymarket data view: active prediction markets, YES/NO probability gauges, price history chart, order book depth, category filtering, and a user watchlist. Market data is locally embedded into Apollo's sqlite-vec store.*
+
+**Decisions locked:** **Gamma API** (`gamma-api.polymarket.com`) for market listings/metadata · **CLOB API** (`clob.polymarket.com`) for order book and price history · **no API key required** (public read access) · **Apollo bridge** — markets embedded with `source="polymarket"` into the shared sqlite-vec store (24h TTL, same embed model).
+
+- [x] **Engine polymarket module** (`engine/max_engine/polymarket/`): Gamma + CLOB `httpx` clients, `PolymarketService` with TTL cache (120s board / 1h history) + async lock + watchlist mutation, `Market`/`Outcome`/`PricePoint`/`OrderBook`/`PolymarketBoard` models, Apollo bridge `embedder.py`
+- [x] **Config**: `PolymarketConfig` (watchlist, ttl_seconds, embed_enabled, categories) in `config.py`; round-trips through `_apply_overrides` + `save_overrides`; persisted in `.maxconfig.json`
+- [x] **Endpoints**: `GET /polymarket/board`, `GET /polymarket/markets?category=`, `GET/PUT /polymarket/watchlist`, `GET /polymarket/prices/{condition_id}?interval=`, `GET /polymarket/order-book/{token_id}`, `GET /polymarket/sources`, `POST /polymarket/ingest` (SSE embed), `POST /polymarket/analyze` (SSE AI brief), `POST /polymarket/chat` (SSE conversational)
+- [x] **Prompts**: `"polymarket"` analyst prompt + `"polymarket_chat"` conversational prompt in `prompts.py`; `polymarket_chat_messages()` helper
+- [x] **Tests** (`tests/test_polymarket.py`): 24 tests passing, full suite 164 tests green at time of build
+- [x] **Desktop board** (`app/src/polymarket/`): `PolymarketView` (category tabs All/Politics/Crypto/Sports/Economics/Entertainment/Science/World/★ Watchlist, three-column layout: market list · detail · AI panel), `PriceChart` (SVG probability chart, interval selector 1D/1W/1M/Max), `OrderBookPanel` (bid/ask depth ladder), `polymarket.ts` client, `Polymarket.css` (dark theme, gold accent, probability gauges green/amber/red)
+- [x] **Hub integration**: `"polymarket"` tab added to `HubTab` union + TABS array (glyph Ψ, label "Poly", gold accent in `Hub.css`); lazy-mount `<PolymarketView />`; Ψ launcher button in `HubButtons.tsx`; `#polymarket` hash route in `main.tsx`
+- [x] **Surface egress in settings/privacy guard** — amber egress warning + new Polymarket settings section added ✅
+- [ ] *(stretch)* Real-time price streaming via Polymarket WebSocket; per-market news feed from Gamma `events` field; portfolio tracking (read-only via wallet address)
+
+---
+
+### Phase 12 — Sentinel: 3D Space Intelligence  ✅ *interactive 3D Earth globe + live solar system with asteroid tracking*
+*A new Hub tab (🛰 Sentinel). Two internal sub-views: Earth View (live satellite tracking on a 3D globe) and Solar System View (heliocentric planets + asteroid orbits). Mirrors the OSINT module pattern — thin React frontend, thick cached Python backend, SSE for AI chat.*
+
+**Decisions locked:** **Three.js** for 3D rendering (both views) · **satellite.js Web Worker** for client-side SGP4 propagation off the main thread (5000+ satellites at 30fps) · **CelesTrak TLEs** (free, no key) as the satellite data source · **NASA NeoWs** (free NASA API key) for asteroid close approaches · **VSOP87 truncated coefficients** hardcoded in `solarUtils.ts` for planet positions (no external call) · same Hub tab/lazy-mount pattern as existing modules.
+
+**Data sources (all free):**
+| Source | Data | Key? |
+|---|---|---|
+| CelesTrak | TLE data for ISS, Starlink, GPS, Galileo, weather sats | None |
+| NASA NeoWs | Near-Earth asteroid close approaches + orbital elements | Free NASA key |
+| JPL SBDB | Asteroid orbital elements for 3D rendering | None |
+| NOAA SWPC | Solar wind speed, Kp index, CME alerts, X-ray flux | None |
+| NASA CNEOS | Fireball/meteor events (last 30 days) plotted on Earth | None |
+| RocketLaunch.live | Next 5 rocket launches with pad lat/lon | Free tier, no key |
+| open-notify.org | ISS crew roster + live ISS position (5s poll) | None |
+
+- [x] **Engine sentinel module** (`engine/max_engine/sentinel/`): `tle.py` (CelesTrak group fetcher + 3-line parser), `asteroids.py` (NeoWs close-approaches + JPL SBDB orbital elements), `space_weather.py` (NOAA SWPC JSON), `fireballs.py` (CNEOS), `launches.py` (RocketLaunch.live), `iss.py` (open-notify.org); `SentinelService` with per-feed TTL cache + async locks
+- [x] **New Python deps**: `sgp4>=2.22` (SGP4 propagation for backend `/sentinel/satellites/now`), `numpy>=1.26` (vectorized batch propagation)
+- [x] **Endpoints**: `GET /sentinel/tle`, `GET /sentinel/satellites/now`, `GET /sentinel/neo`, `GET /sentinel/space-weather`, `GET /sentinel/launches`, `GET /sentinel/fireballs`, `GET /sentinel/iss`, `POST /sentinel/chat` (SSE, same `_sse_stream` helper)
+- [x] **Config**: `SentinelConfig` in `config.py` (TLE groups, TTLs, `neo_days_ahead`, `fireball_days`); `NASA_API_KEY` from env
+- [x] **New npm deps**: `three ^0.167.0`, `@types/three`, `satellite.js ^5.0.0`, `@types/satellite.js`
+- [x] **Frontend** (`app/src/sentinel/`): `SentinelView.tsx` (Earth/Solar sub-tab toggle + AI chat slide-in), `EarthView.tsx` (Three.js globe), `SolarView.tsx` (Three.js heliocentric), `earthUtils.ts`, `solarUtils.ts` (VSOP87 constants + Kepler solver), `satelliteWorker.ts` (Web Worker), `useThreeScene.ts` (shared Three.js lifecycle hook), `sentinel.ts` (API client), `Sentinel.css`
+- [x] **Earth View**: neon-hologram Earth sphere + day/night textures, Fresnel atmosphere glow, `DirectionalLight` from subsolar point, satellite `Points` geometry (SGP4 Web Worker ~100ms), selected satellite orbit `Line`, aurora `TorusGeometry` rings at ±65° (Kp-driven), fireball `ConeGeometry` markers, launch pad markers, `OrbitControls`
+- [x] **Solar System View**: Sun + `PointLight` at origin, planet orbit `RingGeometry`, planet spheres at VSOP87 positions (log-scale radii), main-belt asteroid `InstancedMesh`, NEA `Line` tracks, time scrubber, hazardous NEA red glow, `OrbitControls` default top-down
+- [x] **Hub integration**: `"sentinel"` Hub tab (🛰 Sentinel) + launcher button in `HubButtons.tsx`; `#sentinel` hash route in `main.tsx`
+- [x] **AI chat** (`POST /sentinel/chat`): grounded in live snapshot (space weather, ISS crew, NEA close approaches, next launch); mascot `mascot:signal` on submit
+- [x] **Tests**: `tests/test_sentinel.py` — TLE parsing, SGP4 propagation, space weather parsing, asteroid model, endpoints (network mocked); `sgp4`/`numpy` in test env
+
+---
+
+### Phase 13 — Aegis: AI self-debug & fix engine  ✅ *Max watches its own logs, explains what broke, and — with your OK — fixes itself* ([design](docs/aegis.md))
+
+**Decisions locked:** **two layers** — **Leo**, a **boot-time rescue terminal (build first)** that opens when the engine won't even start, plus the **in-engine runtime layer** · **diagnose → ask → apply** (never silent) with a mandatory **diff preview + git-snapshot rollback** · brain = **cloud Claude by default, local model fallback** · all edits constrained to the **workspace allowlist** · **loop protection** (dedupe + cooldown).
+
+**Leo — boot-time rescue terminal 🐩 (build first):** *a bubbly, all-red rescue dog who works when nothing else is up.*
+- [x] **Launcher health gate** — `Max.cmd` launches the app (which owns the engine on port 8001), polls `/health` (~40s), and on launch failure opens Leo's terminal
+- [x] **Leo rescue console** — red `LEO · SELF-DIAGNOSE MODE` banner, **all output red**, animated sprite + live status, gathers env + stderr signal, **redacts secrets**, diagnoses (cloud Claude → local Ollama → offline heuristics), records to `selfdiagnosefixes.md`, and **loops until the engine is back up**
+- [x] **Happy finale** — on green `/health`, Leo prints **"My job is done!"** + a tiny smiling toy-poodle ASCII image, then exits; bubbly encouraging voice throughout
+- [x] **Polish**: fixed PowerShell 5.1 encoding bug (em-dash/box-chars with 0x94 byte read as curly-quote by Windows-1252, breaking string parsing); added `-ExecutionPolicy Bypass` to launcher ✅
+- [ ] *(stretch)* Stream diagnosis token-by-token; one-click "apply suggested commands"; cross-platform launcher (`.sh`) once non-Windows lands
+
+**Runtime layer (engine up):**
+- [x] **Observability module** (`engine/max_engine/aegis/`): structured logger + ring buffer + SQLite event store (survives restart); FastAPI exception handler; taps on delegate `ERROR` sessions, provider errors, and startup failures; **secret redaction** before store/egress
+- [x] **Client error capture**: `POST /aegis/report` ← frontend `window.onerror` / `unhandledrejection`; Tauri/Rust engine-stderr forwarded as a signal
+- [x] **Endpoints**: `GET /aegis/events`, `POST /aegis/report`, `POST /aegis/diagnose` (**SSE**, reuses `_sse_stream`), `POST /aegis/apply`, `POST /aegis/rollback`, `GET /aegis/log`, `GET /aegis/sources`
+- [x] **Config**: `AegisConfig` (autonomy level, severity threshold, retention) in `config.py`; round-trips through the persisted-override subset
+- [x] **Diagnosis**: `aegis` diagnostic prompt template in `prompts.py`; routes via the existing router/delegate (cloud Claude default, local fallback); structured output = root cause · severity · affected files · **unified diff**
+- [x] **Apply / verify / rollback**: git-snapshot patcher with **allowlist guard**; verify runner (`pytest` for engine, `tsc && vite build` for frontend); keep on green, **auto-revert** on failure or rejection
+- [x] **Logbook**: organized append-only [`selfdiagnosefixes.md`](selfdiagnosefixes.md) (status legend: proposed / applied / verified / rolled-back)
+- [x] **Hub integration** (`app/src/aegis/`): `AegisView` (issues list · diagnosis stream · diff viewer · approve/apply/rollback); `"aegis"` Hub tab (🛡 Aegis) + launcher button; `#aegis` hash route; mascot **error** state deep-links here
+- [x] **Tests** (`engine/tests/test_aegis_*.py`): capture, event ranking, redaction, store operations — 21 tests passing
+- [x] **Surface egress in settings/privacy guard** — amber egress warning + Aegis section in Settings; notes secrets are redacted before egress ✅
+- [ ] *(stretch)* opt-in **full-auto mode** (detect→fix→test→restart, logged after the fact) behind a flag · Rust/Tauri auto-fix · learn from past fixes (embed `selfdiagnosefixes.md` into Apollo memory so recurring bugs are recognized)
 
 ---
 
@@ -427,9 +430,9 @@ secrets redacted before any store or egress.
 
 ---
 
-### Phase 16 — Aegis Security Posture: Full Codebase Vulnerability Scanner  🛡 *Max audits its own code + dependencies and helps Leo fix what it finds* — **PLANNED**
+### Phase 16 — Aegis Security Posture: Full Codebase Vulnerability Scanner  ✅ *Max audits its own code + dependencies and helps Leo fix what it finds*
 
-*Extends Aegis from reactive (catch runtime errors) to proactive (find vulnerabilities before they bite). A new **Security Posture** sub-tab inside the 🛡 Aegis tab runs two scanners: **SAST** (regex/heuristic rules over the codebase, AI-triaged) and **SCA** (parse dependency manifests/lockfiles and query OSV.dev for known CVEs/GHSAs). Findings persist with status across scans, drive a posture score + severity counts aggregated over time, run on a configurable in-engine schedule (plus a manual "Run scan now"), and each finding can be clicked to "Ask Leo to fix" — reusing the existing diagnose → apply (stash → patch → verify → keep/rollback) machinery. Adds zero new runtime deps. Full plan: `C:\Users\tadjo\.claude\plans\new-feature-plan-inside-enchanted-hamming.md`.*
+*Extends Aegis from reactive (catch runtime errors) to proactive (find vulnerabilities before they bite). A new **Security Posture** sub-tab inside the 🛡 Aegis tab runs two scanners: **SAST** (regex/heuristic rules over the codebase, AI-triaged) and **SCA** (parse dependency manifests/lockfiles and query OSV.dev for known CVEs/GHSAs). Adds zero new runtime deps. Full plan: `C:\Users\tadjo\.claude\plans\new-feature-plan-inside-enchanted-hamming.md`.*
 
 **Decisions locked:** SAST = heuristic rules + AI triage (no new deps) · SCA = **OSV.dev** batch API (free, no key, covers PyPI/npm/crates.io; returns CVE/GHSA + CVSS + fixed version) via existing `httpx`, TTL-cached, offline-safe · in-engine async-interval scheduler + manual trigger (no OS cron) · sub-tab toggle inside Aegis (`Runtime Errors` | `Security Posture`) · posture score 0–100 (`100 − 15·crit − 7·high − 3·med − 1·low`) + severity counts + scan-history trend strip · findings dedup by fingerprint, status open/fixed/ignored, auto-`fixed` on reconcile when no longer seen · "Ask Leo to fix" reuses diagnose/apply/rollback; SCA fixes = manifest version-bump diffs · **ecosystem-aware verify** (Python→pytest, npm→npm ci+tsc, rust→cargo check; missing toolchain → "applied, needs manual verify") · configurable **score-threshold gate** → "at risk" banner · one-click **Markdown posture report** export · new `aegis_scans` + `aegis_findings` tables in `.apollo.db`; reuses `rag/chunker` file-walker, `aegis/redact`, and the provider router.
 
@@ -441,59 +444,3 @@ secrets redacted before any store or egress.
 - [x] **Security Posture UI** (`app/src/aegis/SecurityPostureView.tsx`): circular score gauge, at-risk banner, history strip, SAST/SCA finding list + detail, fix/approve/ignore/reopen, report export; `Runtime Errors | Security Posture` sub-tab toggle in `AegisView.tsx`; styles in `Aegis.css`.
 - [x] **Config + Settings**: `AegisConfig` scan/OSV/threshold fields in `config.py` exposed via `/config`; scan controls in `settings/SettingsView.tsx`; `aegis_security` prompt in `prompts.py`.
 - [x] **Tests**: `test_aegis_scanner.py`, `test_aegis_deps_osv.py` (mocked httpx), `test_aegis_scan_store.py` — 69 new tests, 268 total green.
-
----
-
-### Phase 17 — LAN Access: Max on your iPhone & Mac over WiFi  📱 *open Max in a phone/Mac browser on the same network — all compute stays on this PC* — **PLANNED**
-
-*Today Max only runs as the desktop widget. This phase lets you open Max from your iPhone and Mac in a browser over the same WiFi, while the engine, Ollama, Tor, and cloud-API keys stay on this desktop. The frontend already talks to the engine purely over HTTP `fetch` (no Tauri IPC for backend calls), so a plain browser can drive the whole engine — the work is exposing it safely and giving phones a touch-first UI. A **"Share on LAN" toggle** in Settings flips the engine from safe localhost to `0.0.0.0:8443` over HTTPS, serves a dedicated **mobile web UI**, and shows the `https://<pc-name>.local:8443` URL plus a scannable QR code. The desktop widget keeps working unchanged. First step toward a later "accessible from anywhere" phase (Tailscale/Cloudflare) — explicitly out of scope here. Full plan: `C:\Users\tadjo\.claude\plans\lets-plan-a-new-enumerated-parnas.md`.*
-
-**The load-bearing gotcha:** iOS Safari treats a LAN IP/host over plain HTTP as an *insecure context*, which **silently disables the mic / Web Speech / clipboard** (`localhost` is exempt, `192.168.x.x` and `*.local` are not). Voice on mobile is required → **HTTPS via a locally-trusted cert is mandatory**, not optional polish.
-
-**Decisions locked:** mic on mobile required → **HTTPS mandatory** · **engine serves the built frontend** (single origin → no CORS) · desktop Tauri app **stays open** (LAN is an in-app toggle, no standalone launcher) · **no app token** — rely on home LAN + a subnet-scoped Windows firewall rule (`profile=private`, `remoteip=LocalSubnet`) · HTTPS via **mkcert** + install/trust root CA on the iPhone (pure LAN, no internet/accounts) · reach the PC at **`<computer-name>.local`** via mDNS (cert SANs also cover LAN IP + `localhost` + `127.0.0.1`) · **uvicorn built-in TLS** (`--ssl-keyfile/--ssl-certfile`, no Caddy) on port **8443** · connect UX = **toggle + URL + QR** in Settings · **dedicated mobile build** (separate Vite entry, built alongside desktop) · cert setup is **app-assisted** (run mkcert, generate cert w/ SANs, reveal/AirDrop root CA + short trust doc) · LAN state **remembered** across launches · phone feature priority **Chat+Voice · Market/Polymarket · OSINT/Sentinel** (Aegis/Shadow Net deferred).
-
-- [ ] **17.A — Engine serve + dynamic base + HTTP LAN bind**: `main.py` mounts the Vite `dist/` as `StaticFiles` (single origin) with a UA-based mobile redirect (`/` → `/m`); narrow CORS `allow_origins=["*"]` → LAN `allow_origin_regex`; new `EngineConfig` fields (`lan_enabled`, `lan_host`, `lan_port`, `tls_cert`, `tls_key`) round-tripping through `.maxconfig.json`; make `app/src/engine.ts` base URL dynamic (same-origin in a served browser, absolute via a new `engine_base()` Tauri command in the webview); parametrize Rust `spawn_engine()` to bind `0.0.0.0` (HTTP first, to validate).
-- [ ] **17.B — Dedicated mobile build**: multi-page Vite build (`index.mobile.html` + `src/mobile/`) → `dist/mobile.html`; touch-first single-column shell with bottom-tab nav **Chat/Voice · Markets · OSINT/Sentinel**, reusing the existing engine-client modules (`engine.ts`, `market.ts`, `polymarket.ts`, `osint.ts`, `apollo.ts`, `sentinel/*`, `MicButton.tsx`) unchanged; no Tauri `invoke` in the mobile shell.
-- [ ] **17.C — HTTPS: certs + TLS + firewall**: `setup_cert()` / `reveal_root_ca()` Tauri commands run mkcert (`-install`, then SANs `<pc>.local <lan-ip> localhost 127.0.0.1`); Rust spawns uvicorn with `--ssl-keyfile/--ssl-certfile` on `:8443` when LAN-enabled; health/port checks speak HTTPS to `127.0.0.1:8443` (keep `127.0.0.1`, never `localhost`); add/remove the subnet-scoped firewall rule (elevated/UAC) on toggle; `docs/lan.md` with the iPhone "enable full trust" steps.
-- [ ] **17.D — Settings "Share on LAN"**: section in `settings/SettingsView.tsx` with the toggle (`set_lan_mode`), live `lan_status` (`{enabled, url, pc_name, lan_ip, cert_ready}`), copyable `https://<pc-name>.local:8443` URL, **QR code**, cert-helper buttons + trust steps, firewall/Private-network hint; LAN state remembered across launches.
-
-> **Future phase (out of scope here):** remote/internet access (Tailscale `*.ts.net` or Cloudflare Tunnel), app-level auth tokens, and multi-user — noted only as the upgrade path that this single-origin HTTPS app extends into cleanly.
-
----
-
-## ✅ Completed Phases
-
-### Phase 4 — Delegate system: parallel sessions & multi-model orchestration ✅
-*Engine side built + tested (29 tests); dashboard/streaming UI wired in the Tauri app.*
-- [x] Session manager: spawn / track / cancel concurrent sessions, each bound to a provider+model
-- [x] **Mode (config): Manual** (you assign model+task) **and Smart-Auto** (engine decides local vs cloud)
-- [x] Smart-Auto router: choose local vs cloud per task by **task complexity** (+ local queue depth)
-- [x] Task scheduler aware of the **12 GB VRAM limit** (cloud + small-local run in parallel; heavy local models queue)
-- [x] Manual override (backend): `promote` a queued session to cloud when local is backed up
-- [x] **Isolated sessions** — each tracked + retrieved separately (`/sessions` API)
-- [x] **Queue dashboard** (UI) — live task cards poll `/sessions`; cancel/promote wired; **cards now render live output** (per-session SSE: `snapshot` then `chunk` deltas, blinking caret while running)
-- [x] Streaming each session's output concurrently to the client — **SSE** `GET /sessions/{id}/stream`; engine fan-out via per-session subscribers
-- [x] **Delegator/coordinator**: `POST /sessions/coordinate` — planner decomposes request into parallel subtasks (defensive JSON parse + single-task fallback)
-
-### Phase 5 — VS Code extension ✅
-*Built in `extension/` (TypeScript, esbuild; typecheck + build clean). Run with F5.*
-- [x] **Trigger (configurable)** — `auto` fires on closing delimiter (debounced); `manual` uses `ctrl/cmd+enter`
-- [x] **Sigil routing honored from the editor** — raw command sent to `/command`; engine parses `@`/`#`/`!` and routes
-- [x] Stream results; **inline replace** — command span replaced with streamed output as it arrives (single undo)
-- [x] Engine status + active-model surface; **cloud (☁) indicator** while a `!` command runs
-- [x] Ghost-text **FIM autocomplete** — `InlineCompletionItemProvider` → engine `POST /complete` (Ollama FIM), debounced/cancellable, toggleable
-
-### Phase 6 — Context & RAG (Max knows your codebase) ✅
-*Engine side built + tested (`engine/max_engine/rag/`, 17 tests). Scoped to workspace allowlist for privacy.*
-- [x] Workspace indexer — file walk with noise-dir pruning + text/size filters; line-aligned overlapping chunker
-- [x] Embeddings + local vector store (sqlite-vec); **incremental re-index** keyed on per-file content hash
-- [x] Retrieval injected into prompts — `POST /rag/ask` streams grounded answers **cited by `file:line`**
-- [x] **UI**: 🧠 toggle routes questions to `/rag/ask`; ⟳ index button shows live `files / chunks` counts; ✕ clears session memory
-- [x] **Session memory** — `SessionMemory` carries prior turns per `session_id`; fed to model + used to widen retrieval so terse follow-ups still pull the right code
-
-### Phase 2 — Command DSL & routing ✅
-*All four DSL operators wired end-to-end; post-processor ships in both engine and extension.*
-- [x] DSL parser (sigils + `.`/`..`/`~`, escaping, nested code) — `dsl/parser.py`, tested
-- [x] Wire parser → router → adapter — the `/command` endpoint
-- [x] `.` → code generation; `..` → docstring/README; `~` → fix/refactor — system prompts in `prompts.py`
-- [x] Output post-processing — `engine/max_engine/postprocess.py` (strip_fences + reindent, 14 tests); `extension/src/extension.ts` applies `postProcess(acc, baseIndent)` on every streaming chunk: opening fence never shows, closing fence stripped on arrival, all continuation lines aligned to the command's column
