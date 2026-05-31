@@ -18,6 +18,13 @@ import {
 } from "./apollo";
 import "./Apollo.css";
 
+async function emitMascotEvent(name: string, payload?: unknown) {
+  try {
+    const { emit } = await import("@tauri-apps/api/event");
+    await emit(name, payload);
+  } catch { /* not in Tauri */ }
+}
+
 type StreamFn = (signal?: AbortSignal) => AsyncGenerator<ApolloEvent>;
 type LogLine = { stage: string; db: number };
 
@@ -80,6 +87,8 @@ function ReportBox({
     setDbPulse(0);
     setErr(null);
     setBusy(true);
+    void emitMascotEvent("mascot:signal");
+    void emitMascotEvent("mascot:thinking", true);
     void (async () => {
       try {
         for await (const ev of stream(ctrl.signal)) {
@@ -94,7 +103,10 @@ function ReportBox({
       } catch (e) {
         if (!ctrl.signal.aborted) setErr((e as Error).message);
       } finally {
-        if (!cancelled) setBusy(false);
+        if (!cancelled) {
+          setBusy(false);
+          void emitMascotEvent("mascot:thinking", false);
+        }
       }
     })();
     return () => {

@@ -391,18 +391,24 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
           >
             {ingesting ? "Ingesting…" : "Ingest"}
           </button>
-          <button
-            className={`market__panel-toggle${panelOpen ? " is-on" : ""}`}
-            onClick={() => setPanelOpen((v) => !v)}
-            title="AI Analysis & Chat"
-          >
-            ✦ AI
-          </button>
           {onClose && (
             <button className="market__btn market__btn--close" onClick={onClose}>×</button>
           )}
         </div>
       </header>
+
+      {/* ── animated orb AI FAB (bottom-right) ── */}
+      <button
+        className={`market__ai-fab${panelOpen ? " is-on" : ""}`}
+        onClick={() => setPanelOpen((v) => !v)}
+        title={panelOpen ? "Close AI panel" : "AI Analysis & Chat"}
+        aria-label="Toggle AI panel"
+      >
+        <span className="market__ai-fab__fluid market__ai-fab__fluid--a" />
+        <span className="market__ai-fab__fluid market__ai-fab__fluid--b" />
+        <span className="market__ai-fab__fluid market__ai-fab__fluid--c" />
+        <span className="market__ai-fab__gloss" />
+      </button>
 
       {/* ── body ── */}
       <div className="market__body">

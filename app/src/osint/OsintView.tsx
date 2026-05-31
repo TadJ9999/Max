@@ -352,6 +352,11 @@ export function OsintView({ onClose }: { onClose?: () => void }) {
       <div className="osint__body">
         {/* map stage */}
         <div className="osint__stage">
+          {selected && (
+            <button className="osint__map-back" onClick={clearSelection}>
+              ← {selected.name}
+            </button>
+          )}
           <WorldMap
             countries={all}
             selectedIso={selected?.iso ?? null}
@@ -381,9 +386,6 @@ export function OsintView({ onClose }: { onClose?: () => void }) {
         <aside className="osint__panel">
           <div className="osint__panel-head">
             <span className="osint__panel-title">{selected ? selected.name : "Hotspots"}</span>
-            {selected && (
-              <button className="osint__chip" onClick={clearSelection}>← global</button>
-            )}
           </div>
 
           {/* hotspot rank bars */}

@@ -632,6 +632,95 @@
 }
 @keyframes market-blink { 50% { opacity: 0; } }
 
+/* ── AI animated orb FAB (bottom-right floating action button) ─────── */
+.market__ai-fab {
+  position: absolute;
+  bottom: 22px;
+  right: 22px;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  z-index: 15;
+  padding: 0;
+
+  /* Liquid-glass orb base — matches the mascot core palette */
+  background: radial-gradient(circle at 50% 30%, #ffffff 0%, #8db8ff 38%, #2e7fff 92%);
+  box-shadow:
+    0 0 22px 3px rgba(110, 160, 255, 0.65),
+    inset 0 6px 9px rgba(255, 255, 255, 0.45),
+    inset 0 -10px 18px rgba(40, 18, 80, 0.45);
+  overflow: hidden;
+  isolation: isolate;
+  animation: mkt-orb-breathe 4.4s ease-in-out infinite;
+  transition: box-shadow 0.3s ease, transform 0.18s ease;
+}
+.market__ai-fab:hover {
+  transform: scale(1.1);
+  box-shadow:
+    0 0 34px 5px rgba(110, 160, 255, 0.88),
+    inset 0 6px 9px rgba(255, 255, 255, 0.45),
+    inset 0 -10px 18px rgba(40, 18, 80, 0.45);
+}
+.market__ai-fab.is-on {
+  box-shadow:
+    0 0 28px 4px rgba(0, 220, 120, 0.55),
+    0 0 18px 2px rgba(160, 80, 255, 0.75),
+    inset 0 6px 9px rgba(255, 255, 255, 0.45),
+    inset 0 -10px 18px rgba(40, 18, 80, 0.45);
+}
+.market__ai-fab:active {
+  transform: scale(0.95);
+}
+/* fluid lobes — same animation as mascot orb */
+.market__ai-fab__fluid {
+  position: absolute;
+  left: -30%;
+  top: -30%;
+  width: 160%;
+  height: 160%;
+  border-radius: 42% 58% 55% 45%;
+  filter: blur(5px);
+  will-change: transform;
+  pointer-events: none;
+}
+.market__ai-fab__fluid--a {
+  background: radial-gradient(circle at 36% 38%, #ff50b8 0%, transparent 52%);
+  opacity: 1;
+  animation: mkt-orb-swirl-cw 9s linear infinite;
+}
+.market__ai-fab__fluid--b {
+  background: radial-gradient(circle at 64% 60%, #2e7fff 0%, transparent 54%);
+  opacity: 0.95;
+  animation: mkt-orb-swirl-ccw 11.25s linear infinite;
+}
+.market__ai-fab__fluid--c {
+  background: radial-gradient(circle at 50% 66%, #9b5cff 0%, transparent 56%);
+  opacity: 1;
+  animation: mkt-orb-pan 14.4s ease-in-out infinite;
+}
+/* gloss highlight */
+.market__ai-fab__gloss {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 33% 24%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 20%),
+    radial-gradient(circle at 68% 80%, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 20%);
+}
+@keyframes mkt-orb-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+@keyframes mkt-orb-swirl-cw  { to { transform: rotate(360deg); } }
+@keyframes mkt-orb-swirl-ccw { to { transform: rotate(-360deg); } }
+@keyframes mkt-orb-pan {
+  0%, 100% { transform: translate(-6%, 4%) rotate(0deg); }
+  50%       { transform: translate(8%, -6%) rotate(180deg); }
+}
+
 /* ── browser-preview overlay ─────────────────────────────────────────── */
 .market-overlay {
   position: fixed;

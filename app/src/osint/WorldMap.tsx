@@ -23,28 +23,30 @@ const land = feature(
 // ── Ship silhouettes (top-down, bow pointing up, centered at 0,0) ──────────
 //
 // Aircraft carrier (CVN – Nimitz / Ford class)
-// Very elongated hull (3:1 ratio). The angled flight deck extends significantly
-// to PORT (left). The island superstructure is a distinct bump on STARBOARD
-// (right side, mid-ship). Sharp clipper bow.
+// Elongated hull. Angled flight deck extends to PORT (+x). Island on STARBOARD (−x).
+// The angled deck spans the middle 60% of hull length — recognizable asymmetric shape.
 const CARRIER_D =
-  // hull port side + angled deck extension
-  "M0,-16 L2.5,-13 L3,-4 " +        // bow → port side
-  "L11,-4 L12,0 L11,4 L3,4 " +      // angled deck: extends 8 units to port
-  "L3,11 " +                         // port stern corner
-  // stern + starboard
-  "L-3,11 L-3.5,6 " +               // starboard stern
-  "L-6.5,5 L-7,2 L-6.5,-1 L-3.5,-2 " + // island bump starboard mid-ship
-  "L-3,-13 L-1.5,-15 Z";            // starboard side → bow
+  "M 0,-17" +                                        // sharp bow tip
+  " L 2,-14 L 3,-4" +                               // port bow → hull amidships
+  " L 13,-2 L 14,1.5 L 13,5.5" +                   // angled deck: bold port extension
+  " L 3,5.5 L 2.5,12 L 0.5,14" +                   // deck meets hull → port stern
+  " L -2.5,14 L -3.5,11" +                          // stern transom
+  " L -5.5,9 L -7.5,6 L -7,2 L -5.5,0 L -3.5,-0.5" + // island superstructure
+  " L -3,-14 L -1.5,-17 Z";                         // starboard hull → bow
 
 // Amphibious assault ship (LHD/LHA – Wasp / America class)
-// Shorter and wider than a carrier (2:1 ratio). Full-length flat deck (no
-// angled section), island on starboard, more rounded hull form.
+// Shorter and wider. Full-length flat deck, larger island on starboard.
 const AMPHIB_D =
-  "M0,-12 L3.5,-10 L4.5,-3 " +      // bow → port
-  "L4.5,8 L3,11 " +                  // port side → stern
-  "L-3,11 L-4.5,8 " +               // starboard stern
-  "L-6,4 L-6.5,1 L-6,-2 L-4.5,-3 " + // island: starboard mid-ship
-  "L-4.5,-10 L-3,-12 Z";            // starboard side → bow
+  "M 0,-13" +                                       // bow
+  " L 3.5,-11 L 5,-2" +                            // port bow → hull
+  " L 5,9 L 3,12" +                                // port hull → stern
+  " L -2,12 L -3.5,9" +                            // stern transom
+  " L -5.5,7 L -7,4.5 L -6.5,1 L -5.5,-1 L -4.5,-1.5" + // island
+  " L -4.5,-11 L -2.5,-13 Z";                      // starboard hull → bow
+
+function shortShipName(name: string): string {
+  return name.replace(/^USS\s+|^USNS\s+/i, "").split(/\s+/).slice(0, 2).join(" ");
+}
 
 // ── types ───────────────────────────────────────────────────────────────────
 type VB = { x: number; y: number; w: number; h: number };
@@ -294,7 +296,7 @@ export function WorldMap({
               return (
                 <g key={s.hull}
                   className={`osint-ship osint-ship--${s.kind}${inPort ? " is-port" : ""}`}
-                  transform={`translate(${x},${y}) scale(0.68)`}
+                  transform={`translate(${x},${y}) scale(0.72)`}
                   onMouseMove={(e) => setShipHover({ ship: s, x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY })}
                   onMouseLeave={() => setShipHover(null)}
                   onClick={() => s.url && window.open(s.url, "_blank", "noopener")}
@@ -303,8 +305,11 @@ export function WorldMap({
                     <circle cx={0} cy={0} r={9} fill="none" stroke="currentColor"
                       strokeWidth={1} className="osint-ship-pulse" />
                   )}
-                  <circle cx={0} cy={0} r={13} className="osint-ship__halo" />
+                  <circle cx={0} cy={0} r={15} className="osint-ship__halo" />
                   <path d={isCarrier ? CARRIER_D : AMPHIB_D} className="osint-ship__mark" />
+                  <text x={0} y={21} className="osint-ship__label" textAnchor="middle">
+                    {shortShipName(s.name)}
+                  </text>
                 </g>
               );
             })}
