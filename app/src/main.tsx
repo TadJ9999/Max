@@ -25,3 +25,19 @@ function pickRoot() {
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>{pickRoot()}</React.StrictMode>,
 );
+
+// Safety net: the main widget window starts hidden and is revealed after mount
+// (see window.ts). If that path ever fails, force-show shortly after load so the
+// window can never get stuck invisible. Only the main widget starts hidden.
+if (!window.location.hash && "__TAURI_INTERNALS__" in window) {
+  window.setTimeout(() => {
+    void (async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        await getCurrentWindow().show();
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, 2000);
+}

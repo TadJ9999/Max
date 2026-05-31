@@ -21,11 +21,31 @@ export async function initFloatingWindow(): Promise<void> {
   );
 
   const win = getCurrentWindow();
-  const mon = await currentMonitor();
-  if (!mon) return;
 
-  const size = await win.outerSize();
-  const x = mon.position.x + mon.size.width - size.width - MARGIN;
-  const y = mon.position.y + MARGIN;
-  await win.setPosition(new PhysicalPosition(Math.round(x), Math.round(y)));
+  // Position to the top-right of the active monitor (best-effort).
+  try {
+    const mon = await currentMonitor();
+    if (mon) {
+      const size = await win.outerSize();
+      const x = mon.position.x + mon.size.width - size.width - MARGIN;
+      const y = mon.position.y + MARGIN;
+      await win.setPosition(new PhysicalPosition(Math.round(x), Math.round(y)));
+    }
+  } catch {
+    /* positioning is best-effort — never block the reveal below */
+  }
+
+  // Reveal the window only now that React has mounted and laid out. The window
+  // starts hidden (tauri.conf "visible": false) to avoid the transparent-WebView2
+  // "blank window" race, where an always-visible window paints empty before the
+  // first contentful paint and sometimes never repaints. Wait two animation
+  // frames so a paint has happened, then show.
+  await new Promise<void>((r) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => r())),
+  );
+  try {
+    await win.show();
+  } catch {
+    /* ignore */
+  }
 }
