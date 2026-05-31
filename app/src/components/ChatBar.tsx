@@ -138,9 +138,7 @@ export function ChatBar({
           title={online == null ? "checking engine…" : online ? "engine online" : "engine offline"}
         />
         <div className="chat__input-wrap">
-          {!text && !inputFocused && (
-            <span className="chat__poodle"><PoodleSprite /></span>
-          )}
+          {!text && !inputFocused && <PoodleSprite />}
           <input
             className="chat__input"
             placeholder=""

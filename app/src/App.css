@@ -639,28 +639,44 @@ body {
   font-size: 13px;
   width: 100%;
 }
-/* poodle trot animation — runs when input is empty & unfocused */
+/* ── Poodle idle/run animation ──────────────────────────────────── */
 .chat__poodle {
   position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  left: 2px;
+  top: 0;
+  bottom: 0;
+  height: 17px;
+  margin: auto;
+  display: block;
   line-height: 0;
   pointer-events: none;
   user-select: none;
-  animation: poodle-trot 3.4s linear infinite;
+  /* smooth slide back to left edge when going idle */
+  transition: left 0.3s ease-in-out;
+}
+.chat__poodle--run {
+  animation: poodle-trot 5.4s linear infinite;
+  transition: none; /* let keyframes own movement while running */
 }
 @keyframes poodle-trot {
-  0%   { left: 2px;                top: 50%;        opacity: 1; }
-  15%  { top: calc(50% - 2px); }
-  30%  { top: 50%; }
-  45%  { top: calc(50% - 2px); }
-  60%  { top: 50%; }
-  75%  { top: calc(50% - 2px); }
-  84%  { left: calc(100% - 50px); top: 50%;        opacity: 1; }
-  90%  { left: calc(100% - 50px);                  opacity: 0; }
-  91%  { left: 2px;               top: 50%;        opacity: 0; }
-  100% { left: 2px;               top: 50%;        opacity: 1; }
+  /* run right, facing right */
+  0%    { left: 2px;               transform: scaleX(1); }
+  47%   { left: calc(100% - 38px); transform: scaleX(1); }
+  /* instant flip at right edge */
+  50%   { left: calc(100% - 38px); transform: scaleX(-1); }
+  /* run left, facing left */
+  97%   { left: 2px;               transform: scaleX(-1); }
+  /* instant flip back at left edge */
+  100%  { left: 2px;               transform: scaleX(1); }
+}
+/* vertical bounce on the running SVG itself */
+.poodle-bob {
+  display: block;
+  animation: poodle-bob 0.32s ease-in-out infinite alternate;
+}
+@keyframes poodle-bob {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-2px); }
 }
 .chat__cloud {
   color: var(--magenta);

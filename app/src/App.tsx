@@ -3,8 +3,8 @@ import { TopBar, type SysInfo } from "./components/TopBar";
 import { TaskCard } from "./components/TaskCard";
 import { Mascot } from "./components/Mascot";
 import { ChatBar } from "./components/ChatBar";
-import { SettingsPanel } from "./components/SettingsPanel";
-import { HubButtons } from "./hub/HubButtons";
+import { HubButtons, openHubWindow } from "./hub/HubButtons";
+import { reportError } from "./aegis/aegis";
 import { deriveMascotState } from "./mascot/deriveMascotState";
 import { initFloatingWindow } from "./window";
 import { getSystemStats, shutdownApp } from "./system";
@@ -45,7 +45,6 @@ const MOCK_SESSIONS: Session[] = [
 function App() {
   const [sessions, setSessions] = useState<Session[]>(MOCK_SESSIONS);
   const [sys, setSys] = useState<SysInfo>(MOCK_SYS);
-  const [showSettings, setShowSettings] = useState(false);
   const [pulse, setPulse] = useState(0); // bump => mascot fires a request comet
   const ping = useCallback(() => setPulse((p) => p + 1), []);
   const [systemDown, setSystemDown] = useState(!navigator.onLine);
@@ -63,26 +62,22 @@ function App() {
   // Aegis: capture unhandled frontend errors and report them to the engine.
   useEffect(() => {
     const handleError = (msg: string | Event, src?: string, line?: number, col?: number, err?: Error) => {
-      void import("./aegis/aegis").then(({ reportError }) => {
-        reportError({
-          source: "frontend",
-          severity: "High",
-          kind: err?.name ?? "Error",
-          message: typeof msg === "string" ? msg : String(msg),
-          traceback: err?.stack ?? `${src ?? ""}:${line ?? 0}:${col ?? 0}`,
-          context: { src, line, col },
-        });
+      reportError({
+        source: "frontend",
+        severity: "High",
+        kind: err?.name ?? "Error",
+        message: typeof msg === "string" ? msg : String(msg),
+        traceback: err?.stack ?? `${src ?? ""}:${line ?? 0}:${col ?? 0}`,
+        context: { src, line, col },
       });
     };
     const handleRejection = (e: PromiseRejectionEvent) => {
-      void import("./aegis/aegis").then(({ reportError }) => {
-        reportError({
-          source: "frontend",
-          severity: "Medium",
-          kind: "UnhandledRejection",
-          message: String(e.reason),
-          traceback: e.reason?.stack,
-        });
+      reportError({
+        source: "frontend",
+        severity: "Medium",
+        kind: "UnhandledRejection",
+        message: String(e.reason),
+        traceback: e.reason?.stack,
       });
     };
     window.onerror = handleError;
@@ -247,11 +242,9 @@ function App() {
     <div className="widget">
       <TopBar
         sys={sys}
-        onSettings={() => setShowSettings((v) => !v)}
+        onSettings={() => void openHubWindow("settings")}
         onShutdown={() => void shutdownApp()}
       />
-
-      {showSettings && <SettingsPanel />}
 
       <div className="cards">
         {sessions.length === 0 ? (

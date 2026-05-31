@@ -11,7 +11,7 @@ function inTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-async function openHubWindow(tab: HubTab): Promise<void> {
+export async function openHubWindow(tab: HubTab): Promise<void> {
   const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
   const existing = await WebviewWindow.getByLabel("hub");
   if (existing) {
