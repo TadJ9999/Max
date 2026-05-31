@@ -91,8 +91,21 @@ export type RagIndexResult = RagStatus & {
 };
 
 // Stream a workspace-grounded answer (cited by file:line) via /rag/ask.
-export function streamAsk(question: string, signal?: AbortSignal): AsyncGenerator<string> {
-  return streamSSE("/rag/ask", { question }, signal);
+// Passing a stable sessionId gives the conversation memory across turns.
+export function streamAsk(
+  question: string,
+  sessionId?: string,
+  signal?: AbortSignal,
+): AsyncGenerator<string> {
+  return streamSSE("/rag/ask", { question, session_id: sessionId }, signal);
+}
+
+export async function clearRagMemory(sessionId: string): Promise<void> {
+  try {
+    await fetch(`${ENGINE_URL}/rag/memory/${sessionId}/clear`, { method: "POST" });
+  } catch {
+    /* offline — nothing to clear */
+  }
 }
 
 export async function getRagStatus(): Promise<RagStatus | null> {

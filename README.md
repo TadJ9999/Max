@@ -76,7 +76,7 @@ Examples: `!. add a retry decorator .` (cloud generate) · `@.. document this ..
 | Core | `GET /health` · `GET/PUT /config` · `POST /parse` |
 | Chat / DSL | `POST /chat` · `POST /command` · `POST /v1/chat/completions` (OpenAI-compatible, SSE) |
 | Delegate | `POST /sessions` (fan-out) · `POST /sessions/coordinate` (auto-decompose) · `GET /sessions` · `GET /sessions/{id}` · `GET /sessions/{id}/stream` (SSE) · `POST /sessions/{id}/cancel` · `POST /sessions/{id}/promote` |
-| Codebase RAG | `POST /rag/index` (incremental, allowlist-scoped) · `POST /rag/search` · `POST /rag/ask` (SSE, cited by file:line) · `GET /rag/status` · `POST /rag/clear` |
+| Codebase RAG | `POST /rag/index` (incremental, allowlist-scoped) · `POST /rag/search` · `POST /rag/ask` (SSE, cited by file:line, opt-in `session_id` memory) · `GET /rag/status` · `POST /rag/clear` · `GET /rag/memory/{id}` · `POST /rag/memory/{id}/clear` |
 | OSINT | `GET /osint/heatmap` · `/osint/articles` · `/osint/sources` · `/osint/events` · `/osint/naval` |
 | Market | `GET /market/quotes` · `GET/PUT /market/watchlist` · `GET /market/sources` · `POST /market/analyze` (SSE) · `POST /market/chat` (SSE) |
 | Apollo | `POST /apollo/osint-report` · `/apollo/market-report` · `/apollo/predict` · `GET /apollo/status` |

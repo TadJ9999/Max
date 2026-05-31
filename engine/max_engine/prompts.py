@@ -105,8 +105,11 @@ def messages_for(action: str, body: str) -> list[dict]:
     ]
 
 
-def rag_messages(context: str, question: str) -> list[dict]:
-    """System prompt + the retrieved context folded in front of the question."""
+def rag_messages(
+    context: str, question: str, history: list[dict] | None = None
+) -> list[dict]:
+    """System prompt, optional prior turns (session memory), then the retrieved
+    context folded in front of the current question."""
     if context:
         user = f"CONTEXT:\n{context}\n\nQUESTION: {question}"
     else:
@@ -117,6 +120,7 @@ def rag_messages(context: str, question: str) -> list[dict]:
         )
     return [
         {"role": "system", "content": SYSTEM_PROMPTS["rag"]},
+        *(history or []),
         {"role": "user", "content": user},
     ]
 
