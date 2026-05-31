@@ -25,6 +25,9 @@ import {
   type ShipPosition,
 } from "./osint";
 import { MarkdownView } from "../components/MarkdownView";
+import { MicButton } from "../components/MicButton";
+import { getConfig } from "../config";
+import { useTTS } from "../voice/useTTS";
 import "./Osint.css";
 
 async function emitMascotEvent(name: string, payload?: unknown) {
@@ -208,6 +211,26 @@ export function OsintView({ onClose }: { onClose?: () => void }) {
   const chatAbort = useRef<AbortController | null>(null);
   const chatThreadRef = useRef<HTMLDivElement | null>(null);
 
+  // ── Voice ────────────────────────────────────────────────────────────────
+  const { speak, stop: stopTTS } = useTTS();
+  const [sttProvider, setSttProvider] = useState("web");
+  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const [ttsRate, setTtsRate] = useState(1.0);
+  const [ttsPitch, setTtsPitch] = useState(1.0);
+  const [ttsVoiceName, setTtsVoiceName] = useState("");
+
+  useEffect(() => {
+    void (async () => {
+      const cfg = await getConfig();
+      if (!cfg) return;
+      setSttProvider(cfg.voice.stt_provider);
+      setTtsEnabled(cfg.voice.tts_enabled);
+      setTtsRate(cfg.voice.tts_rate);
+      setTtsPitch(cfg.voice.tts_pitch);
+      setTtsVoiceName(cfg.voice.tts_voice_name);
+    })();
+  }, []);
+
   useEffect(() => {
     if (chatThreadRef.current) {
       chatThreadRef.current.scrollTop = chatThreadRef.current.scrollHeight;
@@ -221,18 +244,24 @@ export function OsintView({ onClose }: { onClose?: () => void }) {
     setChatMsgs([...history, { role: "assistant", content: "" }]);
     setChatInput("");
     setChatBusy(true);
+    stopTTS();
     void emitMascotEvent("mascot:signal");
     void emitMascotEvent("mascot:thinking", true);
     const ctrl = new AbortController();
     chatAbort.current = ctrl;
+    let fullResponse = "";
     try {
       for await (const delta of streamOsintChat(history, selected?.iso ?? null, ctrl.signal)) {
+        fullResponse += delta;
         setChatMsgs((prev) => {
           const next = prev.slice();
           const last = next[next.length - 1];
           next[next.length - 1] = { ...last, content: last.content + delta };
           return next;
         });
+      }
+      if (ttsEnabled && fullResponse) {
+        speak(fullResponse, { rate: ttsRate, pitch: ttsPitch, voiceName: ttsVoiceName || undefined });
       }
     } catch (e) {
       if (!ctrl.signal.aborted) {
@@ -349,6 +378,12 @@ export function OsintView({ onClose }: { onClose?: () => void }) {
           ))}
         </div>
         <div className="osint__chat-input">
+          <MicButton
+            onTranscript={(text) => setChatInput(text)}
+            sttProvider={sttProvider}
+            stopTTS={stopTTS}
+            disabled={chatBusy}
+          />
           <input
             className="osint__chat-text"
             value={chatInput}

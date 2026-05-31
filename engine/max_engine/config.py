@@ -81,6 +81,25 @@ class AegisConfig(BaseModel):
     max_fixes_per_error: int = 3     # loop-protection cap
 
 
+class PersonalityConfig(BaseModel):
+    """How Max addresses and speaks to the user."""
+
+    persona: str = "jarvis"      # "jarvis" | "formal" | "custom"
+    user_name: str = ""          # the human's preferred name, e.g. "Tony"
+    custom_prefix: str = ""      # used verbatim when persona="custom"
+
+
+class VoiceConfig(BaseModel):
+    """Voice I/O settings. STT provider is configurable; TTS uses the Web Speech API."""
+
+    stt_provider: str = "web"    # "web" | "whisper" | "auto"
+    whisper_model: str = "tiny.en"
+    tts_enabled: bool = True
+    tts_rate: float = 1.0        # speech rate multiplier (0.5–2.0)
+    tts_pitch: float = 1.0       # pitch multiplier (0.5–2.0)
+    tts_voice_name: str = ""     # empty = system default voice
+
+
 class ApolloConfig(BaseModel):
     """Apollo prediction engine. Local sqlite-vec memory + Ollama embeddings.
     Everything stays on the machine; memory auto-expires after ``ttl_seconds``."""
@@ -147,6 +166,8 @@ class EngineConfig(BaseModel):
     apollo: ApolloConfig = Field(default_factory=ApolloConfig)
     rag: RagConfig = Field(default_factory=RagConfig)
     aegis: AegisConfig = Field(default_factory=AegisConfig)
+    personality: PersonalityConfig = Field(default_factory=PersonalityConfig)
+    voice: VoiceConfig = Field(default_factory=VoiceConfig)
 
 
 def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
@@ -199,6 +220,26 @@ def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
         cfg.apollo.ttl_seconds = max(3600, int(ap["ttl_seconds"]))
     if "retrieve_k" in ap:
         cfg.apollo.retrieve_k = max(1, int(ap["retrieve_k"]))
+    pers = data.get("personality") or {}
+    if "persona" in pers:
+        cfg.personality.persona = str(pers["persona"])
+    if "user_name" in pers:
+        cfg.personality.user_name = str(pers["user_name"])
+    if "custom_prefix" in pers:
+        cfg.personality.custom_prefix = str(pers["custom_prefix"])
+    vo = data.get("voice") or {}
+    if "stt_provider" in vo:
+        cfg.voice.stt_provider = str(vo["stt_provider"])
+    if "whisper_model" in vo:
+        cfg.voice.whisper_model = str(vo["whisper_model"])
+    if "tts_enabled" in vo:
+        cfg.voice.tts_enabled = bool(vo["tts_enabled"])
+    if "tts_rate" in vo:
+        cfg.voice.tts_rate = max(0.5, min(2.0, float(vo["tts_rate"])))
+    if "tts_pitch" in vo:
+        cfg.voice.tts_pitch = max(0.5, min(2.0, float(vo["tts_pitch"])))
+    if "tts_voice_name" in vo:
+        cfg.voice.tts_voice_name = str(vo["tts_voice_name"])
 
 
 def load_config() -> EngineConfig:
@@ -245,6 +286,19 @@ def save_overrides(cfg: EngineConfig) -> None:
             "embed_model": cfg.apollo.embed_model,
             "ttl_seconds": cfg.apollo.ttl_seconds,
             "retrieve_k": cfg.apollo.retrieve_k,
+        },
+        "personality": {
+            "persona": cfg.personality.persona,
+            "user_name": cfg.personality.user_name,
+            "custom_prefix": cfg.personality.custom_prefix,
+        },
+        "voice": {
+            "stt_provider": cfg.voice.stt_provider,
+            "whisper_model": cfg.voice.whisper_model,
+            "tts_enabled": cfg.voice.tts_enabled,
+            "tts_rate": cfg.voice.tts_rate,
+            "tts_pitch": cfg.voice.tts_pitch,
+            "tts_voice_name": cfg.voice.tts_voice_name,
         },
     }
     CONFIG_FILE.write_text(json.dumps(data, indent=2))

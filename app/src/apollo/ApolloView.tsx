@@ -11,10 +11,13 @@ import { Mascot } from "../components/Mascot";
 import { MarkdownView } from "../components/MarkdownView";
 import { CopyButton } from "../components/CopyButton";
 import {
+  savePrediction,
+  streamApolloChat,
   streamMarketReport,
   streamOsintReport,
   streamPredict,
   type ApolloEvent,
+  type ApolloChatTurn,
 } from "./apollo";
 import "./Apollo.css";
 
@@ -66,12 +69,14 @@ function ReportBox({
   stream,
   run,
   tall = false,
+  onComplete,
 }: {
   title: string;
   badge: string;
   stream: StreamFn;
   run: number;
   tall?: boolean;
+  onComplete?: (text: string) => void;
 }) {
   const [text, setText] = useState("");
   const [log, setLog] = useState<LogLine[]>([]);
@@ -85,6 +90,7 @@ function ReportBox({
   useEffect(() => {
     if (run <= 0) return;
     let cancelled = false;
+    let accumulated = "";
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     setText("");
@@ -102,9 +108,11 @@ function ReportBox({
             setLog((l) => [...l, { stage: ev.stage, db: ev.db }]);
             if (ev.db !== 0) setDbPulse((p) => p + 1);
           } else {
+            accumulated += ev.text;
             setText((t) => t + ev.text);
           }
         }
+        if (!cancelled && accumulated) onComplete?.(accumulated);
       } catch (e) {
         if (!ctrl.signal.aborted) setErr((e as Error).message);
       } finally {
@@ -118,7 +126,7 @@ function ReportBox({
       cancelled = true;
       ctrl.abort();
     };
-  }, [run, stream]);
+  }, [run, stream, onComplete]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -162,9 +170,62 @@ export function ApolloView({ onClose }: { onClose?: () => void } = {}) {
   const [predictRun, setPredictRun] = useState(0); // predictions wait for Ingest
   const [ingesting, setIngesting] = useState(false);
 
+  // ── Apollo chat ──────────────────────────────────────────────────────────
+  const [chatMsgs, setChatMsgs] = useState<ApolloChatTurn[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const chatAbortRef = useRef<AbortController | null>(null);
+  const chatThreadRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (chatThreadRef.current) {
+      chatThreadRef.current.scrollTop = chatThreadRef.current.scrollHeight;
+    }
+  }, [chatMsgs]);
+
+  const onPredictComplete = (text: string) => {
+    void savePrediction(text);
+    setChatMsgs([{ role: "assistant", content: text }]);
+  };
+
+  const sendChat = async () => {
+    const q = chatInput.trim();
+    if (!q || chatBusy) return;
+    const history: ApolloChatTurn[] = [...chatMsgs, { role: "user", content: q }];
+    setChatMsgs([...history, { role: "assistant", content: "" }]);
+    setChatInput("");
+    setChatBusy(true);
+    void emitMascotEvent("mascot:thinking", true);
+    const ctrl = new AbortController();
+    chatAbortRef.current = ctrl;
+    try {
+      for await (const delta of streamApolloChat(history, ctrl.signal)) {
+        setChatMsgs((prev) => {
+          const next = prev.slice();
+          const last = next[next.length - 1];
+          next[next.length - 1] = { ...last, content: last.content + delta };
+          return next;
+        });
+      }
+    } catch (e) {
+      if (!ctrl.signal.aborted) {
+        setChatMsgs((prev) => {
+          const next = prev.slice();
+          next[next.length - 1] = { role: "assistant", content: `⚠ ${(e as Error).message}` };
+          return next;
+        });
+      }
+    } finally {
+      setChatBusy(false);
+      chatAbortRef.current = null;
+      void emitMascotEvent("mascot:thinking", false);
+    }
+  };
+
   const onIngest = () => {
     setReportRun((n) => n + 1);
     setPredictRun((n) => n + 1);
+    setChatMsgs([]); // clear old chat when re-ingesting
     setIngesting(true);
     window.setTimeout(() => setIngesting(false), 1200);
   };
@@ -212,14 +273,52 @@ export function ApolloView({ onClose }: { onClose?: () => void } = {}) {
           />
         </div>
 
-        {/* right: tall predictions panel */}
-        <ReportBox
-          title="AI Predictions"
-          badge="CONFLICTS · MARKETS"
-          stream={streamPredict}
-          run={predictRun}
-          tall
-        />
+        {/* right column: predictions + inline chat */}
+        <div className="apollo__col">
+          <ReportBox
+            title="AI Predictions"
+            badge="CONFLICTS · MARKETS"
+            stream={streamPredict}
+            run={predictRun}
+            onComplete={onPredictComplete}
+          />
+
+          {/* Chat panel — appears once predictions have run */}
+          {chatMsgs.length > 0 && (
+            <div className="apollo__chat">
+              <div className="apollo__chat-thread" ref={chatThreadRef}>
+                {chatMsgs.map((m, i) => (
+                  <div key={i} className={`apollo__chat-msg apollo__chat-msg--${m.role}`}>
+                    {m.role === "assistant" ? (
+                      m.content
+                        ? <MarkdownView source={m.content} />
+                        : <span className="apollo__cursor">▍</span>
+                    ) : m.content}
+                  </div>
+                ))}
+              </div>
+              <div className="apollo__chat-input">
+                <input
+                  className="apollo__chat-text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) =>
+                    e.key === "Enter" && !e.shiftKey && (e.preventDefault(), void sendChat())
+                  }
+                  placeholder="Ask about predictions…"
+                  disabled={chatBusy}
+                />
+                <button
+                  className="apollo__chat-send"
+                  onClick={() => void sendChat()}
+                  disabled={chatBusy || !chatInput.trim()}
+                >
+                  {chatBusy ? "…" : "▶"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

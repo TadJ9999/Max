@@ -2,13 +2,17 @@
 // Organised into collapsible sections. Changes are applied immediately via
 // the /config PUT endpoint; API keys go through /config/key (write-only).
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   getConfig,
   updateConfig,
   setApiKey,
+  getUserProfile,
+  upsertProfileItem,
+  deleteProfileItem,
   type ConfigPatch,
   type EngineConfigView,
+  type ProfileItem,
 } from "../config";
 import "./Settings.css";
 
@@ -242,6 +246,102 @@ function PathList({
   );
 }
 
+// ── User Profile section ──────────────────────────────────────────────────────
+
+const KIND_OPTIONS = ["fact", "preference", "interest", "style"] as const;
+
+function ProfileSection() {
+  const [items, setItems] = useState<ProfileItem[]>([]);
+  const [newKey, setNewKey] = useState("");
+  const [newVal, setNewVal] = useState("");
+  const [newKind, setNewKind] = useState<string>("fact");
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setItems(await getUserProfile());
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const save = async () => {
+    if (!newKey.trim() || !newVal.trim()) return;
+    setSaving(true);
+    await upsertProfileItem(newKey.trim(), newVal.trim(), newKind);
+    setNewKey("");
+    setNewVal("");
+    await load();
+    setSaving(false);
+  };
+
+  const remove = async (key: string) => {
+    await deleteProfileItem(key);
+    await load();
+  };
+
+  return (
+    <div className="stg-profile">
+      {items.length === 0 ? (
+        <p className="stg-hint">Nothing stored yet — add facts below.</p>
+      ) : (
+        <table className="stg-profile__table">
+          <thead>
+            <tr>
+              <th>key</th>
+              <th>value</th>
+              <th>kind</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((it) => (
+              <tr key={it.key}>
+                <td className="stg-profile__key">{it.key}</td>
+                <td className="stg-profile__val">{it.value}</td>
+                <td>
+                  <span className="stg-badge">{it.kind}</span>
+                </td>
+                <td>
+                  <button className="stg-list__rm" onClick={() => void remove(it.key)}>×</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="stg-profile__add">
+        <input
+          className="stg-list__input"
+          placeholder="key (e.g. interests)"
+          value={newKey}
+          onChange={(e) => setNewKey(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && void save()}
+        />
+        <input
+          className="stg-list__input"
+          placeholder="value"
+          value={newVal}
+          onChange={(e) => setNewVal(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && void save()}
+        />
+        <select
+          className="stg-select"
+          value={newKind}
+          onChange={(e) => setNewKind(e.target.value)}
+        >
+          {KIND_OPTIONS.map((k) => <option key={k} value={k}>{k}</option>)}
+        </select>
+        <button
+          className="stg-list__addbtn"
+          onClick={() => void save()}
+          disabled={saving || !newKey.trim() || !newVal.trim()}
+        >
+          {saving ? "…" : "add"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export function SettingsView() {
@@ -281,6 +381,106 @@ export function SettingsView() {
       </header>
 
       <div className="stg__body">
+
+        {/* ── Your AI ──────────────────────────────────────────────── */}
+        <Section title="Your AI" glyph="◈">
+          <TextField
+            label="What should Max call you?"
+            value={cfg.personality.user_name}
+            onChange={(v) => void patch({ personality: { user_name: v } })}
+            placeholder="e.g. Tony"
+          />
+          <div className="stg-row">
+            <span className="stg-row__label">Tone</span>
+            <div className="stg-seg">
+              {(["jarvis", "formal", "custom"] as const).map((m) => (
+                <button
+                  key={m}
+                  className={`stg-seg__btn${cfg.personality.persona === m ? " is-on" : ""}`}
+                  onClick={() => void patch({ personality: { persona: m } })}
+                >
+                  {m === "jarvis" ? "Jarvis" : m === "formal" ? "Analyst" : "Custom"}
+                </button>
+              ))}
+            </div>
+          </div>
+          {cfg.personality.persona === "custom" && (
+            <label className="stg-text">
+              <span className="stg-text__label">Custom personality prefix</span>
+              <textarea
+                className="stg-text__input stg-text__input--area"
+                value={cfg.personality.custom_prefix}
+                placeholder="You are MAX — describe your preferred tone here…"
+                rows={4}
+                onChange={(e) => void patch({ personality: { custom_prefix: e.target.value } })}
+              />
+            </label>
+          )}
+          <p className="stg-hint">
+            Jarvis mode: casual, witty, direct — like Jarvis to Tony Stark.
+            Analyst mode: formal briefing style (current default).
+          </p>
+
+          <div className="stg-row">
+            <span className="stg-row__label">Voice output (TTS)</span>
+            <Toggle
+              on={cfg.voice.tts_enabled}
+              onChange={(v) => void patch({ voice: { tts_enabled: v } })}
+            />
+          </div>
+          <div className="stg-row">
+            <span className="stg-row__label">Speech input (STT)</span>
+            <div className="stg-seg">
+              {(["web", "whisper", "auto"] as const).map((p) => (
+                <button
+                  key={p}
+                  className={`stg-seg__btn${cfg.voice.stt_provider === p ? " is-on" : ""}`}
+                  onClick={() => void patch({ voice: { stt_provider: p } })}
+                >
+                  {p === "web" ? "Web API" : p === "whisper" ? "Whisper" : "Auto"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="stg-row-group">
+            <label className="stg-num">
+              <span className="stg-num__label">TTS rate</span>
+              <input
+                className="stg-num__input"
+                type="number"
+                min={0.5}
+                max={2.0}
+                step={0.1}
+                value={cfg.voice.tts_rate}
+                onChange={(e) => void patch({ voice: { tts_rate: Number(e.target.value) } })}
+              />
+            </label>
+            <label className="stg-num">
+              <span className="stg-num__label">TTS pitch</span>
+              <input
+                className="stg-num__input"
+                type="number"
+                min={0.5}
+                max={2.0}
+                step={0.1}
+                value={cfg.voice.tts_pitch}
+                onChange={(e) => void patch({ voice: { tts_pitch: Number(e.target.value) } })}
+              />
+            </label>
+          </div>
+          {cfg.voice.stt_provider !== "web" && (
+            <TextField
+              label="Whisper model"
+              value={cfg.voice.whisper_model}
+              onChange={(v) => void patch({ voice: { whisper_model: v } })}
+              placeholder="tiny.en"
+              mono
+            />
+          )}
+
+          <p className="stg-hint stg-hint--section">What Max knows about you</p>
+          <ProfileSection />
+        </Section>
 
         {/* ── API Keys ─────────────────────────────────────────────── */}
         <Section title="API Keys" glyph="🔑">

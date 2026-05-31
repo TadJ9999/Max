@@ -67,6 +67,55 @@ export function streamPredict(signal?: AbortSignal): AsyncGenerator<ApolloEvent>
   return streamApolloSSE("/apollo/predict", signal);
 }
 
+// ── Apollo chat ───────────────────────────────────────────────────────────────
+
+export type ApolloChatTurn = { role: "user" | "assistant"; content: string };
+
+export async function savePrediction(text: string): Promise<void> {
+  try {
+    await fetch(`${ENGINE_URL}/apollo/prediction`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+  } catch { /* best-effort */ }
+}
+
+export async function* streamApolloChat(
+  history: ApolloChatTurn[],
+  signal?: AbortSignal,
+): AsyncGenerator<string> {
+  const r = await fetch(`${ENGINE_URL}/apollo/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ messages: history }),
+    signal,
+  });
+  if (!r.ok || !r.body) throw new Error(`engine returned HTTP ${r.status}`);
+
+  const reader = r.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t.startsWith("data:")) continue;
+      const data = t.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+      const obj = JSON.parse(data);
+      if (obj.error) throw new Error(obj.error.message ?? "engine error");
+      const delta: string | undefined = obj.choices?.[0]?.delta?.content;
+      if (delta) yield delta;
+    }
+  }
+}
+
 export type MemoryStats = {
   enabled: boolean;
   total: number;

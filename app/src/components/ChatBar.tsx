@@ -30,6 +30,7 @@ export function ChatBar({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const [inputFocused, setInputFocused] = useState(false);
   // "Knows your code" mode: plain questions are answered from the indexed workspace.
   const [codeMode, setCodeMode] = useState(false);
   const [rag, setRag] = useState<RagStatus | null>(null);
@@ -135,13 +136,20 @@ export function ChatBar({
           className={`dot ${online == null ? "dot--unknown" : online ? "dot--on" : "dot--off"}`}
           title={online == null ? "checking engine…" : online ? "engine online" : "engine offline"}
         />
-        <input
-          className="chat__input"
-          placeholder={codeMode ? "Ask about your code…  (grounded)" : "Ask Max…  ( ! = cloud )"}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKey}
-        />
+        <div className="chat__input-wrap">
+          {!text && !inputFocused && (
+            <span className="chat__poodle" aria-hidden="true">🐩</span>
+          )}
+          <input
+            className="chat__input"
+            placeholder=""
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={onKey}
+            onFocus={() => setInputFocused(true)}
+            onBlur={() => setInputFocused(false)}
+          />
+        </div>
         {isCloud && (
           <span className="chat__cloud" title="cloud ( ! ) — this leaves your machine">
             ☁

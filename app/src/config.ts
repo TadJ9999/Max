@@ -29,6 +29,19 @@ export type EngineConfigView = {
     retrieve_k: number;
   };
   providers: Array<{ name: string; kind: string; base_url: string | null }>;
+  personality: {
+    persona: string;
+    user_name: string;
+    custom_prefix: string;
+  };
+  voice: {
+    stt_provider: string;
+    whisper_model: string;
+    tts_enabled: boolean;
+    tts_rate: number;
+    tts_pitch: number;
+    tts_voice_name: string;
+  };
 };
 
 export type ConfigPatch = {
@@ -46,6 +59,15 @@ export type ConfigPatch = {
   };
   market?: { watchlist?: string[]; ttl_seconds?: number };
   apollo?: { embed_model?: string; ttl_seconds?: number; retrieve_k?: number };
+  personality?: { persona?: string; user_name?: string; custom_prefix?: string };
+  voice?: {
+    stt_provider?: string;
+    whisper_model?: string;
+    tts_enabled?: boolean;
+    tts_rate?: number;
+    tts_pitch?: number;
+    tts_voice_name?: string;
+  };
 };
 
 export async function getConfig(): Promise<EngineConfigView | null> {
@@ -69,6 +91,57 @@ export async function updateConfig(patch: ConfigPatch): Promise<EngineConfigView
     return (await r.json()) as EngineConfigView;
   } catch {
     return null;
+  }
+}
+
+// ── User profile ─────────────────────────────────────────────────────────────
+
+export type ProfileItem = {
+  key: string;
+  value: string;
+  kind: string;
+  source: string;
+  created_at: number;
+  updated_at: number;
+};
+
+export async function getUserProfile(): Promise<ProfileItem[]> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/user/profile`);
+    if (!r.ok) return [];
+    const data = (await r.json()) as { items: ProfileItem[] };
+    return data.items;
+  } catch {
+    return [];
+  }
+}
+
+export async function upsertProfileItem(
+  key: string,
+  value: string,
+  kind: string = "fact",
+): Promise<ProfileItem | null> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/user/profile`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key, value, kind }),
+    });
+    if (!r.ok) return null;
+    return (await r.json()) as ProfileItem;
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteProfileItem(key: string): Promise<boolean> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/user/profile/${encodeURIComponent(key)}`, {
+      method: "DELETE",
+    });
+    return r.ok;
+  } catch {
+    return false;
   }
 }
 

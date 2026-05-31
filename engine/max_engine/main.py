@@ -25,6 +25,8 @@ from pydantic import BaseModel
 from . import __version__
 from .aegis import AegisCapture, AegisService, AegisStore
 from .apollo import ApolloService, VectorStore
+from .apollo.predictions import PredictionHistory
+from .user import UserProfileStore
 from .complete import fim_complete
 from .config import load_config, save_overrides
 from .delegate.engine import DelegateEngine
@@ -34,7 +36,7 @@ from .market import MarketService, board_digest
 from .osint import EventsService, NavalService, OsintService
 from .polymarket import PolymarketService
 from .polymarket.embedder import embed_markets
-from .prompts import market_chat_messages, messages_for, polymarket_chat_messages, rag_messages
+from .prompts import apply_persona, market_chat_messages, messages_for, polymarket_chat_messages, rag_messages
 from .providers.base import Provider
 from .providers.factory import build_provider
 from .rag import RagService, RagStore, SessionMemory
@@ -119,6 +121,8 @@ apollo = ApolloService(
 
 _aegis_store = AegisStore(config.apollo.db_path)
 _aegis_capture = AegisCapture(_aegis_store)
+_profile_store = UserProfileStore(config.apollo.db_path)
+_prediction_history = PredictionHistory(config.apollo.db_path)
 aegis_svc = AegisService(
     store=_aegis_store,
     config=config,
@@ -179,6 +183,19 @@ def _config_view() -> dict:
             {"name": p.name, "kind": p.kind, "base_url": p.base_url}
             for p in config.providers
         ],
+        "personality": {
+            "persona": config.personality.persona,
+            "user_name": config.personality.user_name,
+            "custom_prefix": config.personality.custom_prefix,
+        },
+        "voice": {
+            "stt_provider": config.voice.stt_provider,
+            "whisper_model": config.voice.whisper_model,
+            "tts_enabled": config.voice.tts_enabled,
+            "tts_rate": config.voice.tts_rate,
+            "tts_pitch": config.voice.tts_pitch,
+            "tts_voice_name": config.voice.tts_voice_name,
+        },
     }
 
 
@@ -224,6 +241,21 @@ class PolymarketPatch(BaseModel):
     categories: list[str] | None = None
 
 
+class PersonalityPatch(BaseModel):
+    persona: str | None = None
+    user_name: str | None = None
+    custom_prefix: str | None = None
+
+
+class VoicePatch(BaseModel):
+    stt_provider: str | None = None
+    whisper_model: str | None = None
+    tts_enabled: bool | None = None
+    tts_rate: float | None = None
+    tts_pitch: float | None = None
+    tts_voice_name: str | None = None
+
+
 class ConfigPatch(BaseModel):
     allow_cloud: bool | None = None
     workspace_allowlist: list[str] | None = None
@@ -233,6 +265,8 @@ class ConfigPatch(BaseModel):
     market: MarketPatch | None = None
     polymarket: PolymarketPatch | None = None
     apollo: ApolloPatch | None = None
+    personality: PersonalityPatch | None = None
+    voice: VoicePatch | None = None
 
 
 @app.put("/config")
@@ -294,6 +328,32 @@ def update_config(patch: ConfigPatch) -> dict:
             config.apollo.ttl_seconds = max(3600, a.ttl_seconds)
         if a.retrieve_k is not None:
             config.apollo.retrieve_k = max(1, a.retrieve_k)
+    if patch.personality is not None:
+        pers = patch.personality
+        if pers.persona is not None:
+            if pers.persona not in ("jarvis", "formal", "custom"):
+                raise HTTPException(status_code=400, detail="persona must be 'jarvis', 'formal', or 'custom'")
+            config.personality.persona = pers.persona
+        if pers.user_name is not None:
+            config.personality.user_name = pers.user_name
+        if pers.custom_prefix is not None:
+            config.personality.custom_prefix = pers.custom_prefix
+    if patch.voice is not None:
+        vo = patch.voice
+        if vo.stt_provider is not None:
+            if vo.stt_provider not in ("web", "whisper", "auto"):
+                raise HTTPException(status_code=400, detail="stt_provider must be 'web', 'whisper', or 'auto'")
+            config.voice.stt_provider = vo.stt_provider
+        if vo.whisper_model is not None:
+            config.voice.whisper_model = vo.whisper_model
+        if vo.tts_enabled is not None:
+            config.voice.tts_enabled = vo.tts_enabled
+        if vo.tts_rate is not None:
+            config.voice.tts_rate = max(0.5, min(2.0, vo.tts_rate))
+        if vo.tts_pitch is not None:
+            config.voice.tts_pitch = max(0.5, min(2.0, vo.tts_pitch))
+        if vo.tts_voice_name is not None:
+            config.voice.tts_voice_name = vo.tts_voice_name
     save_overrides(config)
     return _config_view()
 
@@ -789,7 +849,10 @@ async def osint_chat(req: OsintChatRequest):
     history = [m.model_dump() for m in req.messages]
     provider_name, model = _ai_route()
     provider = build_provider(provider_name, config)
-    messages = [{"role": "system", "content": system}, *history]
+    messages = [
+        {"role": "system", "content": apply_persona(system, config.personality, _profile_store.to_context_block())},
+        *history,
+    ]
     return _sse_stream(provider, model, messages)
 
 
@@ -814,7 +877,11 @@ def _stream_ai(action: str, payload: dict) -> StreamingResponse:
         provider = build_provider(provider_name, config)
     except KeyError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    return _sse_stream(provider, model, messages_for(action, json.dumps(payload)))
+    msgs = messages_for(action, json.dumps(payload))
+    msgs[0]["content"] = apply_persona(
+        msgs[0]["content"], config.personality, _profile_store.to_context_block()
+    )
+    return _sse_stream(provider, model, msgs)
 
 
 @app.get("/market/quotes")
@@ -880,6 +947,7 @@ async def market_chat_endpoint(req: MarketChatRequest):
         raise HTTPException(status_code=400, detail=str(e)) from e
     history = [msg.model_dump() for msg in req.messages]
     messages = market_chat_messages(snapshot, history)
+    messages[0]["content"] = apply_persona(messages[0]["content"], config.personality, _profile_store.to_context_block())
     return _sse_stream(provider, model, messages)
 
 
@@ -1025,6 +1093,7 @@ async def polymarket_chat(req: PolymarketChatRequest) -> StreamingResponse:
         raise HTTPException(status_code=400, detail=str(e)) from e
     history = [msg.model_dump() for msg in req.messages]
     messages = polymarket_chat_messages(snapshot, history)
+    messages[0]["content"] = apply_persona(messages[0]["content"], config.personality, _profile_store.to_context_block())
     return _sse_stream(provider, model, messages)
 
 
@@ -1217,3 +1286,139 @@ async def apollo_predict():
 def apollo_status() -> dict:
     """Vector-memory stats (counts by kind, oldest/newest) for the UI."""
     return apollo.memory_stats()
+
+
+class SavePredictionRequest(BaseModel):
+    text: str
+
+
+@app.post("/apollo/prediction")
+def apollo_save_prediction(req: SavePredictionRequest) -> dict:
+    """Persist today's prediction text (1 per day, 30-day rolling window)."""
+    _prediction_history.save(req.text)
+    return {"saved": True}
+
+
+_APOLLO_CHAT_SYSTEM = (
+    "You are MAX's Apollo prediction engine, answering follow-up questions "
+    "about global conflicts, markets, and forward-looking predictions. "
+    "Use the provided recent prediction history as your primary context. "
+    "Be analytical, specific, and cite prediction data when relevant. "
+    "Keep answers focused and grounded in the available signals."
+)
+
+
+class ApolloChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ApolloChatRequest(BaseModel):
+    messages: list[ApolloChatMessage]
+
+
+@app.post("/apollo/chat")
+async def apollo_chat(req: ApolloChatRequest) -> StreamingResponse:
+    """Conversational Q&A grounded in recent Apollo predictions (SSE).
+
+    The last 3 days of prediction history are injected into the system prompt
+    so the AI can answer follow-up questions about its own forecasts."""
+    prediction_ctx = _prediction_history.to_context_block()
+    system = apply_persona(_APOLLO_CHAT_SYSTEM, config.personality, _profile_store.to_context_block())
+    if prediction_ctx:
+        system = system + "\n\n" + prediction_ctx
+    history = [m.model_dump() for m in req.messages]
+    provider_name, model = _ai_route()
+    try:
+        provider = build_provider(provider_name, config)
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    messages = [{"role": "system", "content": system}, *history]
+    return _sse_stream(provider, model, messages)
+
+
+# ---- User profile: persistent personal memory --------------------------
+
+
+class ProfileItem(BaseModel):
+    key: str
+    value: str
+    kind: str = "fact"
+    source: str = "explicit"
+
+
+@app.get("/user/profile")
+def user_profile_get() -> dict:
+    """Return all stored user-profile facts."""
+    return {"items": _profile_store.get_all()}
+
+
+@app.post("/user/profile")
+def user_profile_upsert(item: ProfileItem) -> dict:
+    """Create or update a user-profile fact."""
+    return _profile_store.upsert(item.key, item.value, item.kind, item.source)
+
+
+@app.delete("/user/profile/{key}")
+def user_profile_delete(key: str) -> dict:
+    deleted = _profile_store.delete(key)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Key '{key}' not found")
+    return {"deleted": key}
+
+
+# ---- Voice: speech-to-text transcription (Whisper) --------------------
+
+
+class TranscribeRequest(BaseModel):
+    audio_b64: str          # base64-encoded audio bytes
+    mime: str = "audio/webm"  # e.g. "audio/webm", "audio/wav"
+
+
+_whisper_model: object | None = None  # lazy-loaded on first use
+
+
+def _get_whisper():
+    global _whisper_model
+    if _whisper_model is None:
+        try:
+            from faster_whisper import WhisperModel  # type: ignore[import-untyped]
+            _whisper_model = WhisperModel(
+                config.voice.whisper_model,
+                device="cpu",
+                compute_type="int8",
+            )
+        except ImportError as e:
+            raise HTTPException(
+                status_code=503,
+                detail="faster-whisper is not installed. Run: pip install faster-whisper",
+            ) from e
+    return _whisper_model
+
+
+@app.post("/voice/transcribe")
+async def voice_transcribe(req: TranscribeRequest) -> dict:
+    """Transcribe base64-encoded audio using a local Whisper model.
+
+    The model is lazy-loaded on first call (~150 MB for tiny.en). Subsequent
+    calls are fast. Use the /config voice.whisper_model setting to change the
+    model size (tiny.en → small.en → medium)."""
+    import base64
+    import io
+    import tempfile
+
+    model = _get_whisper()
+    audio_bytes = base64.b64decode(req.audio_b64)
+
+    ext = ".webm" if "webm" in req.mime else ".wav"
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+        tmp.write(audio_bytes)
+        tmp_path = tmp.name
+
+    try:
+        segments, _ = model.transcribe(tmp_path, beam_size=5)  # type: ignore[union-attr]
+        text = " ".join(seg.text.strip() for seg in segments).strip()
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+    return {"text": text}

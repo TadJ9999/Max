@@ -28,7 +28,7 @@ rem  Health gate: poll /health for up to 40 seconds in background.
 rem  If it never comes up, open Leo in a dedicated rescue terminal.
 start "Max Health Gate" /min cmd /c ^
     powershell -NoProfile -NonInteractive -Command ^
-    "$ok=$false; for($i=0;$i -lt 40;$i++){try{$r=Invoke-WebRequest -Uri 'http://localhost:8001/health' -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop;if($r.StatusCode -eq 200){$ok=$true;break}}catch{};Start-Sleep 1}; if(-not $ok){Start-Process powershell -ArgumentList '-NoExit','-File','\"%LEOSC%\"','-AppDir','\"%APPDIR%\"' -WindowStyle Normal}"
+    "$ok=$false; for($i=0;$i -lt 40;$i++){try{$r=Invoke-WebRequest -Uri 'http://localhost:8001/health' -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop;if($r.StatusCode -eq 200){$ok=$true;break}}catch{};Start-Sleep 1}; if(-not $ok){Start-Process powershell -ArgumentList '-NoExit','-ExecutionPolicy','Bypass','-File','\"%LEOSC%\"','-AppDir','\"%APPDIR%\"' -WindowStyle Normal}"
 
 goto :end
 

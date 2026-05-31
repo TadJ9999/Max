@@ -623,6 +623,13 @@ body {
   gap: 8px;
   padding: 6px 8px;
 }
+.chat__input-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
 .chat__input {
   flex: 1;
   background: transparent;
@@ -630,9 +637,26 @@ body {
   outline: none;
   color: var(--text);
   font-size: 13px;
+  width: 100%;
 }
-.chat__input::placeholder {
-  color: var(--muted-2);
+/* poodle trot animation — runs when input is empty & unfocused */
+.chat__poodle {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 13px;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  animation: poodle-trot 3.2s linear infinite;
+}
+@keyframes poodle-trot {
+  0%   { left: 0px;              opacity: 1; }
+  85%  { left: calc(100% - 18px); opacity: 1; }
+  90%  { left: calc(100% - 18px); opacity: 0; }
+  91%  { left: 0px;              opacity: 0; }
+  100% { left: 0px;              opacity: 1; }
 }
 .chat__cloud {
   color: var(--magenta);

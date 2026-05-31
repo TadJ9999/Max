@@ -2,6 +2,49 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .config import PersonalityConfig
+
+
+_JARVIS_TEMPLATE = (
+    "You are MAX — {name}'s personal AI. Be casual, sharp, and direct. "
+    "Address {name} by name occasionally (not every response). "
+    "Dry wit is welcome; fluff is not. "
+    "Your register: like Jarvis talking to Tony Stark — always competent, "
+    "slightly irreverent, never verbose unless depth is needed.\n\n"
+)
+
+_JARVIS_ANONYMOUS = (
+    "You are MAX — a personal AI. Be casual, sharp, and direct. "
+    "Dry wit is welcome; fluff is not. "
+    "Your register: like Jarvis talking to Tony Stark — always competent, "
+    "slightly irreverent, never verbose unless depth is needed.\n\n"
+)
+
+
+def persona_prefix(cfg: "PersonalityConfig") -> str:
+    """Return the personality system-prompt prefix for the given config."""
+    if cfg.persona == "formal":
+        return ""
+    if cfg.persona == "custom":
+        p = cfg.custom_prefix.strip()
+        return (p + "\n\n") if p else ""
+    # jarvis (default)
+    name = cfg.user_name.strip()
+    if name:
+        return _JARVIS_TEMPLATE.format(name=name)
+    return _JARVIS_ANONYMOUS
+
+
+def apply_persona(system: str, cfg: "PersonalityConfig", profile_ctx: str = "") -> str:
+    """Prepend the persona prefix (and optional user-profile context) to a system prompt."""
+    prefix = persona_prefix(cfg)
+    if profile_ctx:
+        prefix += profile_ctx + "\n\n"
+    return prefix + system if prefix else system
+
 SYSTEM_PROMPTS: dict[str, str] = {
     "generate": (
         "You are a senior coding assistant. Generate code that fulfils the request. "

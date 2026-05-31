@@ -320,6 +320,11 @@
 .stg-text__input--mono {
   font-family: ui-monospace, monospace;
 }
+.stg-text__input--area {
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.5;
+}
 .stg-text__input:focus {
   border-color: rgba(34, 211, 238, 0.45);
 }
@@ -488,6 +493,69 @@
 .stg-list__addbtn:hover {
   background: rgba(34, 211, 238, 0.12);
   color: var(--stg-accent);
+}
+
+/* ── profile table ──────────────────────────────────────────────── */
+.stg-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.stg-profile__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.stg-profile__table th {
+  text-align: left;
+  padding: 4px 6px;
+  color: var(--stg-muted);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--stg-border);
+}
+.stg-profile__table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  vertical-align: top;
+}
+.stg-profile__key {
+  font-family: ui-monospace, monospace;
+  color: var(--stg-accent);
+  white-space: nowrap;
+}
+.stg-profile__val {
+  color: var(--stg-text);
+  max-width: 240px;
+  overflow-wrap: break-word;
+}
+.stg-profile__add {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.stg-select {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--stg-border);
+  border-radius: 6px;
+  color: var(--stg-text);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 5px 8px;
+  outline: none;
+  cursor: pointer;
+}
+.stg-select:focus {
+  border-color: rgba(34, 211, 238, 0.4);
+}
+.stg-hint--section {
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--stg-accent);
+  opacity: 0.6;
+  margin-top: 4px;
+  margin-bottom: 0;
 }
 
 /* ── hint text ──────────────────────────────────────────────────── */
