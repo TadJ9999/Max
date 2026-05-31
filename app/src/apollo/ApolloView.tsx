@@ -20,6 +20,11 @@ import "./Apollo.css";
 
 async function emitMascotEvent(name: string, payload?: unknown) {
   try {
+    const ch = new BroadcastChannel("max:mascot");
+    ch.postMessage({ type: name, payload });
+    ch.close();
+  } catch { /* not supported */ }
+  try {
     const { emit } = await import("@tauri-apps/api/event");
     await emit(name, payload);
   } catch { /* not in Tauri */ }

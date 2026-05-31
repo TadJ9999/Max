@@ -662,8 +662,8 @@
 /* ---- news cards ---- */
 .news-card {
   --tier-color: #22d3ee;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid var(--osint-border);
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(120, 160, 185, 0.22);
   border-left: 3px solid var(--tier-color);
   border-radius: 10px;
   cursor: pointer;
@@ -672,18 +672,18 @@
   user-select: none;
 }
 .news-card:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: color-mix(in srgb, var(--tier-color) 50%, var(--osint-border));
+  background: rgba(255, 255, 255, 0.09);
+  border-color: color-mix(in srgb, var(--tier-color) 55%, var(--osint-border));
   border-left-color: var(--tier-color);
 }
 .news-card.is-open {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.07);
 }
 .news-card__head {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 9px 10px 6px;
+  padding: 10px 12px 8px;
 }
 .news-card__tier {
   flex-shrink: 0;
@@ -697,8 +697,8 @@
 }
 .news-card__headline {
   flex: 1;
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   line-height: 1.38;
   color: var(--osint-text);
 }
@@ -712,7 +712,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 10px 8px;
+  padding: 2px 12px 10px;
   margin-top: 0;
 }
 .news-card__body {
@@ -806,10 +806,10 @@
 .osint-ship__label {
   font-size: 11px;
   fill: currentColor;
-  opacity: 0.92;
-  font-family: ui-monospace, "Cascadia Code", monospace;
+  opacity: 0.95;
+  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   pointer-events: none;
   paint-order: stroke fill;
   stroke: rgba(3, 8, 13, 0.9);
@@ -854,4 +854,86 @@
 }
 .osint__hint {
   margin: 8px 0;
+}
+
+/* ── AI animated orb FAB (bottom-right of map stage) ─────────────────── */
+.osint__ai-fab {
+  position: absolute;
+  bottom: 22px;
+  right: 22px;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  z-index: 15;
+  padding: 0;
+  background: radial-gradient(circle at 50% 30%, #ffffff 0%, #8db8ff 38%, #2e7fff 92%);
+  box-shadow:
+    0 0 22px 3px rgba(110, 160, 255, 0.65),
+    inset 0 6px 9px rgba(255, 255, 255, 0.45),
+    inset 0 -10px 18px rgba(40, 18, 80, 0.45);
+  overflow: hidden;
+  isolation: isolate;
+  animation: osint-fab-breathe 4.4s ease-in-out infinite;
+  transition: box-shadow 0.3s ease;
+}
+.osint__ai-fab:hover {
+  animation-play-state: paused;
+  transform: scale(1.1);
+  box-shadow:
+    0 0 34px 5px rgba(110, 160, 255, 0.88),
+    inset 0 6px 9px rgba(255, 255, 255, 0.45),
+    inset 0 -10px 18px rgba(40, 18, 80, 0.45);
+}
+.osint__ai-fab.is-on {
+  box-shadow:
+    0 0 28px 4px rgba(34, 211, 238, 0.55),
+    0 0 18px 2px rgba(0, 180, 255, 0.75),
+    inset 0 6px 9px rgba(255, 255, 255, 0.45),
+    inset 0 -10px 18px rgba(40, 18, 80, 0.45);
+}
+.osint__ai-fab:active { transform: scale(0.95); }
+.osint__ai-fab__fluid {
+  position: absolute;
+  left: -30%;
+  top: -30%;
+  width: 160%;
+  height: 160%;
+  border-radius: 42% 58% 55% 45%;
+  filter: blur(5px);
+  will-change: transform;
+  pointer-events: none;
+}
+.osint__ai-fab__fluid--a {
+  background: radial-gradient(circle at 36% 38%, #ff50b8 0%, transparent 52%);
+  animation: osint-fab-swirl-cw 9s linear infinite;
+}
+.osint__ai-fab__fluid--b {
+  background: radial-gradient(circle at 64% 60%, #2e7fff 0%, transparent 54%);
+  opacity: 0.95;
+  animation: osint-fab-swirl-ccw 11.25s linear infinite;
+}
+.osint__ai-fab__fluid--c {
+  background: radial-gradient(circle at 50% 66%, #9b5cff 0%, transparent 56%);
+  animation: osint-fab-pan 14.4s ease-in-out infinite;
+}
+.osint__ai-fab__gloss {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 33% 24%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 20%),
+    radial-gradient(circle at 68% 80%, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 20%);
+}
+@keyframes osint-fab-breathe {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.05); }
+}
+@keyframes osint-fab-swirl-cw  { to { transform: rotate(360deg); } }
+@keyframes osint-fab-swirl-ccw { to { transform: rotate(-360deg); } }
+@keyframes osint-fab-pan {
+  0%, 100% { transform: translate(-6%, 4%) rotate(0deg); }
+  50%       { transform: translate(8%, -6%) rotate(180deg); }
 }

@@ -20,32 +20,13 @@ const land = feature(
   world.objects.countries,
 ) as unknown as FeatureCollection<Geometry, { name: string }>;
 
-// ── Ship silhouettes (top-down, bow pointing up, centered at 0,0) ──────────
-//
-// Aircraft carrier (CVN – Nimitz / Ford class)
-// Elongated hull. Angled flight deck extends to PORT (+x). Island on STARBOARD (−x).
-// The angled deck spans the middle 60% of hull length — recognizable asymmetric shape.
-const CARRIER_D =
-  "M 0,-17" +                                        // sharp bow tip
-  " L 2,-14 L 3,-4" +                               // port bow → hull amidships
-  " L 13,-2 L 14,1.5 L 13,5.5" +                   // angled deck: bold port extension
-  " L 3,5.5 L 2.5,12 L 0.5,14" +                   // deck meets hull → port stern
-  " L -2.5,14 L -3.5,11" +                          // stern transom
-  " L -5.5,9 L -7.5,6 L -7,2 L -5.5,0 L -3.5,-0.5" + // island superstructure
-  " L -3,-14 L -1.5,-17 Z";                         // starboard hull → bow
+// ── Ship marker: simple upward arrow, bow pointing up, centered at 0,0 ─────
+const ARROW_D = "M 0,-14 L 6,7 L 0,2 L -6,7 Z";
 
-// Amphibious assault ship (LHD/LHA – Wasp / America class)
-// Shorter and wider. Full-length flat deck, larger island on starboard.
-const AMPHIB_D =
-  "M 0,-13" +                                       // bow
-  " L 3.5,-11 L 5,-2" +                            // port bow → hull
-  " L 5,9 L 3,12" +                                // port hull → stern
-  " L -2,12 L -3.5,9" +                            // stern transom
-  " L -5.5,7 L -7,4.5 L -6.5,1 L -5.5,-1 L -4.5,-1.5" + // island
-  " L -4.5,-11 L -2.5,-13 Z";                      // starboard hull → bow
-
-function shortShipName(name: string): string {
-  return name.replace(/^USS\s+|^USNS\s+/i, "").split(/\s+/).slice(0, 2).join(" ");
+function mapShipLabel(name: string): string {
+  const m = name.match(/^(USS|USNS)\s+(\S+)/i);
+  if (m) return `${m[1].toUpperCase()} ${m[2]}`;
+  return name.split(/\s+/).slice(0, 2).join(" ");
 }
 
 // ── types ───────────────────────────────────────────────────────────────────
@@ -292,7 +273,6 @@ export function WorldMap({
               if (!p) return null;
               const [x, y] = p;
               const inPort = s.status === "in port";
-              const isCarrier = s.kind === "carrier";
               return (
                 <g key={s.hull}
                   className={`osint-ship osint-ship--${s.kind}${inPort ? " is-port" : ""}`}
@@ -306,9 +286,9 @@ export function WorldMap({
                       strokeWidth={1} className="osint-ship-pulse" />
                   )}
                   <circle cx={0} cy={0} r={15} className="osint-ship__halo" />
-                  <path d={isCarrier ? CARRIER_D : AMPHIB_D} className="osint-ship__mark" />
-                  <text x={0} y={21} className="osint-ship__label" textAnchor="middle">
-                    {shortShipName(s.name)}
+                  <path d={ARROW_D} className="osint-ship__mark" />
+                  <text x={0} y={22} className="osint-ship__label" textAnchor="middle">
+                    {mapShipLabel(s.name)}
                   </text>
                 </g>
               );

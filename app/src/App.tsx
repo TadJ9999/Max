@@ -60,10 +60,20 @@ function App() {
     void initFloatingWindow();
   }, []);
 
-  // Cross-window mascot signals: Hub features (Market/OSINT/Apollo) emit these
-  // Tauri events when an LLM call starts or finishes, so the main-widget mascot
-  // animates even when the user is looking at a different window.
+  // Cross-window mascot signals: Hub features (Market/OSINT/Apollo) emit via
+  // BroadcastChannel (primary — works reliably across Tauri WebView2 windows)
+  // and Tauri events (secondary). The widget mascot animates even when the user
+  // is looking at a different window.
   useEffect(() => {
+    let ch: BroadcastChannel | null = null;
+    try {
+      ch = new BroadcastChannel("max:mascot");
+      ch.onmessage = (e: MessageEvent<{ type: string; payload?: unknown }>) => {
+        if (e.data.type === "mascot:signal") ping();
+        else if (e.data.type === "mascot:thinking") setChatThinking(Boolean(e.data.payload));
+      };
+    } catch { /* BroadcastChannel not available */ }
+
     let u1: (() => void) | undefined;
     let u2: (() => void) | undefined;
     void (async () => {
@@ -73,11 +83,10 @@ function App() {
         u2 = await listen("mascot:thinking", (e: { payload: boolean }) =>
           setChatThinking(e.payload),
         );
-      } catch {
-        /* not running in Tauri */
-      }
+      } catch { /* not running in Tauri */ }
     })();
     return () => {
+      ch?.close();
       u1?.();
       u2?.();
     };

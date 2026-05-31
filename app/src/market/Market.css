@@ -654,9 +654,10 @@
   overflow: hidden;
   isolation: isolate;
   animation: mkt-orb-breathe 4.4s ease-in-out infinite;
-  transition: box-shadow 0.3s ease, transform 0.18s ease;
+  transition: box-shadow 0.3s ease;
 }
 .market__ai-fab:hover {
+  animation-play-state: paused;
   transform: scale(1.1);
   box-shadow:
     0 0 34px 5px rgba(110, 160, 255, 0.88),

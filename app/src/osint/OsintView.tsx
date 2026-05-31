@@ -20,6 +20,12 @@ import { MarkdownView } from "../components/MarkdownView";
 import "./Osint.css";
 
 async function emitMascotEvent(name: string, payload?: unknown) {
+  // BroadcastChannel reaches the widget window reliably across Tauri WebView2 windows
+  try {
+    const ch = new BroadcastChannel("max:mascot");
+    ch.postMessage({ type: name, payload });
+    ch.close();
+  } catch { /* not supported */ }
   try {
     const { emit } = await import("@tauri-apps/api/event");
     await emit(name, payload);
@@ -380,6 +386,19 @@ export function OsintView({ onClose }: { onClose?: () => void }) {
               <span className="osint__legend-fleet">⚓ fleet est.</span>
             )}
           </div>
+
+          {/* ── AI animated orb FAB ── */}
+          <button
+            className={`osint__ai-fab${chatOpen ? " is-on" : ""}`}
+            onClick={() => setChatOpen((v) => !v)}
+            title={chatOpen ? "Close AI chat" : "AI Chat"}
+            aria-label="Toggle AI chat"
+          >
+            <span className="osint__ai-fab__fluid osint__ai-fab__fluid--a" />
+            <span className="osint__ai-fab__fluid osint__ai-fab__fluid--b" />
+            <span className="osint__ai-fab__fluid osint__ai-fab__fluid--c" />
+            <span className="osint__ai-fab__gloss" />
+          </button>
         </div>
 
         {/* side panel */}
