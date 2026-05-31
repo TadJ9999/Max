@@ -19,7 +19,7 @@ const C = {
 
 function RunSVG() {
   return (
-    <svg viewBox="0 0 46 26" width="34" height="17" className="poodle-bob">
+    <svg viewBox="0 -3 46 33" width="30" height="21" className="poodle-bob">
       <circle cx="7" cy="6" r="3.5" fill={C.light} />
       <path d="M10 14 Q5 10 7 6" stroke={C.main} strokeWidth="2.5" fill="none" strokeLinecap="round" />
       <ellipse cx="21" cy="17" rx="10.5" ry="6.5" fill={C.main} />
@@ -46,7 +46,7 @@ function RunSVG() {
 
 function SitSVG({ smile = false }: { smile?: boolean }) {
   return (
-    <svg viewBox="0 0 40 22" width="30" height="16">
+    <svg viewBox="0 -3 40 27" width="26" height="18">
       <circle cx="4" cy="8" r="3"   fill={C.light} />
       <path d="M7 14 Q3 10 4 8" stroke={C.main} strokeWidth="2" fill="none" strokeLinecap="round" />
       <ellipse cx="17" cy="14" rx="9"   ry="6"   fill={C.main} />
@@ -78,7 +78,7 @@ function SitSVG({ smile = false }: { smile?: boolean }) {
 
 function SleepSVG() {
   return (
-    <svg viewBox="0 0 44 22" width="34" height="16">
+    <svg viewBox="0 -2 44 25" width="30" height="17">
       <ellipse cx="18" cy="15" rx="13" ry="5"   fill={C.main} />
       <circle  cx="32" cy="12" r="5.5"          fill={C.main} />
       <ellipse cx="30" cy="17" rx="2" ry="3.5"  fill={C.dark} transform="rotate(20,30,17)" />
@@ -98,7 +98,7 @@ function SleepSVG() {
 
 function PlaySVG() {
   return (
-    <svg viewBox="0 0 46 26" width="36" height="18">
+    <svg viewBox="0 -5 46 34" width="30" height="22">
       {/* Ball */}
       <circle cx="40" cy="18" r="5.5" fill="#e63946" />
       <circle cx="38.5" cy="16.5" r="1.8" fill="rgba(255,255,255,0.38)" />

@@ -44,10 +44,10 @@ fn engine_healthy() -> bool {
     use std::io::{Read, Write};
     let addr = format!("127.0.0.1:{ENGINE_PORT}");
     let Ok(addr) = addr.parse() else { return false };
-    let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(600)) else {
+    let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(3000)) else {
         return false;
     };
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(600)));
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(3000)));
     if stream
         .write_all(b"GET /health HTTP/1.0\r\nHost: localhost\r\n\r\n")
         .is_err()
@@ -202,25 +202,42 @@ fn tor_port_open() -> bool {
         .is_some()
 }
 
-/// Locate the bundled Tor binary. Looks in `resources/tor/<platform>/tor[.exe]`
-/// relative to the app's resource directory.
+/// Locate the bundled Tor binary. In a bundled install it sits under
+/// `resource_dir()/tor/...`; in a `--no-bundle` / dev build resources are NOT
+/// copied next to the exe, so we also walk up from the exe and cwd looking for
+/// the source-tree `resources/tor/<platform>/tor[.exe]` (same strategy as
+/// `find_engine_python`).
 fn find_tor_binary(app: &tauri::AppHandle) -> Option<PathBuf> {
-    let res_dir = app.path().resource_dir().ok()?;
-
     #[cfg(windows)]
-    let candidates = [
-        res_dir.join("tor/windows/tor.exe"),
-        res_dir.join("tor/tor.exe"),
-    ];
+    let rel = Path::new("tor/windows/tor.exe");
     #[cfg(not(windows))]
-    let candidates = [
-        res_dir.join("tor/linux/tor"),
-        res_dir.join("tor/tor"),
-    ];
+    let rel = Path::new("tor/linux/tor");
 
-    for c in &candidates {
-        if c.exists() {
-            return Some(c.clone());
+    // 1) Bundled location: directly under the resource dir.
+    if let Ok(res_dir) = app.path().resource_dir() {
+        for c in [res_dir.join(rel), res_dir.join("tor/tor.exe")] {
+            if c.exists() {
+                return Some(c);
+            }
+        }
+    }
+
+    // 2) Source tree: walk ancestors of the exe and cwd for `resources/tor/...`.
+    #[cfg(windows)]
+    let src_rel = Path::new("resources/tor/windows/tor.exe");
+    #[cfg(not(windows))]
+    let src_rel = Path::new("resources/tor/linux/tor");
+
+    let roots = [
+        std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)),
+        std::env::current_dir().ok(),
+    ];
+    for root in roots.into_iter().flatten() {
+        for dir in root.ancestors() {
+            let c = dir.join(src_rel);
+            if c.exists() {
+                return Some(c);
+            }
         }
     }
     None

@@ -15,14 +15,11 @@ async function emitMascotEvent(name: string, payload?: unknown) {
   } catch { /* not in Tauri */ }
 }
 
-// Tauri command helpers
+// Tauri command — propagates errors so the caller can surface them. Throws
+// "not in Tauri" when the API isn't available (e.g. browser preview).
 async function invokeTauri(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    return await invoke(cmd, args ?? {});
-  } catch {
-    return null;
-  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke(cmd, args ?? {});
 }
 
 // ---- nav history reducer ------------------------------------------------
@@ -89,10 +86,10 @@ export function ShadowNetView() {
     setConnecting(true);
     setConnectError(null);
     try {
-      const result = await invokeTauri("start_tor");
-      if (result !== null && typeof result === "string") {
-        setConnectError(result);
-      }
+      // start_tor returns Ok(()) on success (resolves undefined) or rejects with
+      // a String error (binary missing, etc.). Once it resolves, the status poll
+      // takes over and shows bootstrap progress.
+      await invokeTauri("start_tor");
     } catch (e) {
       setConnectError(String(e));
     } finally {
@@ -101,7 +98,9 @@ export function ShadowNetView() {
   };
 
   const disconnect = async () => {
-    await invokeTauri("stop_tor");
+    try {
+      await invokeTauri("stop_tor");
+    } catch { /* best-effort */ }
     setTorStatus(null);
     setPage(null);
     setLoadState("idle");
@@ -233,7 +232,7 @@ export function ShadowNetView() {
 
         <h2 className="shadow-connect__title">SHADOW NET</h2>
         <p className="shadow-connect__sub">
-          Route through the Tor network to access .onion sites and browse anonymously.
+          Route through the Secure network to access Dark Web sites and browse anonymously.
         </p>
 
         {isBootstrapping && (
@@ -256,10 +255,6 @@ export function ShadowNetView() {
         >
           {connecting || isBootstrapping ? "Connecting…" : "Connect"}
         </button>
-
-        <p className="shadow-connect__note">
-          Requires Tor Expert Bundle in app resources. Free, open-source, BSD license.
-        </p>
       </div>
     );
   }

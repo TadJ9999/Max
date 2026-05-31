@@ -6,7 +6,7 @@
 // from the engine (true per-stage trace). Vector-DB reads/writes pulse the
 // mascot's particle field — the "Max is learning" cue.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Mascot } from "../components/Mascot";
 import { MarkdownView } from "../components/MarkdownView";
 import { CopyButton } from "../components/CopyButton";
@@ -183,10 +183,13 @@ export function ApolloView({ onClose }: { onClose?: () => void } = {}) {
     }
   }, [chatMsgs]);
 
-  const onPredictComplete = (text: string) => {
+  // Memoised so the predictions ReportBox effect (which lists onComplete in its
+  // deps) doesn't re-fire — and re-run the whole prediction stream — every time
+  // the user types in the chat box below (which re-renders ApolloView).
+  const onPredictComplete = useCallback((text: string) => {
     void savePrediction(text);
     setChatMsgs([{ role: "assistant", content: text }]);
-  };
+  }, []);
 
   const sendChat = async () => {
     const q = chatInput.trim();

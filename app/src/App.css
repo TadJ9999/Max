@@ -654,6 +654,10 @@ body {
   /* smooth slide back to left edge when going idle */
   transition: left 0.3s ease-in-out;
 }
+/* Let the head/legs render past the nominal box rather than clipping. */
+.chat__poodle svg {
+  overflow: visible;
+}
 .chat__poodle--run {
   animation: poodle-trot 5.4s linear infinite;
   transition: none; /* let keyframes own movement while running */
