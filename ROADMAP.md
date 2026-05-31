@@ -40,6 +40,7 @@ model on a different task, in parallel.
 - **Voice:** orchestration via capabilities, but **audio on a dedicated realtime WS channel** (not MCP) ✅
 - **Home/LAN:** networked engine adds **bearer-token auth**; MCP skills run as local subprocess *or* networked service ✅
 - **OSINT news map:** a glowing 2D world map with a **news heat choropleth** (GDELT + RSS, free/key-less) and a **live day/night terminator**, opened in a dedicated large window from below the chat bar; news egress lives in the engine (see [Phase 10](#phase-10--osint-global-news-map---a-glowing-world-map-of-where-the-news-is-happening-with-a-live-daynight-terminator)) ✅
+- **Aegis (self-debug & fix):** Max watches its own logs/crashes, **asks before touching anything**, AI-diagnoses the root cause (cloud Claude default, local fallback), shows a **diff preview**, applies only on approval with **git-snapshot rollback** + test-verify, and records every action in an organized [`selfdiagnosefixes.md`](selfdiagnosefixes.md). **Two layers**: **Leo**, a bubbly, all-red boot-time **rescue terminal 🐩** that opens from `Max.cmd` when the engine won't start — looping until it's back up, then signing off with "My job is done!" + a smiling toy-poodle — plus the in-engine runtime layer (full design in [docs/aegis.md](docs/aegis.md); Phase 13) ✅
 - *(Full layered design in [docs/architecture.md](docs/architecture.md).)*
 
 ---
@@ -289,6 +290,76 @@ Parser rules:
 - [ ] **Hub integration**: add `"sentinel"` to `HubTab` union + `TABS[]` in `HubView.tsx`; lazy-mount view; add launcher button to `HubButtons.tsx`; sentinel tab accent in `Hub.css`; `#sentinel` hash route in `main.tsx`; `"sentinel"` in `capabilities/default.json`
 - [ ] **AI chat** (`POST /sentinel/chat`): grounded in live snapshot (space weather, ISS crew, NEA close approaches, next launch); mascot `mascot:signal` on submit — mirrors OSINT chat exactly
 - [ ] **Tests**: `tests/test_sentinel.py` — TLE parsing, SGP4 propagation, space weather parsing, asteroid model, endpoints (network mocked); add `sgp4`/`numpy` to test env
+
+---
+
+### Phase 13 — Aegis: AI self-debug & fix engine  🎯 *Max watches its own logs, explains what broke, and — with your OK — fixes itself* ([design](docs/aegis.md))
+*Max becomes self-healing. An **observability** layer captures crashes/errors/log
+signals into a persistent store; an **AI diagnosis** layer (cloud Claude by default,
+local fallback) reads the signal + relevant source and proposes a root cause and a
+concrete patch; a **human gate** asks before anything is touched; an **apply/verify/
+rollback** layer commits the fix only if tests pass and reverts otherwise. Every action
+is recorded in an organized [`selfdiagnosefixes.md`](selfdiagnosefixes.md). Mirrors the
+OSINT/Market/Sentinel feature shape (engine module → endpoints → config → tests → desktop
+view) and reuses the router/delegate, `_sse_stream`, prompt templates, and the
+`workspace_allowlist` guard already in place.*
+
+**Decisions locked:** **two layers** — **Leo**, a **boot-time rescue terminal (build
+first)** that opens when the engine won't even start (or any launch issue), plus the
+**in-engine runtime layer** · **diagnose → ask → apply** (never silent) with a mandatory
+**diff preview + git-snapshot rollback** · fix scope = **engine (Python) + frontend
+(TS/React) first**, **whole-repo incl Rust/Tauri the stated target** · brain = **cloud
+Claude by default, local model fallback** (code/log egress marked like the `!` sigil,
+gated by `allow_cloud`) · all edits constrained to the **workspace allowlist** · **loop
+protection** (dedupe + cooldown) so a bad fix can't trigger infinite re-diagnosis ·
+secrets redacted before any store or egress.
+
+**Leo — boot-time rescue terminal 🐩 (build first):** *a bubbly, all-red rescue dog who works when nothing else is up.*
+- [ ] **Launcher health gate** — `Max.cmd` launches the app (which owns the engine on
+  port 8001), polls `/health` (~40s), and on launch failure (or any startup issue) opens
+  Leo's terminal; preserves the app-owns-engine model
+- [ ] **Leo rescue console** — red `LEO · SELF-DIAGNOSE MODE` banner, **all output red**,
+  live status (reuses the `smoke.ps1` idiom, recolored), gathers env + stderr signal,
+  **redacts secrets**, diagnoses (cloud Claude → local Ollama → offline heuristics),
+  records to `selfdiagnosefixes.md`, and **loops with you (retry → relaunch app → `/health`)
+  until the engine is back up**; suggest-by-default (no silent edits)
+- [ ] **Happy finale** — on green `/health`, Leo prints **"My job is done!"** + a tiny
+  smiling toy-poodle ASCII image, then exits; bubbly encouraging voice throughout
+- [ ] **Polish**: stream the diagnosis token-by-token; richer offline heuristic rules;
+  one-click "apply suggested commands"; cross-platform launcher (`.sh`) once non-Windows lands
+
+**Runtime layer (engine up):**
+- [ ] **Observability module** (`engine/max_engine/aegis/`): structured logger + ring
+  buffer + SQLite event store (survives restart); FastAPI exception handler; taps on
+  delegate `ERROR` sessions, provider errors, and startup failures; **secret redaction**
+  before store/egress
+- [ ] **Client error capture**: `POST /aegis/report` ← frontend `window.onerror` /
+  `unhandledrejection`; Tauri/Rust engine-stderr forwarded as a signal
+- [ ] **Endpoints** (mirror OSINT/Market/Sentinel): `GET /aegis/events`, `POST /aegis/report`,
+  `POST /aegis/diagnose` (**SSE**, reuses `_sse_stream`), `POST /aegis/apply`,
+  `POST /aegis/rollback`, `GET /aegis/log`, `GET /aegis/sources`
+- [ ] **Config**: `AegisConfig` (enabled, autonomy level, auto-detect on/off, severity
+  threshold to prompt, verify commands per target, retention) — round-trips through the
+  persisted-override subset like `MarketConfig`/`SentinelConfig`
+- [ ] **Diagnosis**: an `aegis` diagnostic prompt template in `prompts.py`; routes via the
+  existing router/delegate (cloud Claude default, local fallback); structured output =
+  root cause · severity · affected files · **unified diff**
+- [ ] **Apply / verify / rollback**: git-snapshot patcher with **allowlist guard**; verify
+  runner (`pytest` for engine, `tsc && vite build` for frontend); keep on green,
+  **auto-revert** on failure or rejection
+- [ ] **Logbook**: organized append-only [`selfdiagnosefixes.md`](selfdiagnosefixes.md)
+  (status legend: proposed / applied / verified / rolled-back)
+- [ ] **Hub integration** (`app/src/aegis/`): `AegisView` (issues list · diagnosis stream ·
+  diff viewer · approve/apply/rollback · logbook tab); add `"aegis"` to `HubTab` + launcher
+  button; `#aegis` hash route; the mascot **error** state deep-links here
+- [ ] **Tests** (`engine/tests/test_aegis.py`): capture, event ranking, redaction, prompt
+  build (mocked provider), patch parse/validate, allowlist guard, apply+rollback (temp git
+  repo), logbook formatting
+- [ ] **Surface egress in settings/privacy guard** (Aegis sends code/logs to the cloud when
+  diagnosing; mark it like OSINT / Market / the `!` sigil) + network kill-switch integration
+- [ ] *(stretch)* opt-in **full-auto mode** (detect→fix→test→restart, logged after the fact)
+  behind a flag · Rust/Tauri auto-fix · learn from past fixes (embed `selfdiagnosefixes.md`
+  into Apollo memory so recurring bugs are recognized)
 
 ---
 
