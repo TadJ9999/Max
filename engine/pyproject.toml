@@ -11,6 +11,9 @@ dependencies = [
     "python-dotenv>=1.0",
     "sqlite-vec>=0.1.6",
     "faster-whisper>=1.0",
+    "socksio>=0.9",
+    "stem>=1.8",
+    "beautifulsoup4>=4.12",
 ]
 
 [project.optional-dependencies]

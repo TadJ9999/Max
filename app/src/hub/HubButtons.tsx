@@ -40,6 +40,15 @@ export async function openHubWindow(tab: HubTab): Promise<void> {
 }
 
 const ICONS: Record<HubTab, React.ReactNode> = {
+  shadow: (
+    <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      {/* Tor onion — nested hexagon rings */}
+      <polygon points="10,2 16.5,5.5 16.5,14.5 10,18 3.5,14.5 3.5,5.5" stroke="currentColor" strokeWidth="1.2" fill="none" />
+      <polygon points="10,5 14,7.5 14,12.5 10,15 6,12.5 6,7.5" stroke="currentColor" strokeWidth="0.9" fill="none" />
+      <circle cx="10" cy="10" r="2" stroke="currentColor" strokeWidth="0.8" />
+      <circle cx="10" cy="10" r="0.7" fill="currentColor" />
+    </svg>
+  ),
   polymarket: (
     <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
       <circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.2" />
@@ -91,6 +100,7 @@ const META: { id: HubTab; title: string; cls: string }[] = [
   { id: "polymarket", title: "Poly — Prediction Markets", cls: "widget-action-btn--polymarket" },
   { id: "apollo", title: "Apollo — Prediction Engine", cls: "widget-action-btn--apollo" },
   { id: "aegis", title: "Aegis — Self-Repair Console", cls: "widget-action-btn--aegis" },
+  { id: "shadow", title: "Shadow Net — Tor Browser", cls: "widget-action-btn--shadow" },
 ];
 
 export function HubButtons() {

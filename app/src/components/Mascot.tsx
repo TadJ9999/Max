@@ -32,6 +32,10 @@ export interface MascotProps {
    * "Max is learning" cue. Each bump flashes the motes brighter for a beat.
    */
   dbActivity?: number;
+  /** Increment to fire an upward streak from core toward the TorLock widget. */
+  torRequest?: number;
+  /** Increment to fire a downward streak from the TorLock back to the core. */
+  torResponse?: number;
 }
 
 const ZERO: MascotMetrics = { cpu: 0, gpu: 0, vram: 0, ram: 0, gpuTemp: 0 };
@@ -112,6 +116,9 @@ function Gauge({ r, pct, label }: { r: number; pct: number; label: string }) {
  * show CPU/GPU/VRAM/RAM, accent tracks GPU heat (cyan → amber → red), and
  * `systemDown` forces an offline-red flicker. Rotation is rAF-driven (seamless).
  */
+// Tor streak travel time (ms) — keep in sync with CSS keyframes
+const TOR_STREAK_MS = 700;
+
 export function Mascot({
   state = "idle",
   metrics = ZERO,
@@ -121,6 +128,8 @@ export function Mascot({
   thinking,
   systemDown = false,
   dbActivity,
+  torRequest,
+  torResponse,
 }: MascotProps) {
   const isThinking = (Boolean(thinking) || state === "thinking" || state === "busy") && !systemDown;
 
@@ -151,6 +160,34 @@ export function Mascot({
       window.clearTimeout(gone);
     };
   }, [signal]);
+
+  // Tor streaks: vertical line animations between mascot core and the TorLock widget.
+  const [torStreaks, setTorStreaks] = useState<Array<{ id: number; dir: "up" | "down" }>>([]);
+  const lastTorReq = useRef(torRequest);
+  useEffect(() => {
+    if (torRequest === undefined || torRequest === lastTorReq.current) return;
+    lastTorReq.current = torRequest;
+    const id = torRequest;
+    setTorStreaks((ts) => [...ts, { id, dir: "up" }]);
+    const gone = window.setTimeout(
+      () => setTorStreaks((ts) => ts.filter((t) => t.id !== id)),
+      TOR_STREAK_MS + 120,
+    );
+    return () => window.clearTimeout(gone);
+  }, [torRequest]);
+
+  const lastTorRes = useRef(torResponse);
+  useEffect(() => {
+    if (torResponse === undefined || torResponse === lastTorRes.current) return;
+    lastTorRes.current = torResponse;
+    const id = torResponse + 1_000_000; // unique range
+    setTorStreaks((ts) => [...ts, { id, dir: "down" }]);
+    const gone = window.setTimeout(
+      () => setTorStreaks((ts) => ts.filter((t) => t.id !== id)),
+      TOR_STREAK_MS + 120,
+    );
+    return () => window.clearTimeout(gone);
+  }, [torResponse]);
 
   // Response blast: fire a one-shot ripple when thinking ends.
   const [ripple, setRipple] = useState(0);
@@ -336,6 +373,13 @@ export function Mascot({
           <span key={c.id} className="comet" style={{ transform: `rotate(${c.angle}deg)` }}>
             <span className="comet__streak" />
           </span>
+        ))}
+      </div>
+
+      {/* Tor vertical streaks — up toward TorLock on request, down from lock on response */}
+      <div className="hud__tor-streaks" aria-hidden="true">
+        {torStreaks.map((t) => (
+          <span key={t.id} className={`tor-streak tor-streak--${t.dir}`} />
         ))}
       </div>
     </div>

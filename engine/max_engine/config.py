@@ -89,6 +89,14 @@ class PersonalityConfig(BaseModel):
     custom_prefix: str = ""      # used verbatim when persona="custom"
 
 
+class DarkNetConfig(BaseModel):
+    """Tor-based dark web browser. Tor process managed by Tauri; Python side
+    reads its ports to proxy requests and stream circuit status."""
+
+    socks_port: int = 9050
+    control_port: int = 9051
+
+
 class VoiceConfig(BaseModel):
     """Voice I/O settings. STT provider is configurable; TTS uses the Web Speech API."""
 
@@ -168,6 +176,7 @@ class EngineConfig(BaseModel):
     aegis: AegisConfig = Field(default_factory=AegisConfig)
     personality: PersonalityConfig = Field(default_factory=PersonalityConfig)
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
+    darknet: DarkNetConfig = Field(default_factory=DarkNetConfig)
 
 
 def _apply_overrides(cfg: EngineConfig, data: dict) -> None:

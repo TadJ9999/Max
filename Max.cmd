@@ -13,7 +13,10 @@ cd /d "%~dp0"
 
 set "MAXEXE=%~dp0app\src-tauri\target\release\Max.exe"
 set "LEOSC=%~dp0scripts\leo.ps1"
+rem  %~dp0 always ends with a backslash; a trailing \" gets mis-parsed as an
+rem  escaped quote when passed to PowerShell, so strip it to a clean path.
 set "APPDIR=%~dp0"
+if "%APPDIR:~-1%"=="\" set "APPDIR=%APPDIR:~0,-1%"
 
 rem  Create logs dir for engine stderr capture (written by Tauri / Rust side)
 if not exist "%~dp0logs" mkdir "%~dp0logs"
@@ -21,6 +24,8 @@ if not exist "%~dp0logs" mkdir "%~dp0logs"
 if not exist "%MAXEXE%" goto :build
 
 :launch
+rem  Kill any stale Max.exe (crash survivor) so single-instance doesn't block.
+taskkill /F /IM Max.exe >nul 2>&1
 echo [Max] Launching desktop app - the engine starts automatically...
 start "" "%MAXEXE%"
 

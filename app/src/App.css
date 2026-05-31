@@ -738,6 +738,21 @@ body {
   background: var(--muted-2);
 }
 
+/* TorLock + Mascot stacking */
+.widget__mascot-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+/* TorLock sits above the mascot rings; the connector line is drawn by CSS
+   streaks in Mascot.css relative to the mascot's center. */
+.widget__mascot-wrap .tor-lock {
+  z-index: 10;
+}
+
 /* scrollbars */
 .cards::-webkit-scrollbar,
 .chat__out::-webkit-scrollbar {

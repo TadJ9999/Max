@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TopBar, type SysInfo } from "./components/TopBar";
 import { TaskCard } from "./components/TaskCard";
 import { Mascot } from "./components/Mascot";
+import { TorLock, type TorLockStatus } from "./components/TorLock";
 import { ChatBar } from "./components/ChatBar";
 import { HubButtons, openHubWindow } from "./hub/HubButtons";
 import { reportError } from "./aegis/aegis";
@@ -9,6 +10,7 @@ import { deriveMascotState } from "./mascot/deriveMascotState";
 import { initFloatingWindow } from "./window";
 import { getSystemStats, shutdownApp } from "./system";
 import { getSessions, cancelSession, promoteSession, streamSession } from "./engine";
+import { getTorStatus, newCircuit } from "./darknet/shadownet";
 import { type Session } from "./types";
 import "./App.css";
 
@@ -53,6 +55,13 @@ function App() {
   const firstPoll = useRef(true);
   // One live SSE output stream per running session (keyed by id).
   const streams = useRef<Map<string, AbortController>>(new Map());
+
+  // Tor circuit state — drives TorLock widget above mascot
+  const [torLockStatus, setTorLockStatus] = useState<TorLockStatus>("off");
+  const [torExitIp, setTorExitIp] = useState<string | null>(null);
+  const [torCircuitAge, setTorCircuitAge] = useState(0);
+  const [torRequestPulse, setTorRequestPulse] = useState(0);
+  const [torResponsePulse, setTorResponsePulse] = useState(0);
 
   // Anchor top-right + register the global hotkey (no-op outside Tauri).
   useEffect(() => {
@@ -119,6 +128,76 @@ function App() {
       u2?.();
     };
   }, [ping]);
+
+  // Tor status polling — updates TorLock widget every 5s when running
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      const s = await getTorStatus();
+      if (!alive) return;
+      if (!s || !s.running) {
+        setTorLockStatus("off");
+        setTorExitIp(null);
+        setTorCircuitAge(0);
+      } else if (s.circuit_established) {
+        setTorLockStatus("connected");
+        setTorExitIp(s.exit_ip ?? null);
+        setTorCircuitAge(s.circuit_age_seconds);
+      } else {
+        setTorLockStatus("connecting");
+        setTorExitIp(null);
+        setTorCircuitAge(0);
+      }
+    };
+    void tick();
+    const id = window.setInterval(() => void tick(), 5000);
+    return () => { alive = false; window.clearInterval(id); };
+  }, []);
+
+  // Tor mascot streak events from ShadowNetView (BroadcastChannel + Tauri)
+  useEffect(() => {
+    let ch: BroadcastChannel | null = null;
+    let u3: (() => void) | undefined;
+    let u4: (() => void) | undefined;
+    try {
+      ch = new BroadcastChannel("max:mascot");
+      ch.onmessage = (e: MessageEvent<{ type: string; payload?: unknown }>) => {
+        if (e.data.type === "mascot:tor-request") setTorRequestPulse((p) => p + 1);
+        else if (e.data.type === "mascot:tor-response") setTorResponsePulse((p) => p + 1);
+      };
+    } catch { /* BroadcastChannel not available */ }
+    void (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        u3 = await listen("mascot:tor-request", () => setTorRequestPulse((p) => p + 1));
+        u4 = await listen("mascot:tor-response", () => setTorResponsePulse((p) => p + 1));
+      } catch { /* not in Tauri */ }
+    })();
+    return () => {
+      ch?.close();
+      u3?.();
+      u4?.();
+    };
+  }, []);
+
+  const handleTorDisconnect = async () => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("stop_tor");
+    } catch { /* not in Tauri */ }
+    setTorLockStatus("off");
+    setTorExitIp(null);
+    setTorCircuitAge(0);
+  };
+
+  const handleNewCircuit = async () => {
+    await newCircuit();
+    const s = await getTorStatus();
+    if (s) {
+      setTorExitIp(s.exit_ip ?? null);
+      setTorCircuitAge(s.circuit_age_seconds);
+    }
+  };
 
   // System status → red core when the host is unreachable. Uses online/offline
   // events as a lightweight proxy; engine health is confirmed on the next poll.
@@ -256,14 +335,27 @@ function App() {
         )}
       </div>
 
-      <Mascot
-        state={mascot.state}
-        metrics={{ cpu: sys.cpu, gpu: sys.gpu, vram: sys.vram, ram: sys.ram, gpuTemp: sys.gpuTemp }}
-        size={150}
-        signal={pulse}
-        thinking={chatThinking}
-        systemDown={systemDown}
-      />
+      <div className="widget__mascot-wrap">
+        {torLockStatus !== "off" && (
+          <TorLock
+            status={torLockStatus}
+            exitIp={torExitIp}
+            circuitAge={torCircuitAge}
+            onDisconnect={() => void handleTorDisconnect()}
+            onNewCircuit={() => void handleNewCircuit()}
+          />
+        )}
+        <Mascot
+          state={mascot.state}
+          metrics={{ cpu: sys.cpu, gpu: sys.gpu, vram: sys.vram, ram: sys.ram, gpuTemp: sys.gpuTemp }}
+          size={150}
+          signal={pulse}
+          thinking={chatThinking}
+          systemDown={systemDown}
+          torRequest={torRequestPulse}
+          torResponse={torResponsePulse}
+        />
+      </div>
 
       <ChatBar onRequest={ping} onBusyChange={setChatThinking} />
 

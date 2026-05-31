@@ -13,9 +13,10 @@ import { MarketView } from "../market/MarketView";
 import { PolymarketView } from "../polymarket/PolymarketView";
 import { AegisView } from "../aegis/AegisView";
 import { SettingsView } from "../settings/SettingsView";
+import { ShadowNetView } from "../darknet/ShadowNetView";
 import "./Hub.css";
 
-export type HubTab = "apollo" | "osint" | "market" | "polymarket" | "aegis" | "settings";
+export type HubTab = "apollo" | "osint" | "market" | "polymarket" | "aegis" | "shadow" | "settings";
 
 const TABS: { id: HubTab; label: string; glyph: string }[] = [
   { id: "apollo", label: "Apollo", glyph: "▲" },
@@ -23,6 +24,7 @@ const TABS: { id: HubTab; label: string; glyph: string }[] = [
   { id: "market", label: "Market", glyph: "$" },
   { id: "polymarket", label: "Poly", glyph: "Ψ" },
   { id: "aegis", label: "Aegis", glyph: "🛡" },
+  { id: "shadow", label: "Shadow", glyph: "⬡" },
   { id: "settings", label: "Settings", glyph: "⚙" },
 ];
 
@@ -114,6 +116,11 @@ export function HubView({
         {visited.has("aegis") && (
           <div className="hub__view" hidden={tab !== "aegis"}>
             <AegisView />
+          </div>
+        )}
+        {visited.has("shadow") && (
+          <div className="hub__view" hidden={tab !== "shadow"}>
+            <ShadowNetView />
           </div>
         )}
         {visited.has("settings") && (

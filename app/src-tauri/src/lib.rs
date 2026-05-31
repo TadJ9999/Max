@@ -18,18 +18,85 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// The engine port the app + UI agree on (see app/src/engine.ts ENGINE_URL).
 const ENGINE_PORT: u16 = 8001;
 
+/// Tor SOCKS5 proxy port (must match DarkNetConfig.socks_port in Python config.py).
+const TOR_SOCKS_PORT: u16 = 9050;
+
 /// Holds the FastAPI engine child process when *we* started it, so we can kill it
 /// on shutdown. `None` when the engine was already running (started externally) —
 /// in that case we leave it alone.
 struct EngineProcess(Mutex<Option<Child>>);
 
+/// Holds the Tor daemon child process when the user starts it from the Shadow Net tab.
+/// `None` when Tor is not running (user-initiated, unlike the engine which auto-starts).
+struct TorProcess(Mutex<Option<Child>>);
+
 /// True if something is already listening on the engine port.
-fn engine_running() -> bool {
+fn port_in_use() -> bool {
     let addr = format!("127.0.0.1:{ENGINE_PORT}");
     addr.parse()
         .ok()
         .and_then(|a| TcpStream::connect_timeout(&a, Duration::from_millis(300)).ok())
         .is_some()
+}
+
+/// True only when the engine port is open AND /health returns HTTP 200.
+fn engine_healthy() -> bool {
+    use std::io::{Read, Write};
+    let addr = format!("127.0.0.1:{ENGINE_PORT}");
+    let Ok(addr) = addr.parse() else { return false };
+    let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(600)) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(600)));
+    if stream
+        .write_all(b"GET /health HTTP/1.0\r\nHost: localhost\r\n\r\n")
+        .is_err()
+    {
+        return false;
+    }
+    let mut buf = [0u8; 256];
+    let n = stream.read(&mut buf).unwrap_or(0);
+    String::from_utf8_lossy(&buf[..n]).contains("200")
+}
+
+/// Kill whatever process is holding ENGINE_PORT (best-effort).
+/// On Windows, netstat gives us the PID; we then taskkill the whole tree.
+fn kill_port_owner() {
+    #[cfg(windows)]
+    {
+        let pattern = format!(":{ENGINE_PORT}");
+        let Ok(out) = std::process::Command::new("cmd")
+            .args(["/C", &format!("netstat -ano | findstr {pattern}")])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        else {
+            return;
+        };
+        let text = String::from_utf8_lossy(&out.stdout);
+        let pids: Vec<String> = text
+            .lines()
+            .filter_map(|line| line.trim().split_whitespace().last().map(|s| s.to_owned()))
+            .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()) && s != "0")
+            .collect();
+        let mut seen = std::collections::HashSet::new();
+        for pid in pids {
+            if seen.insert(pid.clone()) {
+                let mut kill = std::process::Command::new("taskkill");
+                kill.args(["/T", "/F", "/PID", &pid])
+                    .creation_flags(CREATE_NO_WINDOW);
+                let _ = kill.status();
+                println!("[engine] killed zombie process (pid {pid}) on :{ENGINE_PORT}");
+            }
+        }
+        std::thread::sleep(Duration::from_millis(400));
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = std::process::Command::new("sh")
+            .args(["-c", &format!("fuser -k {ENGINE_PORT}/tcp 2>/dev/null || true")])
+            .status();
+        std::thread::sleep(Duration::from_millis(400));
+    }
 }
 
 /// Find the engine's venv Python by walking up from a starting dir looking for
@@ -53,9 +120,14 @@ fn find_engine_python(start: &Path) -> Option<PathBuf> {
 /// we spawned it (so we own its lifecycle), or `None` if it was already running
 /// or we couldn't locate the venv.
 fn spawn_engine() -> Option<Child> {
-    if engine_running() {
-        println!("[engine] already running on :{ENGINE_PORT} — reusing");
-        return None;
+    if port_in_use() {
+        if engine_healthy() {
+            println!("[engine] already running and healthy on :{ENGINE_PORT} — reusing");
+            return None;
+        }
+        // Port held by an unresponsive zombie — kill it and start fresh.
+        println!("[engine] port :{ENGINE_PORT} occupied but engine unresponsive — killing zombie...");
+        kill_port_owner();
     }
 
     // Search from the executable's dir and the current working dir (Max.cmd sets
@@ -118,6 +190,144 @@ fn shutdown_engine(app: &tauri::AppHandle) {
         }
     }
 }
+
+// ---- Tor daemon management -----------------------------------------------
+
+/// True if Tor's SOCKS5 proxy port is open (daemon is up and accepting).
+fn tor_port_open() -> bool {
+    let addr = format!("127.0.0.1:{TOR_SOCKS_PORT}");
+    addr.parse()
+        .ok()
+        .and_then(|a| TcpStream::connect_timeout(&a, Duration::from_millis(300)).ok())
+        .is_some()
+}
+
+/// Locate the bundled Tor binary. Looks in `resources/tor/<platform>/tor[.exe]`
+/// relative to the app's resource directory.
+fn find_tor_binary(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let res_dir = app.path().resource_dir().ok()?;
+
+    #[cfg(windows)]
+    let candidates = [
+        res_dir.join("tor/windows/tor.exe"),
+        res_dir.join("tor/tor.exe"),
+    ];
+    #[cfg(not(windows))]
+    let candidates = [
+        res_dir.join("tor/linux/tor"),
+        res_dir.join("tor/tor"),
+    ];
+
+    for c in &candidates {
+        if c.exists() {
+            return Some(c.clone());
+        }
+    }
+    None
+}
+
+/// Kill the Tor process we own on app exit.
+fn shutdown_tor(app: &tauri::AppHandle) {
+    if let Some(state) = app.try_state::<TorProcess>() {
+        if let Ok(mut guard) = state.0.lock() {
+            if let Some(mut child) = guard.take() {
+                let pid = child.id();
+                #[cfg(windows)]
+                {
+                    let mut kill = Command::new("taskkill");
+                    kill.args(["/T", "/F", "/PID", &pid.to_string()]);
+                    kill.creation_flags(CREATE_NO_WINDOW);
+                    let _ = kill.status();
+                }
+                #[cfg(not(windows))]
+                {
+                    let _ = child.kill();
+                }
+                let _ = child.wait();
+                println!("[tor] stopped (pid {pid} tree)");
+            }
+        }
+    }
+}
+
+/// Start the Tor daemon. User-initiated from the Shadow Net tab — unlike the
+/// engine, Tor does NOT start automatically on launch.
+#[tauri::command]
+fn start_tor(app: tauri::AppHandle, state: tauri::State<'_, TorProcess>) -> Result<(), String> {
+    if tor_port_open() {
+        println!("[tor] already running on :{TOR_SOCKS_PORT}");
+        return Ok(());
+    }
+
+    let tor_bin = find_tor_binary(&app)
+        .ok_or_else(|| "Tor binary not found in app resources. Place tor.exe in resources/tor/windows/.".to_string())?;
+
+    // Data directory in the OS app-data folder so it persists between launches.
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("tor");
+    std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+
+    let data_dir_str = data_dir.to_string_lossy().into_owned();
+
+    // Run from the binary's own directory so Windows finds the bundled DLLs
+    // (libcrypto, libssl, libevent, etc.) that ship alongside tor.exe.
+    let tor_dir = tor_bin.parent().unwrap_or(tor_bin.as_path());
+
+    let mut cmd = Command::new(&tor_bin);
+    cmd.args([
+        "--SocksPort",
+        &TOR_SOCKS_PORT.to_string(),
+        "--ControlPort",
+        "9051",
+        "--DataDirectory",
+        &data_dir_str,
+        "--Log",
+        "notice stdout",
+    ])
+    .current_dir(tor_dir);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let child = cmd.spawn().map_err(|e| format!("Failed to start Tor: {e}"))?;
+    let pid = child.id();
+    *state.0.lock().unwrap() = Some(child);
+    println!("[tor] started (pid {pid}) — data dir: {data_dir_str}");
+    Ok(())
+}
+
+/// Stop the Tor daemon. Called when the user disconnects from Shadow Net.
+#[tauri::command]
+fn stop_tor(state: tauri::State<'_, TorProcess>) -> Result<(), String> {
+    let mut guard = state.0.lock().unwrap();
+    if let Some(mut child) = guard.take() {
+        let pid = child.id();
+        #[cfg(windows)]
+        {
+            let mut kill = Command::new("taskkill");
+            kill.args(["/T", "/F", "/PID", &pid.to_string()]);
+            kill.creation_flags(CREATE_NO_WINDOW);
+            let _ = kill.status();
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = child.kill();
+        }
+        let _ = child.wait();
+        println!("[tor] stopped (pid {pid})");
+    }
+    Ok(())
+}
+
+/// Returns true if the Tor SOCKS5 port is currently accepting connections.
+#[tauri::command]
+fn tor_running() -> bool {
+    tor_port_open()
+}
+
+// --------------------------------------------------------------------------
 
 /// Live system meters shown in the widget's top bar. Percentages are 0..100.
 #[derive(serde::Serialize)]
@@ -264,7 +474,14 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .manage(Mutex::new(sysinfo::System::new_all()))
-        .invoke_handler(tauri::generate_handler![get_system_stats, quit_app])
+        .manage(TorProcess(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![
+            get_system_stats,
+            quit_app,
+            start_tor,
+            stop_tor,
+            tor_running,
+        ])
         .setup(|app| {
             // Own the engine lifecycle: start it on launch (if not already up) and
             // hold the handle so we can stop it on shutdown.
@@ -303,9 +520,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            // On final exit, stop the engine we started so the port is freed.
+            // On final exit, stop the engine and Tor so ports are freed.
             if let tauri::RunEvent::Exit = event {
                 shutdown_engine(app_handle);
+                shutdown_tor(app_handle);
             }
         });
 }

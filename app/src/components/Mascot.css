@@ -467,6 +467,57 @@
   70% { opacity: 1; }
 }
 
+/* ---- Tor vertical streaks ---- */
+
+.hud__tor-streaks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* The streak is a thin vertical bar centered on the mascot, reaching up/down
+   toward the TorLock widget (positioned ~80px above via App.tsx layout). */
+.tor-streak {
+  position: absolute;
+  left: 50%;
+  width: 2px;
+  border-radius: 1px;
+  background: linear-gradient(to top, transparent, #00ff88, transparent);
+  opacity: 0;
+  transform-origin: bottom center;
+}
+
+.tor-streak--up {
+  bottom: 50%;
+  height: 80px;
+  transform: translateX(-50%) scaleY(0);
+  animation: tor-streak-up 700ms ease-out forwards;
+}
+
+.tor-streak--down {
+  top: 50%;
+  height: 80px;
+  background: linear-gradient(to bottom, transparent, #00ff88, transparent);
+  transform: translateX(-50%) scaleY(0);
+  transform-origin: top center;
+  animation: tor-streak-down 600ms ease-out forwards;
+}
+
+@keyframes tor-streak-up {
+  0%   { opacity: 0; transform: translateX(-50%) scaleY(0); }
+  20%  { opacity: 1; transform: translateX(-50%) scaleY(0.3); }
+  70%  { opacity: 0.9; transform: translateX(-50%) scaleY(1); }
+  100% { opacity: 0; transform: translateX(-50%) scaleY(1); }
+}
+
+@keyframes tor-streak-down {
+  0%   { opacity: 0; transform: translateX(-50%) scaleY(0); }
+  20%  { opacity: 1; transform: translateX(-50%) scaleY(0.3); }
+  70%  { opacity: 0.9; transform: translateX(-50%) scaleY(1); }
+  100% { opacity: 0; transform: translateX(-50%) scaleY(1); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .comet__streak,
   .hud__halo,
@@ -477,9 +528,11 @@
   .hud__ripple,
   .hud__blast,
   .hud__nebula,
-  .hud__nebula-gas {
+  .hud__nebula-gas,
+  .tor-streak {
     animation: none;
   }
   .hud__particle { opacity: 0.55; }
   .comet__streak { display: none; }
+  .tor-streak { display: none; }
 }

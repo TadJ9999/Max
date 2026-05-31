@@ -24,6 +24,8 @@ from pydantic import BaseModel
 
 from . import __version__
 from .aegis import AegisCapture, AegisService, AegisStore
+from .darknet import TorService
+from .darknet.fetcher import fetch_url as tor_fetch_url
 from .apollo import ApolloService, VectorStore
 from .apollo.predictions import PredictionHistory
 from .user import UserProfileStore
@@ -127,6 +129,10 @@ aegis_svc = AegisService(
     store=_aegis_store,
     config=config,
     repo_root=str(Path(__file__).resolve().parent.parent.parent),
+)
+dark_svc = TorService(
+    socks_port=config.darknet.socks_port,
+    control_port=config.darknet.control_port,
 )
 
 # Register Aegis as the global FastAPI exception handler so unhandled errors
@@ -1422,3 +1428,46 @@ async def voice_transcribe(req: TranscribeRequest) -> dict:
         Path(tmp_path).unlink(missing_ok=True)
 
     return {"text": text}
+
+
+# ---- Shadow Net / Dark Web (Phase 15) ------------------------------------
+
+
+@app.get("/dark/status")
+async def dark_status() -> dict:
+    """Circuit status: running, bootstrap %, exit IP, circuit age."""
+    s = await dark_svc.status()
+    return s.model_dump()
+
+
+@app.post("/dark/new-circuit")
+async def dark_new_circuit() -> dict:
+    """Request a new Tor circuit (SIGNAL NEWNYM)."""
+    await dark_svc.new_circuit()
+    return {"ok": True}
+
+
+@app.get("/dark/fetch")
+async def dark_fetch_page(url: str):
+    """SSE stream: proxy-fetch *url* through Tor and return sanitised HTML.
+
+    Events: ``{"type":"start"}`` → ``{"type":"html", ...FetchResult}``
+            or ``{"type":"error","message":"..."}``
+    """
+
+    async def _stream() -> AsyncIterator[str]:
+        yield f"data: {json.dumps({'type': 'start', 'url': url})}\n\n"
+        try:
+            result = await tor_fetch_url(url, config.darknet.socks_port)
+            yield f"data: {json.dumps({'type': 'html', **result.model_dump()})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+    return StreamingResponse(_stream(), media_type="text/event-stream")
+
+
+@app.get("/dark/search")
+async def dark_search(q: str) -> dict:
+    """Search Ahmia for onion results, routed through Tor."""
+    results = await dark_svc.search(q)
+    return {"results": [r.model_dump() for r in results]}

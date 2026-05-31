@@ -413,6 +413,21 @@ secrets redacted before any store or egress.
 
 ---
 
+### Phase 15 — Shadow Net: Tor Dark Web Browser  🔒 *Anonymous browsing with live Tor visualization*
+
+*Adds a Shadow Net Hub tab backed by a bundled Tor daemon, giving anonymous access to both .onion and clearnet sites via onion routing. A persistent TorLock widget above the mascot shows circuit state globally — green when connected, red when dark. Requests and responses animate as vertical streaks between mascot core and lock.*
+
+**Decisions locked:** Tor only (no separate VPN — Tor provides stronger anonymity + dark web access in one) · Tor Expert Bundle (BSD 3-Clause) bundled as Tauri sidecar binary in `resources/tor/` · `stem` Python library for circuit control (new-identity, bootstrap polling) · `socksio` + httpx SOCKS5 client (`proxy=socks5://127.0.0.1:9050`) for all dark web fetches · `beautifulsoup4` for HTML proxy-renderer link rewriting · proxy-renderer browser (engine fetches + rewrites HTML, iframe srcdoc) rather than full WebView proxy · TorLock always visible above mascot when Tor is active, regardless of active Hub tab · lock click opens inline popover (not modal) with exit IP + disconnect + new identity · disconnect from lock widget returns Shadow Net tab to connect screen.
+
+- [ ] **Phase A — Tor lifecycle**: Tor Expert Bundle in `resources/tor/windows/`; Rust `TorProcess(Mutex<Option<Child>>)` state + `start_tor()`, `stop_tor()`, `tor_running()` Tauri commands in `lib.rs`; data dir in OS app-data; killed on app exit ✅
+- [ ] **Phase B — Backend**: `engine/max_engine/darknet/` module (`service.py`, `fetcher.py`, `client.py`, `models.py`); `TorService` with `stem` circuit control + httpx SOCKS5 client; BeautifulSoup4 link rewriter; `GET /dark/status`, `POST /dark/new-circuit`, `GET /dark/fetch` (SSE), `GET /dark/search` endpoints; `DarkNetConfig` in `config.py`; `socksio`, `stem`, `beautifulsoup4` deps; 13 tests ✅
+- [ ] **Phase C — TorLock widget**: `TorLock.tsx` SVG padlock with `off`/`connecting`/`connected`/`error` states; green glow (connected), red (off), amber pulse + spin arc (connecting); inline popover (exit IP, circuit age, new-identity, disconnect); positioned above mascot in `App.tsx` via `.widget__mascot-wrap`; polls `/dark/status` every 5s ✅
+- [ ] **Phase D — Shadow Net tab**: `ShadowNetView.tsx`; connect screen with Tor onion SVG logo + bootstrap progress bar; browser pane with address bar, back/forward history stack (`useReducer`), Ahmia + DDG onion quick-search, proxy-rendered HTML in sandboxed iframe; added to HubView + HubButtons (`⬡` glyph) + `#shadow` hash route ✅
+- [ ] **Phase E — Streak animations**: `mascot:tor-request` event → upward green streak from core (750ms); `mascot:tor-response` → downward streak (600ms); `torStreaks` state + `tor-streak--up/down` CSS keyframes in `Mascot.tsx`/`Mascot.css`; BroadcastChannel + Tauri events wired in `App.tsx` ✅
+- [ ] **Phase F — Polish**: circuit info bar (exit IP, circuit age), "New Identity" in status bar, Ahmia/DDG quick search, home page quick links, `.onion` error states ✅
+
+---
+
 ## ✅ Completed Phases
 
 ### Phase 4 — Delegate system: parallel sessions & multi-model orchestration ✅
