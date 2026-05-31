@@ -78,6 +78,7 @@ export function ChatBar({
   const send = async () => {
     const q = text.trim();
     if (!q || busy) return;
+    setText("");
     setBusy(true);
     onBusyChange?.(true); // mascot: enter "thinking" until the reply finishes
     setErr(null);

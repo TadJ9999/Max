@@ -48,6 +48,13 @@ interface Bookmark {
 
 const BOOKMARKS_KEY = "max:shadow:bookmarks";
 
+function injectBase(html: string, baseUrl: string): string {
+  const tag = `<base href="${baseUrl}">`;
+  const headMatch = html.match(/<head[^>]*>/i);
+  if (headMatch) return html.replace(headMatch[0], `${headMatch[0]}${tag}`);
+  return `${tag}${html}`;
+}
+
 function hostOf(url: string): string {
   try {
     return new URL(url).hostname;
@@ -522,7 +529,7 @@ export function ShadowNetView() {
           <iframe
             ref={iframeRef}
             className="shadow-content__iframe"
-            srcDoc={activeTab.page.html}
+            srcDoc={injectBase(activeTab.page.html, activeTab.page.url)}
             sandbox="allow-same-origin allow-forms"
             title={activeTab.page.title ?? "Shadow Net"}
           />
