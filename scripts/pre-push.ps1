@@ -55,5 +55,5 @@ if (-not $tscOk) {
 }
 Write-Host "✓  TypeScript check passed." -ForegroundColor Green
 
-Write-Host "==> [pre-push] All checks passed — proceeding with push." -ForegroundColor Green
+Write-Host "==> [pre-push] All checks passed. Proceeding with push." -ForegroundColor Green
 exit 0
