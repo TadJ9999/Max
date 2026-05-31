@@ -64,6 +64,23 @@ class MarketConfig(BaseModel):
     ttl_seconds: int = 10  # cache window; the UI polls ~every 10s
 
 
+class PolymarketConfig(BaseModel):
+    """Prediction market board (Polymarket Gamma + CLOB APIs). No key required."""
+
+    watchlist: list[str] = Field(default_factory=list)  # pinned condition IDs
+    ttl_seconds: int = 120
+    embed_enabled: bool = True
+    categories: list[str] = Field(default_factory=list)  # empty = all categories
+
+
+class AegisConfig(BaseModel):
+    """Self-repair engine. Events captured to .apollo.db; diagnosis via provider router."""
+
+    autonomy: str = "ask"            # suggest | ask | auto
+    cooldown_seconds: int = 300      # per-fingerprint re-diagnose cooldown
+    max_fixes_per_error: int = 3     # loop-protection cap
+
+
 class ApolloConfig(BaseModel):
     """Apollo prediction engine. Local sqlite-vec memory + Ollama embeddings.
     Everything stays on the machine; memory auto-expires after ``ttl_seconds``."""
@@ -126,8 +143,10 @@ class EngineConfig(BaseModel):
     idle: IdleConfig = Field(default_factory=IdleConfig)
     osint: OsintConfig = Field(default_factory=OsintConfig)
     market: MarketConfig = Field(default_factory=MarketConfig)
+    polymarket: PolymarketConfig = Field(default_factory=PolymarketConfig)
     apollo: ApolloConfig = Field(default_factory=ApolloConfig)
     rag: RagConfig = Field(default_factory=RagConfig)
+    aegis: AegisConfig = Field(default_factory=AegisConfig)
 
 
 def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
@@ -164,6 +183,15 @@ def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
         cfg.osint.naval_ttl_seconds = max(3600, int(os_["naval_ttl_seconds"]))
     if "feeds" in os_:
         cfg.osint.feeds = [str(f) for f in os_["feeds"]]
+    pm = data.get("polymarket") or {}
+    if "watchlist" in pm:
+        cfg.polymarket.watchlist = [str(s) for s in pm["watchlist"]]
+    if "ttl_seconds" in pm:
+        cfg.polymarket.ttl_seconds = max(30, int(pm["ttl_seconds"]))
+    if "embed_enabled" in pm:
+        cfg.polymarket.embed_enabled = bool(pm["embed_enabled"])
+    if "categories" in pm:
+        cfg.polymarket.categories = [str(c) for c in pm["categories"]]
     ap = data.get("apollo") or {}
     if "embed_model" in ap:
         cfg.apollo.embed_model = str(ap["embed_model"])
@@ -206,6 +234,12 @@ def save_overrides(cfg: EngineConfig) -> None:
             "ttl_seconds": cfg.osint.ttl_seconds,
             "naval_ttl_seconds": cfg.osint.naval_ttl_seconds,
             "feeds": cfg.osint.feeds,
+        },
+        "polymarket": {
+            "watchlist": cfg.polymarket.watchlist,
+            "ttl_seconds": cfg.polymarket.ttl_seconds,
+            "embed_enabled": cfg.polymarket.embed_enabled,
+            "categories": cfg.polymarket.categories,
         },
         "apollo": {
             "embed_model": cfg.apollo.embed_model,

@@ -10,15 +10,19 @@ import { useEffect, useState } from "react";
 import { ApolloView } from "../apollo/ApolloView";
 import { OsintView } from "../osint/OsintView";
 import { MarketView } from "../market/MarketView";
+import { PolymarketView } from "../polymarket/PolymarketView";
+import { AegisView } from "../aegis/AegisView";
 import { SettingsView } from "../settings/SettingsView";
 import "./Hub.css";
 
-export type HubTab = "apollo" | "osint" | "market" | "settings";
+export type HubTab = "apollo" | "osint" | "market" | "polymarket" | "aegis" | "settings";
 
 const TABS: { id: HubTab; label: string; glyph: string }[] = [
   { id: "apollo", label: "Apollo", glyph: "▲" },
   { id: "osint", label: "OSINT", glyph: "◎" },
   { id: "market", label: "Market", glyph: "$" },
+  { id: "polymarket", label: "Poly", glyph: "Ψ" },
+  { id: "aegis", label: "Aegis", glyph: "🛡" },
   { id: "settings", label: "Settings", glyph: "⚙" },
 ];
 
@@ -100,6 +104,16 @@ export function HubView({
         {visited.has("market") && (
           <div className="hub__view" hidden={tab !== "market"}>
             <MarketView />
+          </div>
+        )}
+        {visited.has("polymarket") && (
+          <div className="hub__view" hidden={tab !== "polymarket"}>
+            <PolymarketView />
+          </div>
+        )}
+        {visited.has("aegis") && (
+          <div className="hub__view" hidden={tab !== "aegis"}>
+            <AegisView />
           </div>
         )}
         {visited.has("settings") && (

@@ -168,6 +168,13 @@ class DelegateEngine:
         except Exception as e:  # isolate failures to the session
             s.state = SessionState.ERROR
             s.emit(f"[error] {type(e).__name__}: {e}")
+            # Feed the error into Aegis capture (best-effort; import lazily to
+            # avoid a circular-import at module load time).
+            try:
+                from max_engine.main import _aegis_capture  # type: ignore[import]
+                _aegis_capture.tap_delegate_error(e, s.id, s.provider, s.model)
+            except Exception:
+                pass
         finally:
             self._tasks.pop(s.id, None)
             s.finish()  # notify live subscribers of the terminal state

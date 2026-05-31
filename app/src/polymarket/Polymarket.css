@@ -1,0 +1,469 @@
+/* Polymarket — prediction market board. Dark theme with probability gauges. */
+
+.poly {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #05080d;
+  color: #d7e2ee;
+  font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  overflow: hidden;
+}
+
+/* ── top bar ── */
+.poly__topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px 0;
+  flex-shrink: 0;
+}
+.poly__title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #f0b429;
+}
+.poly__updated {
+  font-size: 11px;
+  color: #4a5568;
+  margin-left: auto;
+}
+.poly__ingest-btn {
+  padding: 5px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(240, 180, 41, 0.4);
+  background: rgba(240, 180, 41, 0.08);
+  color: #f0b429;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.poly__ingest-btn:hover { background: rgba(240, 180, 41, 0.16); }
+.poly__ingest-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ── category tabs ── */
+.poly__cats {
+  display: flex;
+  gap: 4px;
+  padding: 8px 14px 6px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.poly__cat {
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #6b7f96;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.poly__cat:hover { color: #d7e2ee; background: rgba(255,255,255,0.04); }
+.poly__cat.is-active {
+  color: #f0b429;
+  border-color: rgba(240, 180, 41, 0.4);
+  background: rgba(240, 180, 41, 0.08);
+}
+
+/* ── main layout: list + detail + AI panel ── */
+.poly__body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── market list ── */
+.poly__list {
+  width: 340px;
+  min-width: 280px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-right: 1px solid rgba(255,255,255,0.06);
+  padding: 8px 0;
+}
+.poly__list::-webkit-scrollbar { width: 4px; }
+.poly__list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+.poly__card {
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.12s;
+}
+.poly__card:hover { background: rgba(255,255,255,0.03); }
+.poly__card.is-selected { background: rgba(240, 180, 41, 0.06); border-left: 2px solid #f0b429; padding-left: 12px; }
+
+.poly__card-question {
+  font-size: 12px;
+  font-weight: 600;
+  color: #d7e2ee;
+  line-height: 1.4;
+  margin-bottom: 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.poly__card-cat {
+  font-size: 10px;
+  color: #6b7f96;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+.poly__card-gauge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+.poly__gauge-label {
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 30px;
+}
+.poly__gauge-label--yes { color: #22c55e; }
+.poly__gauge-label--no  { color: #ef4444; }
+.poly__gauge-track {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(239, 68, 68, 0.25);
+  overflow: hidden;
+}
+.poly__gauge-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: #22c55e;
+  transition: width 0.4s ease;
+}
+.poly__card-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 10px;
+  color: #4a5568;
+  margin-top: 4px;
+}
+.poly__card-vol { color: #6b7f96; }
+.poly__card-end { color: #4a5568; }
+
+.poly__spark {
+  margin-top: 4px;
+}
+
+/* ── watchlist star ── */
+.poly__star {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #4a5568;
+  font-size: 14px;
+  padding: 0;
+  line-height: 1;
+  transition: color 0.15s;
+  float: right;
+  margin-left: 6px;
+}
+.poly__star.is-pinned { color: #f0b429; }
+.poly__star:hover { color: #f0b429; }
+
+/* ── empty / loading states ── */
+.poly__empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: #4a5568;
+  font-size: 13px;
+}
+.poly__loading {
+  padding: 40px 20px;
+  text-align: center;
+  color: #6b7f96;
+  font-size: 12px;
+}
+
+/* ── detail panel ── */
+.poly__detail {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+  border-right: 1px solid rgba(255,255,255,0.06);
+  min-width: 0;
+}
+.poly__detail::-webkit-scrollbar { width: 4px; }
+.poly__detail::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+.poly__detail-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #4a5568;
+  font-size: 13px;
+}
+
+.poly__detail-question {
+  font-size: 15px;
+  font-weight: 700;
+  color: #e2ecf5;
+  line-height: 1.45;
+  margin-bottom: 10px;
+}
+.poly__detail-cat {
+  font-size: 11px;
+  color: #f0b429;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}
+.poly__detail-desc {
+  font-size: 12px;
+  color: #8aa0b4;
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+
+/* probability bars */
+.poly__prob-bars { margin-bottom: 14px; }
+.poly__prob-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.poly__prob-name { font-size: 12px; font-weight: 600; width: 28px; color: #d7e2ee; }
+.poly__prob-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.07);
+  overflow: hidden;
+}
+.poly__prob-fill-yes { height: 100%; border-radius: 4px; background: #22c55e; }
+.poly__prob-fill-no  { height: 100%; border-radius: 4px; background: #ef4444; }
+.poly__prob-fill-other { height: 100%; border-radius: 4px; background: #3b82f6; }
+.poly__prob-pct { font-size: 12px; font-weight: 700; min-width: 36px; text-align: right; }
+.poly__prob-pct--yes { color: #22c55e; }
+.poly__prob-pct--no  { color: #ef4444; }
+.poly__prob-pct--other { color: #3b82f6; }
+
+/* stats row */
+.poly__stats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.poly__stat { display: flex; flex-direction: column; gap: 2px; }
+.poly__stat-label { font-size: 10px; color: #4a5568; text-transform: uppercase; letter-spacing: 0.07em; }
+.poly__stat-value { font-size: 13px; font-weight: 700; color: #d7e2ee; }
+
+/* chart section */
+.poly__chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.poly__chart-title { font-size: 11px; font-weight: 600; color: #8aa0b4; text-transform: uppercase; letter-spacing: 0.07em; }
+.poly__intervals { display: flex; gap: 4px; }
+.poly__interval {
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #4a5568;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.poly__interval:hover { color: #d7e2ee; }
+.poly__interval.is-active { color: #f0b429; border-color: rgba(240,180,41,0.4); background: rgba(240,180,41,0.08); }
+
+.poly__chart-wrap { margin-bottom: 16px; }
+.poly__chart-loading { font-size: 11px; color: #4a5568; padding: 20px 0; text-align: center; }
+
+/* order book section */
+.poly__ob-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8aa0b4;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-bottom: 6px;
+}
+
+/* ── order book ── */
+.ob { font-size: 11px; }
+.ob--empty { color: #4a5568; padding: 10px 0; }
+.ob__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  padding: 0 2px;
+}
+.ob__side-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.ob__side-label--bid { color: #22c55e; }
+.ob__side-label--ask { color: #ef4444; }
+.ob__spread { font-size: 10px; color: #4a5568; }
+.ob__cols { display: flex; gap: 8px; }
+.ob__col { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.ob__row { display: flex; align-items: center; gap: 6px; position: relative; }
+.ob__bar-wrap { flex: 1; height: 14px; display: flex; align-items: center; }
+.ob__bar { height: 8px; border-radius: 2px; min-width: 2px; }
+.ob__bar--bid { background: rgba(34, 197, 94, 0.35); margin-left: auto; }
+.ob__bar--ask { background: rgba(239, 68, 68, 0.35); }
+.ob__price { font-size: 10px; font-weight: 600; color: #8aa0b4; min-width: 28px; text-align: right; }
+.ob__size { font-size: 10px; color: #4a5568; min-width: 40px; text-align: right; }
+.ob__col--bids .ob__row { flex-direction: row-reverse; }
+.ob__col--bids .ob__bar-wrap { }
+.ob__col--bids .ob__price { text-align: left; }
+.ob__col--bids .ob__size { text-align: left; }
+
+/* ── AI panel ── */
+.poly__ai {
+  width: 340px;
+  min-width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid rgba(255,255,255,0.06);
+  overflow: hidden;
+}
+.poly__ai-tabs {
+  display: flex;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+}
+.poly__ai-tab {
+  flex: 1;
+  padding: 9px 4px;
+  background: transparent;
+  border: none;
+  color: #6b7f96;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+.poly__ai-tab:hover { color: #d7e2ee; }
+.poly__ai-tab.is-active { color: #f0b429; border-bottom-color: #f0b429; }
+
+.poly__ai-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+/* ingest panel */
+.poly__ingest {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  gap: 8px;
+  overflow-y: auto;
+}
+.poly__ingest-trigger {
+  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: #4a5568;
+  font-size: 12px;
+  text-align: center;
+}
+.poly__ingest-run {
+  padding: 7px 20px;
+  border-radius: 8px;
+  border: 1px solid rgba(240, 180, 41, 0.4);
+  background: rgba(240, 180, 41, 0.08);
+  color: #f0b429;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.poly__ingest-run:hover { background: rgba(240, 180, 41, 0.16); }
+.poly__ingest-run:disabled { opacity: 0.5; cursor: default; }
+.poly__ingest-output {
+  flex: 1;
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #c0d0e0;
+}
+.poly__ingest-output::-webkit-scrollbar { width: 3px; }
+.poly__ingest-output::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); }
+.poly__ingest-copy { margin-top: 8px; align-self: flex-end; }
+.poly__ingest-status {
+  font-size: 11px;
+  color: #6b7f96;
+  font-style: italic;
+  padding: 4px 0;
+}
+
+/* chat panel */
+.poly__chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.poly__chat-history {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.poly__chat-history::-webkit-scrollbar { width: 3px; }
+.poly__chat-history::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); }
+.poly__chat-msg { font-size: 12px; line-height: 1.6; }
+.poly__chat-msg--user { color: #d7e2ee; font-weight: 600; }
+.poly__chat-msg--assistant { color: #b0c4d8; }
+.poly__chat-hint { color: #4a5568; font-size: 12px; text-align: center; padding: 16px 8px; }
+.poly__chat-input-row {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+}
+.poly__chat-input {
+  flex: 1;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  color: #d7e2ee;
+  font-size: 12px;
+  resize: none;
+  outline: none;
+}
+.poly__chat-input:focus { border-color: rgba(240, 180, 41, 0.4); }
+.poly__chat-send {
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(240, 180, 41, 0.3);
+  background: rgba(240, 180, 41, 0.08);
+  color: #f0b429;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.poly__chat-send:hover { background: rgba(240, 180, 41, 0.15); }
+.poly__chat-send:disabled { opacity: 0.5; cursor: default; }
+
+/* ── price chart ── */
+.price-chart { display: block; overflow: visible; }
+.price-chart--empty text { font-family: inherit; }

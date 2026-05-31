@@ -40,6 +40,13 @@ async function openHubWindow(tab: HubTab): Promise<void> {
 }
 
 const ICONS: Record<HubTab, React.ReactNode> = {
+  polymarket: (
+    <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M7 7h4a2 2 0 0 1 0 4H8v4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8 7v8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  ),
   apollo: (
     <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M10 2.6 L18 16.6 L2 16.6 Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
@@ -63,6 +70,13 @@ const ICONS: Record<HubTab, React.ReactNode> = {
       <path d="M10 8.2v3.6M9.1 8.9h1.6a0.7 0.7 0 0 1 0 1.4H9.4a0.7 0.7 0 0 0 0 1.4h1.5" stroke="currentColor" strokeWidth="0.9" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
+  aegis: (
+    <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M10 2 L17 5 L17 10 C17 14.5 13.5 17.5 10 18.5 C6.5 17.5 3 14.5 3 10 L3 5 Z"
+        stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+      <path d="M7 10 L9 12 L13 8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
   settings: (
     <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
       <circle cx="10" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.2" />
@@ -74,7 +88,9 @@ const ICONS: Record<HubTab, React.ReactNode> = {
 const META: { id: HubTab; title: string; cls: string }[] = [
   { id: "osint", title: "OSINT — Global Threat Intercept", cls: "widget-action-btn--osint" },
   { id: "market", title: "Market — Live Stocks", cls: "widget-action-btn--market" },
+  { id: "polymarket", title: "Poly — Prediction Markets", cls: "widget-action-btn--polymarket" },
   { id: "apollo", title: "Apollo — Prediction Engine", cls: "widget-action-btn--apollo" },
+  { id: "aegis", title: "Aegis — Self-Repair Console", cls: "widget-action-btn--aegis" },
 ];
 
 export function HubButtons() {

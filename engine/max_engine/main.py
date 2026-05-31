@@ -23,6 +23,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from . import __version__
+from .aegis import AegisCapture, AegisService, AegisStore
 from .apollo import ApolloService, VectorStore
 from .complete import fim_complete
 from .config import load_config, save_overrides
@@ -31,7 +32,9 @@ from .delegate.session import TERMINAL_STATES
 from .dsl import ParseError, parse_command
 from .market import MarketService, board_digest
 from .osint import EventsService, NavalService, OsintService
-from .prompts import market_chat_messages, messages_for, rag_messages
+from .polymarket import PolymarketService
+from .polymarket.embedder import embed_markets
+from .prompts import market_chat_messages, messages_for, polymarket_chat_messages, rag_messages
 from .providers.base import Provider
 from .providers.factory import build_provider
 from .rag import RagService, RagStore, SessionMemory
@@ -73,6 +76,15 @@ market = MarketService(
     api_key=os.environ.get("FINNHUB_API_KEY"),
     ttl_seconds=config.market.ttl_seconds,
 )
+polymarket_svc = PolymarketService(
+    watchlist=config.polymarket.watchlist,
+    ttl_seconds=config.polymarket.ttl_seconds,
+    embed_enabled=config.polymarket.embed_enabled,
+    categories=config.polymarket.categories,
+)
+_polymarket_embedded_count: int = 0
+
+
 def _make_store(path: str) -> VectorStore | None:
     """Best-effort: a VectorStore if sqlite-vec loads, else None (Apollo still
     runs, just without memory)."""
@@ -104,6 +116,18 @@ apollo = ApolloService(
     ttl_seconds=config.apollo.ttl_seconds,
     retrieve_k=config.apollo.retrieve_k,
 )
+
+_aegis_store = AegisStore(config.apollo.db_path)
+_aegis_capture = AegisCapture(_aegis_store)
+aegis_svc = AegisService(
+    store=_aegis_store,
+    config=config,
+    repo_root=str(Path(__file__).resolve().parent.parent.parent),
+)
+
+# Register Aegis as the global FastAPI exception handler so unhandled errors
+# are captured into the event store before the 500 response is returned.
+app.add_exception_handler(Exception, _aegis_capture.fastapi_handler)
 
 
 @app.get("/health")
@@ -138,6 +162,12 @@ def _config_view() -> dict:
         "market": {
             "watchlist": config.market.watchlist,
             "ttl_seconds": config.market.ttl_seconds,
+        },
+        "polymarket": {
+            "watchlist": config.polymarket.watchlist,
+            "ttl_seconds": config.polymarket.ttl_seconds,
+            "embed_enabled": config.polymarket.embed_enabled,
+            "categories": config.polymarket.categories,
         },
         "apollo": {
             "embed_model": config.apollo.embed_model,
@@ -187,6 +217,13 @@ class ApolloPatch(BaseModel):
     retrieve_k: int | None = None
 
 
+class PolymarketPatch(BaseModel):
+    watchlist: list[str] | None = None
+    ttl_seconds: int | None = None
+    embed_enabled: bool | None = None
+    categories: list[str] | None = None
+
+
 class ConfigPatch(BaseModel):
     allow_cloud: bool | None = None
     workspace_allowlist: list[str] | None = None
@@ -194,6 +231,7 @@ class ConfigPatch(BaseModel):
     idle: IdlePatch | None = None
     osint: OsintPatch | None = None
     market: MarketPatch | None = None
+    polymarket: PolymarketPatch | None = None
     apollo: ApolloPatch | None = None
 
 
@@ -237,6 +275,17 @@ def update_config(patch: ConfigPatch) -> dict:
             market.set_watchlist(m.watchlist)
         if m.ttl_seconds is not None:
             config.market.ttl_seconds = max(5, m.ttl_seconds)
+    if patch.polymarket is not None:
+        pm = patch.polymarket
+        if pm.watchlist is not None:
+            config.polymarket.watchlist = pm.watchlist
+            polymarket_svc.set_watchlist(pm.watchlist)
+        if pm.ttl_seconds is not None:
+            config.polymarket.ttl_seconds = max(30, pm.ttl_seconds)
+        if pm.embed_enabled is not None:
+            config.polymarket.embed_enabled = pm.embed_enabled
+        if pm.categories is not None:
+            config.polymarket.categories = pm.categories
     if patch.apollo is not None:
         a = patch.apollo
         if a.embed_model is not None:
@@ -834,6 +883,151 @@ async def market_chat_endpoint(req: MarketChatRequest):
     return _sse_stream(provider, model, messages)
 
 
+# ---- Polymarket: prediction markets ------------------------------------
+
+
+@app.get("/polymarket/board")
+async def polymarket_board() -> dict:
+    """Top active prediction markets by 24h volume, cached for a short TTL.
+
+    No API key required — Polymarket's public APIs are open read access."""
+    board = await polymarket_svc.get_board()
+    return board.to_dict()
+
+
+@app.get("/polymarket/markets")
+async def polymarket_markets(
+    category: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict:
+    """Fetch prediction markets, optionally filtered by category."""
+    markets = await polymarket_svc.get_markets(
+        category=category, limit=min(limit, 100), offset=offset
+    )
+    return {"category": category, "count": len(markets), "markets": [m.to_dict() for m in markets]}
+
+
+@app.get("/polymarket/watchlist")
+async def polymarket_get_watchlist() -> dict:
+    markets = await polymarket_svc.get_watchlist_markets()
+    return {
+        "watchlist": polymarket_svc.get_watchlist(),
+        "count": len(markets),
+        "markets": [m.to_dict() for m in markets],
+    }
+
+
+class PolymarketWatchlistPatch(BaseModel):
+    condition_ids: list[str]
+
+
+@app.put("/polymarket/watchlist")
+def polymarket_set_watchlist(patch: PolymarketWatchlistPatch) -> dict:
+    """Replace the prediction-market watchlist and persist it."""
+    ids = polymarket_svc.set_watchlist(patch.condition_ids)
+    config.polymarket.watchlist = ids
+    save_overrides(config)
+    return {"watchlist": ids}
+
+
+@app.get("/polymarket/prices/{condition_id}")
+async def polymarket_prices(condition_id: str, interval: str = "1w") -> dict:
+    """Price (probability) history for a market's YES outcome."""
+    if interval not in ("1d", "1w", "1m", "max"):
+        interval = "1w"
+    points = await polymarket_svc.get_price_history(condition_id, interval=interval)
+    return {
+        "conditionId": condition_id,
+        "interval": interval,
+        "history": [{"t": p.t, "p": round(p.p, 4)} for p in points],
+    }
+
+
+@app.get("/polymarket/order-book/{token_id}")
+async def polymarket_order_book(token_id: str) -> dict:
+    """Order book (bid/ask depth) for one outcome token from the CLOB API."""
+    book = await polymarket_svc.get_order_book(token_id)
+    if book is None:
+        return {"tokenId": token_id, "bids": [], "asks": []}
+    return {"tokenId": token_id, **book.to_dict()}
+
+
+@app.get("/polymarket/sources")
+def polymarket_sources() -> dict:
+    """Data sources, API status, and embed stats."""
+    return polymarket_svc.sources(embedded_count=_polymarket_embedded_count)
+
+
+@app.post("/polymarket/ingest")
+async def polymarket_ingest() -> StreamingResponse:
+    """Re-fetch the top markets and embed them into Apollo's vector store (SSE).
+
+    Streams status events so the UI can show progress. Embedding is best-effort:
+    if Ollama is unavailable the markets are still refreshed, just not embedded."""
+    global _polymarket_embedded_count
+
+    async def gen():
+        try:
+            yield _ev({"object": "polymarket.status", "stage": "Fetching markets from Polymarket…"})
+            await polymarket_svc.refresh(force=True)
+            board = await polymarket_svc.get_board()
+            yield _ev({"object": "polymarket.status", "stage": f"Fetched {len(board.markets)} markets"})
+
+            store = apollo._store  # reuse Apollo's vector store
+            if store is not None and config.polymarket.embed_enabled:
+                yield _ev({"object": "polymarket.status", "stage": "Embedding → Apollo vector memory…"})
+                n = await embed_markets(
+                    board.markets,
+                    store,
+                    embed_model=config.apollo.embed_model,
+                    base_url=_ollama_base,
+                    ttl_seconds=config.apollo.ttl_seconds,
+                )
+                _polymarket_embedded_count = n
+                yield _ev({"object": "polymarket.status", "stage": f"Embedded {n} markets into memory"})
+            else:
+                yield _ev({"object": "polymarket.status", "stage": "Embedding skipped (store unavailable or disabled)"})
+
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            yield _ev({"error": {"message": str(e), "type": type(e).__name__}})
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@app.post("/polymarket/analyze")
+async def polymarket_analyze() -> StreamingResponse:
+    """AI brief on the current prediction-market board (SSE).
+
+    Routes to cloud Claude when ``allow_cloud`` is on, else local. Informational
+    only — not financial advice."""
+    board = await polymarket_svc.get_board()
+    payload = {"markets": [m.to_dict() for m in board.markets[:30]]}
+    return _stream_ai("polymarket", payload)
+
+
+class PolymarketChatRequest(BaseModel):
+    messages: list[ChatMessage]
+
+
+@app.post("/polymarket/chat")
+async def polymarket_chat(req: PolymarketChatRequest) -> StreamingResponse:
+    """Conversational Q&A about the live prediction-market board (SSE).
+
+    The current board snapshot is folded into the system prompt. Informational only."""
+    board = await polymarket_svc.get_board()
+    snapshot = json.dumps({"markets": [m.to_dict() for m in board.markets[:30]]})
+    provider_name, model = _ai_route()
+    try:
+        provider = build_provider(provider_name, config)
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    history = [msg.model_dump() for msg in req.messages]
+    messages = polymarket_chat_messages(snapshot, history)
+    return _sse_stream(provider, model, messages)
+
+
 # ---- Local model lifecycle ---------------------------------------------
 
 
@@ -846,6 +1040,84 @@ async def engine_unload() -> dict:
     provider = build_provider("ollama", config)
     unloaded = await provider.unload(model)  # type: ignore[attr-defined]
     return {"unloaded": unloaded, "model": model, "keep_alive": config.idle.keep_alive}
+
+
+# ---- Aegis: self-repair console ----------------------------------------
+
+
+@app.get("/aegis/events")
+def aegis_events(limit: int = 50) -> dict:
+    """Recent captured error events, newest-first."""
+    return {"events": aegis_svc.get_events(limit=limit)}
+
+
+class AegisReportRequest(BaseModel):
+    source: str = "frontend"
+    severity: str = "Medium"
+    kind: str = "ClientError"
+    message: str
+    traceback: str | None = None
+    context: dict | None = None
+
+
+@app.post("/aegis/report")
+def aegis_report(req: AegisReportRequest) -> dict:
+    """Accept an error event from the frontend or Rust layer."""
+    eid = _aegis_capture.ingest_report(req.model_dump())
+    return {"event_id": eid}
+
+
+class AegisDiagnoseRequest(BaseModel):
+    event_id: str
+
+
+@app.post("/aegis/diagnose")
+async def aegis_diagnose(req: AegisDiagnoseRequest) -> StreamingResponse:
+    """SSE — AI diagnosis of a captured event → root cause + unified diff."""
+    event = aegis_svc.store.get_event(req.event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="event not found")
+    return StreamingResponse(aegis_svc.diagnose(req.event_id), media_type="text/event-stream")
+
+
+class AegisApplyRequest(BaseModel):
+    event_id: str
+    diff: str
+    log_id: str | None = None
+
+
+@app.post("/aegis/apply")
+def aegis_apply(req: AegisApplyRequest) -> dict:
+    """Apply an approved patch: snapshot → validate → apply → verify → keep or rollback."""
+    try:
+        return aegis_svc.apply(req.event_id, req.diff, req.log_id)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+class AegisRollbackRequest(BaseModel):
+    snapshot_ref: str
+    log_id: str | None = None
+
+
+@app.post("/aegis/rollback")
+def aegis_rollback(req: AegisRollbackRequest) -> dict:
+    """Revert the last applied fix via git stash pop."""
+    return aegis_svc.rollback(req.snapshot_ref, req.log_id)
+
+
+@app.get("/aegis/log")
+def aegis_log(limit: int = 100) -> dict:
+    """Structured history of all diagnosis + apply actions."""
+    return {"log": aegis_svc.get_log(limit=limit)}
+
+
+@app.get("/aegis/sources")
+def aegis_sources() -> dict:
+    """Current provider status, autonomy level, store path."""
+    return aegis_svc.sources()
 
 
 # ---- Apollo: prediction engine -----------------------------------------

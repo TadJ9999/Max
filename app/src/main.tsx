@@ -4,6 +4,8 @@ import App from "./App";
 import { OsintView } from "./osint/OsintView";
 import { MarketView } from "./market/MarketView";
 import { ApolloView } from "./apollo/ApolloView";
+import { PolymarketView } from "./polymarket/PolymarketView";
+import { AegisView } from "./aegis/AegisView";
 import { HubView, type HubTab } from "./hub/HubView";
 
 // The features open in the unified Hub window (#hub or #hub:<tab>). The legacy
@@ -18,7 +20,9 @@ function pickRoot() {
   }
   if (hash === "#osint") return <OsintView />;
   if (hash === "#market") return <MarketView />;
+  if (hash === "#polymarket") return <PolymarketView />;
   if (hash === "#apollo") return <ApolloView />;
+  if (hash === "#aegis") return <AegisView />;
   return <App />;
 }
 

@@ -250,6 +250,29 @@ Parser rules:
 
 ---
 
+### Phase 11.5 — Polymarket: Prediction Markets Intelligence  🎯 *full Polymarket data view with local AI embedding*
+*A new Hub tab (Ψ Poly) alongside Apollo/OSINT/Market/Settings. Full Polymarket data view matching their own UI: active prediction markets, YES/NO probability gauges, price history chart, order book depth, category filtering, and a user watchlist. Market data is locally embedded into Apollo's sqlite-vec store so AI across the app (Apollo chat, OSINT chat, Poly chat) can reason about prediction market sentiment alongside news and stocks.*
+
+**Decisions locked:** **Gamma API** (`gamma-api.polymarket.com`) for market listings/metadata · **CLOB API** (`clob.polymarket.com`) for order book and price history · **no API key required** (public read access) · **Apollo bridge** — markets embedded with `source="polymarket"` into the shared sqlite-vec store (24h TTL, same embed model) so retrieval is tag-agnostic · AI routes cloud Claude when `allow_cloud`, else local (same `_ai_route()` helper) · same Hub tab/lazy-mount pattern as existing modules.
+
+**Data sources (all free, no key):**
+| Source | Data |
+|--------|------|
+| Gamma API | Market listings, categories, outcome prices, volume, liquidity |
+| CLOB API | Price history (1D/1W/1M/Max intervals), order book bid/ask depth |
+
+- [x] **Engine polymarket module** (`engine/max_engine/polymarket/`): Gamma + CLOB `httpx` clients, `PolymarketService` with TTL cache (120s board / 1h history) + async lock + watchlist mutation, `Market`/`Outcome`/`PricePoint`/`OrderBook`/`PolymarketBoard` models, Apollo bridge `embedder.py` (`embed_markets()` → `store.upsert()` with `kind="polymarket"`)
+- [x] **Config**: `PolymarketConfig` (watchlist, ttl_seconds, embed_enabled, categories) in `config.py`; round-trips through `_apply_overrides` + `save_overrides`; persisted in `.maxconfig.json`
+- [x] **Endpoints**: `GET /polymarket/board`, `GET /polymarket/markets?category=`, `GET/PUT /polymarket/watchlist`, `GET /polymarket/prices/{condition_id}?interval=`, `GET /polymarket/order-book/{token_id}`, `GET /polymarket/sources`, `POST /polymarket/ingest` (SSE embed), `POST /polymarket/analyze` (SSE AI brief), `POST /polymarket/chat` (SSE conversational)
+- [x] **Prompts**: `"polymarket"` analyst prompt + `"polymarket_chat"` conversational prompt in `prompts.py`; `polymarket_chat_messages()` helper
+- [x] **Tests** (`tests/test_polymarket.py`): market parsing (JSON string + list fields), yes_price property, price history, order book, board caching + TTL, force-refresh, watchlist dedup, embed call mocked (store.upsert asserted), embed with no store/empty embeddings, all 9 endpoints — **24 tests passing**, full suite 164 tests green
+- [x] **Desktop board** (`app/src/polymarket/`): `PolymarketView` (category tabs All/Politics/Crypto/Sports/Economics/Entertainment/Science/World/★ Watchlist, three-column layout: market list · detail · AI panel), `PriceChart` (SVG probability chart, interval selector 1D/1W/1M/Max), `OrderBookPanel` (bid/ask depth ladder), `polymarket.ts` client (null on error), `Polymarket.css` (dark theme, gold accent, probability gauges green/amber/red)
+- [x] **Hub integration**: `"polymarket"` tab added to `HubTab` union + TABS array (glyph Ψ, label "Poly", gold accent in `Hub.css`); lazy-mount `<PolymarketView />`; Ψ launcher button in `HubButtons.tsx`; `#polymarket` hash route in `main.tsx`; `widget-action-btn--polymarket` style in `Market.css`
+- [ ] **Surface egress in settings/privacy guard** (Polymarket makes outbound calls to public APIs; mark it like OSINT / Market)
+- [ ] *(stretch)* Real-time price streaming via Polymarket WebSocket; per-market news feed from Gamma `events` field; portfolio tracking (read-only via wallet address)
+
+---
+
 ### Phase 12 — Sentinel: 3D Space Intelligence  🎯 *interactive 3D Earth globe + live solar system with asteroid tracking*
 *A new Hub tab (◈ Sentinel) alongside Apollo/OSINT/Market/Settings. Two internal sub-views: Earth View (live satellite tracking on a 3D globe) and Solar System View (heliocentric planets + asteroid orbits). Mirrors the OSINT module pattern — thin React frontend, thick cached Python backend, SSE for AI chat. Adds Three.js as the first 3D library in the project.*
 
