@@ -288,6 +288,42 @@ Parser rules:
 
 ---
 
+### Phase 12 — Sentinel: 3D Space Intelligence  🎯 *interactive 3D Earth globe + live solar system with asteroid tracking*
+*A new Hub tab (◈ Sentinel) alongside Apollo/OSINT/Market/Settings. Two internal sub-views: Earth View (live satellite tracking on a 3D globe) and Solar System View (heliocentric planets + asteroid orbits). Mirrors the OSINT module pattern — thin React frontend, thick cached Python backend, SSE for AI chat. Adds Three.js as the first 3D library in the project.*
+
+**Decisions locked:** **Three.js** for 3D rendering (both views) · **satellite.js Web Worker** for client-side SGP4 propagation off the main thread (5000+ satellites at 30fps) · **CelesTrak TLEs** (free, no key) as the satellite data source · **NASA NeoWs** (free NASA API key) for asteroid close approaches · **VSOP87 truncated coefficients** hardcoded in `solarUtils.ts` for planet positions (no external call) · same Hub tab/lazy-mount pattern as existing modules · extra data layers beyond the reference sites (NOAA SWPC, NASA CNEOS, RocketLaunch.live, open-notify.org ISS).
+
+**Data sources (all free):**
+| Source | Data | Key? |
+|---|---|---|
+| CelesTrak | TLE data for ISS, Starlink, GPS, Galileo, weather sats | None |
+| NASA NeoWs | Near-Earth asteroid close approaches + orbital elements | Free NASA key |
+| JPL SBDB | Asteroid orbital elements for 3D rendering | None |
+| NOAA SWPC | Solar wind speed, Kp index, CME alerts, X-ray flux | None |
+| NASA CNEOS | Fireball/meteor events (last 30 days) plotted on Earth | None |
+| RocketLaunch.live | Next 5 rocket launches with pad lat/lon | Free tier, no key |
+| open-notify.org | ISS crew roster + live ISS position (5s poll) | None |
+
+**Extra data layers beyond the reference sites:**
+- NOAA space weather → aurora ring overlay on Earth globe (visible when Kp ≥ 5), space weather badge
+- NASA CNEOS fireballs → cone markers on Earth surface
+- RocketLaunch.live → launch pad markers + countdown sidebar panel
+- ISS crew via open-notify.org → crew panel in Earth View info sidebar
+
+- [ ] **Engine sentinel module** (`engine/max_engine/sentinel/`): `tle.py` (CelesTrak group fetcher + 3-line parser), `asteroids.py` (NeoWs close-approaches + JPL SBDB orbital elements), `space_weather.py` (NOAA SWPC JSON), `fireballs.py` (CNEOS), `launches.py` (RocketLaunch.live), `iss.py` (open-notify.org); `SentinelService` with per-feed TTL cache + async locks
+- [ ] **New Python deps**: `sgp4>=2.22` (SGP4 propagation for backend `/sentinel/satellites/now`), `numpy>=1.26` (vectorized batch propagation)
+- [ ] **Endpoints**: `GET /sentinel/tle`, `GET /sentinel/satellites/now`, `GET /sentinel/neo`, `GET /sentinel/space-weather`, `GET /sentinel/launches`, `GET /sentinel/fireballs`, `GET /sentinel/iss`, `POST /sentinel/chat` (SSE, same `_sse_stream` helper)
+- [ ] **Config**: `SentinelConfig` in `config.py` (TLE groups, TTLs, `neo_days_ahead`, `fireball_days`); `NASA_API_KEY` from env
+- [ ] **New npm deps**: `three ^0.167.0`, `@types/three`, `satellite.js ^5.0.0`, `@types/satellite.js`
+- [ ] **Frontend** (`app/src/sentinel/`): `SentinelView.tsx` (Earth/Solar sub-tab toggle + AI chat slide-in), `EarthView.tsx` (Three.js globe), `SolarView.tsx` (Three.js heliocentric), `earthUtils.ts`, `solarUtils.ts` (VSOP87 constants + Kepler solver), `satelliteWorker.ts` (Web Worker), `useThreeScene.ts` (shared Three.js lifecycle hook), `sentinel.ts` (API client), `Sentinel.css`
+- [ ] **Earth View**: Earth sphere + day/night textures (NASA Visible Earth, bundled), Fresnel atmosphere glow, `DirectionalLight` from `terminator.ts` subsolar point, satellite `Points` geometry (updated by worker ~100ms), selected satellite orbit `Line`, aurora `TorusGeometry` rings at ±65° (Kp-driven), fireball `ConeGeometry` markers, launch pad markers, `OrbitControls`
+- [ ] **Solar System View**: Sun + `PointLight` at origin, planet orbit `RingGeometry`, planet spheres at VSOP87 positions (log-scale radii), main-belt asteroid `InstancedMesh` (1500 instances), NEA `Line` tracks, time scrubber `<input type="range" min={-365} max={365}>`, hazardous NEA red glow, `OrbitControls` default top-down
+- [ ] **Hub integration**: add `"sentinel"` to `HubTab` union + `TABS[]` in `HubView.tsx`; lazy-mount view; add launcher button to `HubButtons.tsx`; sentinel tab accent in `Hub.css`; `#sentinel` hash route in `main.tsx`; `"sentinel"` in `capabilities/default.json`
+- [ ] **AI chat** (`POST /sentinel/chat`): grounded in live snapshot (space weather, ISS crew, NEA close approaches, next launch); mascot `mascot:signal` on submit — mirrors OSINT chat exactly
+- [ ] **Tests**: `tests/test_sentinel.py` — TLE parsing, SGP4 propagation, space weather parsing, asteroid model, endpoints (network mocked); add `sgp4`/`numpy` to test env
+
+---
+
 ## 4. Notes & recommendations
 1. **Cloud is opt-in and visible.** `!` sends code off-machine — needs a key, a marker, and
    (configurable) a confirm. A global kill-switch forces fully-offline mode.
