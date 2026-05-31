@@ -30,6 +30,15 @@ import { getConfig } from "../config";
 import { useTTS } from "../voice/useTTS";
 import "./Osint.css";
 
+async function openUrl(url: string) {
+  try {
+    const { openUrl: tauriOpenUrl } = await import("@tauri-apps/plugin-opener");
+    await tauriOpenUrl(url);
+  } catch {
+    window.open(url, "_blank", "noreferrer");
+  }
+}
+
 async function emitMascotEvent(name: string, payload?: unknown) {
   // BroadcastChannel reaches the widget window reliably across Tauri WebView2 windows
   try {
@@ -166,14 +175,12 @@ function ArticleCard({ article, expanded, onToggle }: {
               <span className={`osint__src osint__src--${article.origin}`}>{article.domain}</span>
               <span className="news-card__time">{timeAgo(article.published)}</span>
             </span>
-            <a
+            <button
               className="news-card__link"
-              href={article.url}
-              target="_blank"
-              rel="noreferrer noopener"
+              onClick={() => void openUrl(article.url)}
             >
               Read article ↗
-            </a>
+            </button>
           </div>
         </div>
       )}

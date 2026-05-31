@@ -246,6 +246,19 @@ function PathList({
   );
 }
 
+// ── Egress hint ───────────────────────────────────────────────────────────────
+
+function EgressHint({ sources }: { sources: string }) {
+  return (
+    <p className="stg-hint stg-egress">
+      <span className="stg-egress__icon">↑</span>
+      <span>
+        <strong>Outbound:</strong> calls {sources}. Data leaves your machine while this module is active.
+      </span>
+    </p>
+  );
+}
+
 // ── User Profile section ──────────────────────────────────────────────────────
 
 const KIND_OPTIONS = ["fact", "preference", "interest", "style"] as const;
@@ -576,6 +589,7 @@ export function SettingsView() {
 
         {/* ── OSINT ────────────────────────────────────────────────── */}
         <Section title="OSINT" glyph="◉" defaultOpen={false}>
+          <EgressHint sources="GDELT, public RSS feeds, USNI/TWZ fleet tracker" />
           <TextField
             label="GDELT query"
             value={cfg.osint.gdelt_query}
@@ -625,6 +639,7 @@ export function SettingsView() {
 
         {/* ── Market ───────────────────────────────────────────────── */}
         <Section title="Market" glyph="$" defaultOpen={false}>
+          <EgressHint sources="Finnhub (quotes + market news)" />
           <div className="stg-row">
             <span className="stg-row__label">
               Finnhub API key
@@ -671,6 +686,36 @@ export function SettingsView() {
             <span className="stg-row__label">DB path</span>
             <span className="stg-row__mono stg-row__mono--dim">{cfg.apollo.db_path}</span>
           </div>
+        </Section>
+
+        {/* ── Polymarket ───────────────────────────────────────────── */}
+        <Section title="Polymarket" glyph="Ψ" defaultOpen={false}>
+          <EgressHint sources="Polymarket Gamma + CLOB APIs (public, no key required)" />
+          <div className="stg-row">
+            <span className="stg-row__label">Apollo embedding</span>
+            <Toggle
+              on={cfg.polymarket.embed_enabled}
+              onChange={(v) => void patch({ polymarket: { embed_enabled: v } })}
+            />
+          </div>
+          <NumField
+            label="Board cache TTL (s)"
+            value={cfg.polymarket.ttl_seconds}
+            min={30}
+            max={600}
+            onChange={(v) => void patch({ polymarket: { ttl_seconds: v } })}
+          />
+          <p className="stg-hint">Manage the watchlist and categories in the Poly tab.</p>
+        </Section>
+
+        {/* ── Aegis ────────────────────────────────────────────────── */}
+        <Section title="Aegis" glyph="🛡" defaultOpen={false}>
+          <EgressHint sources="Cloud Claude (when allow_cloud is on) — sends code snippets and log excerpts for AI diagnosis" />
+          <p className="stg-hint">
+            Aegis only calls the cloud when diagnosing an error and <code>allow_cloud</code> is enabled.
+            All secrets are redacted before any data leaves the machine.
+            Autonomy and cooldown settings are in the Aegis tab.
+          </p>
         </Section>
 
         {/* ── Workspace Allowlist ───────────────────────────────────── */}

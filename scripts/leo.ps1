@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Leo — Max's boot-time rescue terminal. 🐩
+    Leo  - Max's boot-time rescue terminal. 🐩
     Runs when the engine fails to start. All output is RED.
     Leo animates left and right across the terminal and reacts to progress.
 #>
@@ -38,7 +38,7 @@ $MAX_ATTEMPTS = 3
 $STAGE_TOP    = 2   # Leo lives on rows 2-5
 
 # ============================================================
-#  Leo sprite library — all frames are exactly 4 lines of $LEO_W chars
+#  Leo sprite library  - all frames are exactly 4 lines of $LEO_W chars
 # ============================================================
 $LEO_W = 14   # sprite column width (pad to this)
 
@@ -47,7 +47,7 @@ function Pad([string]$s) {
     return $s.PadRight($LEO_W)
 }
 
-# Running right — 2 alternating stride frames
+# Running right  - 2 alternating stride frames
 $RUN_R = @(
     @((Pad "  ,ε=ε     "), (Pad " (^ω^)->   "), (Pad "  /\\      "), (Pad " d    d    ")),
     @((Pad "  ,ε=ε     "), (Pad " (^ω^)->   "), (Pad "   //\\    "), (Pad "  b   b    "))
@@ -67,12 +67,12 @@ $THINK = @(
     @((Pad "  ,ε=ε  ?  "), (Pad " (?_?)     "), (Pad "  /||     "), (Pad " d    d    ")),
     @((Pad "  ,ε=ε ??  "), (Pad " (?_?)     "), (Pad "  /||     "), (Pad " d    d    "))
 )
-# Alert — found an issue!
+# Alert  - found an issue!
 $ALERT = @(
     @((Pad " !,ε=ε!    "), (Pad " (!ω!)!!   "), (Pad "  /\\      "), (Pad " d    d    ")),
     @((Pad "  ,ε=ε!!   "), (Pad " (!ω!) !   "), (Pad "  /\\      "), (Pad " d    d    "))
 )
-# Celebrate — engine is back!
+# Celebrate  - engine is back!
 $CHEER = @(
     @((Pad "\\,ε=ε/     "), (Pad "\\(^ω^)/   "), (Pad "   ||     "), (Pad "  d  d     ")),
     @((Pad " ,ε=ε,     "), (Pad " (^ω^)^   "), (Pad "  /||     "), (Pad "  d  d     "))
@@ -130,7 +130,7 @@ function DrawStatus([string]$msg) {
     Write-Host "${RED}${DIM}  $msg${RESET}" -NoNewline
     ClearRow 7
     Goto 7 0
-    Write-Host "${RED}$('─' * ($W - 1))${RESET}" -NoNewline
+    Write-Host "${RED}$('-' * ($W - 1))${RESET}" -NoNewline
 }
 
 function LogLine([string]$line) {
@@ -194,7 +194,7 @@ function Invoke-EnvSniff {
         }
     }
     if (-not $hasKey) {
-        $issues.Add("MISSING ANTHROPIC_API_KEY — cloud diagnosis unavailable")
+        $issues.Add("MISSING ANTHROPIC_API_KEY  - cloud diagnosis unavailable")
         LogLine "⚠ ANTHROPIC_API_KEY not set"
     }
 
@@ -215,7 +215,7 @@ function Invoke-EnvSniff {
         LogLine "✓ Ollama reachable (local fallback available)"
     } catch {
         LogLine "⚠ Ollama unreachable (local fallback offline)"
-        $issues.Add("Ollama not running — local diagnosis fallback unavailable")
+        $issues.Add("Ollama not running  - local diagnosis fallback unavailable")
     }
 
     # 6. Engine stderr log
@@ -338,12 +338,12 @@ function Invoke-OllamaDiagnosis([System.Collections.Generic.List[string]]$Issues
 function Write-Logbook([string]$status, [string]$rootCause, [string]$fix) {
     $logbook = Join-Path $AppDir "selfdiagnosefixes.md"
     $ts      = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mmZ")
-    $entry   = "`n## $ts — Boot failure (Leo)`n- **Status:** $status`n- **Root cause:** $rootCause`n- **Fix:** $fix`n"
+    $entry   = "`n## $ts  - Boot failure (Leo)`n- **Status:** $status`n- **Root cause:** $rootCause`n- **Fix:** $fix`n"
     try { Add-Content -Path $logbook -Value $entry -Encoding UTF8 } catch { }
 }
 
 # ============================================================
-#  Animation loop — runs Leo during a timed wait
+#  Animation loop  - runs Leo during a timed wait
 # ============================================================
 function Run-Animation([int]$durationMs, [bool]$poll = $false) {
     $sw     = [System.Diagnostics.Stopwatch]::StartNew()
@@ -421,7 +421,7 @@ if (Test-Health) {
 # --- Initial run animation + log header ---
 LogLine "LEO v1 · Boot Rescue Console"
 LogLine "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') UTC"
-LogLine "─────────────────────────────────"
+LogLine "---------------------------------"
 
 $attempt = 0
 $diagnosed = $false
@@ -453,7 +453,7 @@ while ($attempt -lt $MAX_ATTEMPTS) {
 
     # ---- show alert ----
     $global:LeoState  = "alert"
-    $global:StatusMsg = "Found something — let's fix it!"
+    $global:StatusMsg = "Found something  - let's fix it!"
     Run-Animation 1200
 
     # ---- print diagnosis ----
@@ -501,7 +501,7 @@ while ($attempt -lt $MAX_ATTEMPTS) {
             LogLine "Relaunching Max.exe..."
             Start-Process $maxExe
         } else {
-            LogLine "⚠ Max.exe not found — try running Max.cmd instead"
+            LogLine "⚠ Max.exe not found  - try running Max.cmd instead"
         }
 
         # Poll health for up to 30 seconds

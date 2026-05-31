@@ -16,6 +16,7 @@ import {
 } from "../engine";
 import { MarkdownView } from "./MarkdownView";
 import { CopyButton } from "./CopyButton";
+import { PoodleSprite } from "./PoodleSprite";
 
 export function ChatBar({
   onRequest,
@@ -138,7 +139,7 @@ export function ChatBar({
         />
         <div className="chat__input-wrap">
           {!text && !inputFocused && (
-            <span className="chat__poodle" aria-hidden="true">🐩</span>
+            <span className="chat__poodle"><PoodleSprite /></span>
           )}
           <input
             className="chat__input"

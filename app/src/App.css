@@ -645,18 +645,22 @@ body {
   left: 0;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 13px;
-  line-height: 1;
+  line-height: 0;
   pointer-events: none;
   user-select: none;
-  animation: poodle-trot 3.2s linear infinite;
+  animation: poodle-trot 3.4s linear infinite;
 }
 @keyframes poodle-trot {
-  0%   { left: 0px;              opacity: 1; }
-  85%  { left: calc(100% - 18px); opacity: 1; }
-  90%  { left: calc(100% - 18px); opacity: 0; }
-  91%  { left: 0px;              opacity: 0; }
-  100% { left: 0px;              opacity: 1; }
+  0%   { left: 2px;                top: 50%;        opacity: 1; }
+  15%  { top: calc(50% - 2px); }
+  30%  { top: 50%; }
+  45%  { top: calc(50% - 2px); }
+  60%  { top: 50%; }
+  75%  { top: calc(50% - 2px); }
+  84%  { left: calc(100% - 50px); top: 50%;        opacity: 1; }
+  90%  { left: calc(100% - 50px);                  opacity: 0; }
+  91%  { left: 2px;               top: 50%;        opacity: 0; }
+  100% { left: 2px;               top: 50%;        opacity: 1; }
 }
 .chat__cloud {
   color: var(--magenta);

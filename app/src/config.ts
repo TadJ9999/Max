@@ -28,6 +28,12 @@ export type EngineConfigView = {
     ttl_seconds: number;
     retrieve_k: number;
   };
+  polymarket: {
+    watchlist: string[];
+    ttl_seconds: number;
+    embed_enabled: boolean;
+    categories: string[];
+  };
   providers: Array<{ name: string; kind: string; base_url: string | null }>;
   personality: {
     persona: string;
@@ -59,6 +65,7 @@ export type ConfigPatch = {
   };
   market?: { watchlist?: string[]; ttl_seconds?: number };
   apollo?: { embed_model?: string; ttl_seconds?: number; retrieve_k?: number };
+  polymarket?: { ttl_seconds?: number; embed_enabled?: boolean };
   personality?: { persona?: string; user_name?: string; custom_prefix?: string };
   voice?: {
     stt_provider?: string;

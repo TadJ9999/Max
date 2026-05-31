@@ -1,9 +1,10 @@
 # Max — Local-First AI Engine · Roadmap & Brainstorm
 
-> Status: **living document** — Phases 1–13 are **built & working** (DSL + routing,
+> Status: **living document** — Phases 1–14 are **built & working** (DSL + routing,
 > Ollama/Claude streaming, the full delegate system, v1 Tauri widget, OSINT map,
 > market tape, Apollo prediction engine, Polymarket intelligence, Aegis self-repair,
-> and Leo boot-rescue terminal). **185 engine tests pass; the app typechecks & builds.**
+> Leo boot-rescue terminal, and Phase 14: Voice I/O, Jarvis personality, persistent
+> user memory, and Apollo chat). **185+ engine tests pass; the app typechecks & builds.**
 > Phase 12 (Sentinel 3D space view) is the next major build. Checklists below are
 > code-verified.
 
@@ -228,8 +229,8 @@ Parser rules:
 - [x] **Sleeker "threat-intercept" redesign** — dropped the rainbow heat ramp for a discrete dark-ops threat scale (cyan→amber→orange→rose) with per-tier glow; tactical graticule; severity-coded hotspot bars + article edges (shadowbroker-style aesthetic)
 - [x] **Naval layer (US fleet positions)** — `osint/naval.py`: parses the latest USNI Fleet Tracker (read via its WordPress *feed*, which dodges Cloudflare) + TWZ Carrier Tracker, anchors on hull tokens (`CVN-73`) with name fallback, geocodes the nearest region phrase via a sea/port/AOR gazetteer (open-water beats homeport), and serves `GET /osint/naval`. Carrier (gold chevron) + amphib (steel diamond) markers with a `⚓ Fleet` toggle; positions flagged **estimated / region-level / dated** (no real-time GPS exists publicly). 6 naval tests. Groundwork for future track prediction.
 - [x] **Verified end-to-end**: live GDELT+RSS (e.g. 360 signals / 61 countries), severity tiers (Zaporizhzhia/Iran/Israel → Critical/High), threat shading, moving terminator + subsolar marker, filter toggles, country click → filtered articles; `npm run build` + `tsc` clean
-- [ ] **Surface egress in settings/privacy guard** (OSINT makes outbound calls to public news; mark it like the cloud `!` sigil) + optional network kill-switch integration (Phase 7)
-- [ ] **Tauri external links** via the opener plugin (article links use `<a target=_blank>`; fine in the browser, route through `opener` inside the desktop shell)
+- [x] **Surface egress in settings/privacy guard** — amber egress warning added to OSINT, Market, Polymarket, Aegis settings sections ✅
+- [x] **Tauri external links** via the opener plugin — article links now use `@tauri-apps/plugin-opener`; falls back to `window.open` in browser ✅
 - [ ] **Tuning & breadth**: GDELT theme-query tuning for "most important"; expand the gazetteer beyond the newsworthy core; per-source toggles in the UI; optional GDELT tone signal in the score
 - [ ] *(stretch)* time-scrubber to replay the last 24h of heat; cluster/event detail on click
 
@@ -245,7 +246,7 @@ Parser rules:
 - [x] **Config**: `MarketConfig` (watchlist + cache TTL); watchlist round-trips through the persisted-override subset; no new Python deps (existing httpx)
 - [x] **Tests**: `tests/test_market.py` — quote parsing, unknown-symbol/HTTP-error skip, board aggregation + caching, no-key empty board, watchlist round-trip/dedup, endpoints (network mocked)
 - [x] **Desktop board** (`app/src/market/`): `MarketView` (polling stock rows, green-up/red-down, watchlist add/remove, streaming Ingest panel), `MarketButton` (`$` icon, next to OSINT), `market.ts` client; `#market` hash route + `market` Tauri window capability; in-page overlay fallback
-- [ ] **Surface egress in settings/privacy guard** (Market makes outbound calls to Finnhub; mark it like OSINT / the cloud `!` sigil)
+- [x] **Surface egress in settings/privacy guard** — amber egress warning added to Market settings section ✅
 - [ ] *(stretch)* WebSocket trade stream for true real-time ticks; per-ticker AI drill-down; sparkline charts; intraday history
 
 ---
@@ -268,7 +269,7 @@ Parser rules:
 - [x] **Tests** (`tests/test_polymarket.py`): market parsing (JSON string + list fields), yes_price property, price history, order book, board caching + TTL, force-refresh, watchlist dedup, embed call mocked (store.upsert asserted), embed with no store/empty embeddings, all 9 endpoints — **24 tests passing**, full suite 164 tests green
 - [x] **Desktop board** (`app/src/polymarket/`): `PolymarketView` (category tabs All/Politics/Crypto/Sports/Economics/Entertainment/Science/World/★ Watchlist, three-column layout: market list · detail · AI panel), `PriceChart` (SVG probability chart, interval selector 1D/1W/1M/Max), `OrderBookPanel` (bid/ask depth ladder), `polymarket.ts` client (null on error), `Polymarket.css` (dark theme, gold accent, probability gauges green/amber/red)
 - [x] **Hub integration**: `"polymarket"` tab added to `HubTab` union + TABS array (glyph Ψ, label "Poly", gold accent in `Hub.css`); lazy-mount `<PolymarketView />`; Ψ launcher button in `HubButtons.tsx`; `#polymarket` hash route in `main.tsx`; `widget-action-btn--polymarket` style in `Market.css`
-- [ ] **Surface egress in settings/privacy guard** (Polymarket makes outbound calls to public APIs; mark it like OSINT / Market)
+- [x] **Surface egress in settings/privacy guard** — amber egress warning + new Polymarket settings section added ✅
 - [ ] *(stretch)* Real-time price streaming via Polymarket WebSocket; per-market news feed from Gamma `events` field; portfolio tracking (read-only via wallet address)
 
 ---
@@ -341,8 +342,8 @@ secrets redacted before any store or egress.
   until the engine is back up**; suggest-by-default (no silent edits)
 - [x] **Happy finale** — on green `/health`, Leo prints **"My job is done!"** + a tiny
   smiling toy-poodle ASCII image, then exits; bubbly encouraging voice throughout
-- [ ] **Polish**: stream the diagnosis token-by-token; one-click "apply suggested commands";
-  cross-platform launcher (`.sh`) once non-Windows lands
+- [x] **Polish**: fixed PowerShell 5.1 encoding bug (em-dash/box-chars with 0x94 byte read as curly-quote by Windows-1252, breaking string parsing); added `-ExecutionPolicy Bypass` to launcher ✅
+- [ ] Stream diagnosis token-by-token; one-click "apply suggested commands"; cross-platform launcher (`.sh`) once non-Windows lands
 
 **Runtime layer (engine up):**
 - [x] **Observability module** (`engine/max_engine/aegis/`): structured logger + ring
@@ -369,8 +370,7 @@ secrets redacted before any store or egress.
   `#aegis` hash route; mascot **error** state deep-links here
 - [x] **Tests** (`engine/tests/test_aegis_*.py`): capture, event ranking, redaction, store
   operations — 21 tests passing
-- [ ] **Surface egress in settings/privacy guard** (Aegis sends code/logs to the cloud when
-  diagnosing; mark it like OSINT / Market / the `!` sigil) + network kill-switch integration
+- [x] **Surface egress in settings/privacy guard** — amber egress warning + Aegis section in Settings; notes secrets are redacted before egress ✅
 - [ ] *(stretch)* opt-in **full-auto mode** (detect→fix→test→restart, logged after the fact)
   behind a flag · Rust/Tauri auto-fix · learn from past fixes (embed `selfdiagnosefixes.md`
   into Apollo memory so recurring bugs are recognized)
@@ -391,6 +391,25 @@ secrets redacted before any store or egress.
 - Does v1 chat app need **codebase RAG**, or is plain chat + model config enough to start?
 - Default per-task models — propose a concrete default mapping after the Phase 0 benchmark?
 - **Engine end-to-end verification** (next milestone): which local model(s) to pull first for the smoke test, and do we test the `!` cloud path now or after a key is set up?
+
+---
+
+### Phase 14 — Voice I/O, Jarvis Personality & User Memory  ✅ *Max becomes a personal AI companion*
+
+*Transforms Max from a data terminal into a persistent personal assistant. Three tightly coupled pillars: configurable personality, persistent user-profile memory, and full voice I/O. All local-first — voice STT/TTS uses the Web Speech API with an optional local Whisper fallback; user memory is stored in `.apollo.db` with no TTL.*
+
+**Decisions locked:** Jarvis persona by default (casual/witty/direct, like Jarvis to Tony Stark) with formal-analyst and custom-text alternatives · user name set once in Settings, used in every AI call · `user_profile` SQLite table in `.apollo.db` (no TTL, persists forever) · explicit "remember that…" shortcut · Web Speech API as primary STT (zero new deps, works in Tauri WebView2) · faster-whisper as local STT alternative (lazy-loaded, `tiny.en` default) · `window.speechSynthesis` TTS reads first 3 sentences aloud · Apollo predictions stored 1/day with 30-day rolling window.
+
+- [x] **Jarvis personality**: `PersonalityConfig` (persona/user_name/custom_prefix) in `config.py`; `persona_prefix()` + `apply_persona()` in `prompts.py`; injected as first system message in ALL AI calls (OSINT chat, Market chat, Polymarket chat, Apollo, Aegis) ✅
+- [x] **Persistent user memory**: `user_profile` SQLite table in `.apollo.db`; `UserProfileStore` (`engine/max_engine/user/profile.py`); `GET/POST/DELETE /user/profile`; `to_context_block()` injected into every AI system prompt; Settings "Your AI → What Max knows about you" table ✅
+- [x] **Web Speech API mic button**: `useSpeech.ts` hook + type declarations (`speech.d.ts`); `MicButton.tsx` component (pulsing red while recording); placed in OSINT chat input; interrupts TTS before recording ✅
+- [x] **TTS voice output**: `useTTS.ts` hook (`window.speechSynthesis`); reads first 3 sentences of each AI response; toggle on/off + rate/pitch sliders in Settings ✅
+- [x] **Local Whisper STT**: `faster-whisper>=1.0` added to `pyproject.toml`; `POST /voice/transcribe` endpoint (lazy-loads model on first call, `tiny.en` default); `MicButton` Whisper provider path via `MediaRecorder` ✅
+- [x] **Apollo chat**: inline chat thread below Predictions box; prediction text auto-seeded as first assistant message; `POST /apollo/chat` endpoint grounded in `PredictionHistory`; `PredictionHistory` stores 1 prediction/day, 30-day rolling TTL ✅
+- [x] **Settings "Your AI" section**: user name, tone selector (Jarvis/Analyst/Custom), custom textarea, TTS toggle + rate/pitch, STT provider selector, Whisper model field ✅
+- [x] **Leo fixes**: `-ExecutionPolicy Bypass` added to launcher; em-dash/box-drawing character encoding bug fixed (UTF-8 0x94 byte reads as curly-quote in Windows-1252, breaking string parsing) ✅
+- [x] **ChatBar poodle**: placeholder text removed; custom chocolate-brown SVG toy poodle (`PoodleSprite.tsx`) trots left-to-right with a gentle bounce, loops while input is empty/unfocused ✅
+- [x] **Privacy egress**: amber egress warning banners added to OSINT, Market, Polymarket, and Aegis settings sections; Tauri `plugin-opener` wired for OSINT article links ✅
 
 ---
 

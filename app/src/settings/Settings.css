@@ -558,6 +558,25 @@
   margin-bottom: 0;
 }
 
+/* ── egress warning hint ────────────────────────────────────────── */
+.stg-egress {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  background: rgba(255, 200, 60, 0.07);
+  border: 1px solid rgba(255, 200, 60, 0.18);
+  border-radius: 7px;
+  padding: 7px 10px;
+  color: rgba(255, 210, 100, 0.85);
+  opacity: 1 !important;
+}
+.stg-egress__icon {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
 /* ── hint text ──────────────────────────────────────────────────── */
 .stg-hint {
   font-size: 11px;
