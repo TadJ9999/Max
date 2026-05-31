@@ -26,6 +26,7 @@ from . import __version__
 from .apollo import ApolloService, VectorStore
 from .config import load_config, save_overrides
 from .delegate.engine import DelegateEngine
+from .delegate.session import TERMINAL_STATES
 from .dsl import ParseError, parse_command
 from .market import MarketService, board_digest
 from .osint import EventsService, NavalService, OsintService
@@ -334,6 +335,34 @@ def get_session(session_id: str):
     if s is None:
         raise HTTPException(status_code=404, detail="no such session")
     return s.to_dict()
+
+
+@app.get("/sessions/{session_id}/stream")
+async def stream_session(session_id: str):
+    """Live per-session output as SSE: replays output so far, then streams new
+    chunks until the session reaches a terminal state. Lets the task cards show
+    tokens as they're produced instead of only on the ~2s poll."""
+    s = delegate.manager.get(session_id)
+    if s is None:
+        raise HTTPException(status_code=404, detail="no such session")
+
+    async def event_stream() -> AsyncIterator[str]:
+        q = s.subscribe()
+        try:
+            if s.output:  # catch-up for a mid-run (or finished) connect
+                yield f"data: {json.dumps({'type': 'chunk', 'text': s.output})}\n\n"
+            if s.state in TERMINAL_STATES:
+                yield f"data: {json.dumps({'type': 'done', 'state': s.state.value})}\n\n"
+                return
+            while True:
+                ev = await q.get()
+                yield f"data: {json.dumps(ev)}\n\n"
+                if ev["type"] == "done":
+                    return
+        finally:
+            s.unsubscribe(q)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.post("/sessions/{session_id}/cancel")

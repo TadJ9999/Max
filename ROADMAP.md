@@ -201,8 +201,8 @@ Parser rules:
 - [x] Task scheduler aware of the **12 GB VRAM limit** (cloud + small-local run in parallel; heavy local models queue)
 - [x] Manual override (backend): `promote` a queued session to cloud when local is backed up
 - [x] **Isolated sessions** — each tracked + retrieved separately (`/sessions` API)
-- [ ] **Queue dashboard** (UI) — live view + drag-to-cloud (with Tauri app)
-- [ ] Streaming each session's output concurrently to the client (SSE/WebSocket)
+- [x] **Queue dashboard** (UI) — live task cards poll `/sessions`; cancel/promote wired
+- [x] Streaming each session's output concurrently to the client — **SSE** `GET /sessions/{id}/stream` (replays output, then live chunks → `done`); engine fan-out via per-session subscribers
 - [ ] Delegator/coordinator (optional): decompose one request into subtasks fanned out to workers
 
 ### Phase 5 — VS Code extension  🎯 *type `. … .` live → code appears; `!.` routes to cloud*

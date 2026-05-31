@@ -113,12 +113,10 @@ class DelegateEngine:
         try:
             provider = self.build_provider(s.provider, self.config)
             messages = messages_for(s.action, s.task)
-            parts: list[str] = []
             async for chunk in provider.chat(s.model, messages):
                 if s.state == SessionState.CANCELLED:
                     break
-                parts.append(chunk.text)
-            s.output = "".join(parts)
+                s.emit(chunk.text)  # accumulates into output + streams live
             if s.state != SessionState.CANCELLED:
                 s.state = SessionState.DONE
         except asyncio.CancelledError:
@@ -126,9 +124,10 @@ class DelegateEngine:
             raise
         except Exception as e:  # isolate failures to the session
             s.state = SessionState.ERROR
-            s.output = f"{type(e).__name__}: {e}"
+            s.emit(f"[error] {type(e).__name__}: {e}")
         finally:
             self._tasks.pop(s.id, None)
+            s.finish()  # notify live subscribers of the terminal state
             await self.kick()  # free capacity -> start the next queued session
 
     async def drain(self) -> None:
