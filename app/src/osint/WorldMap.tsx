@@ -20,8 +20,9 @@ const land = feature(
   world.objects.countries,
 ) as unknown as FeatureCollection<Geometry, { name: string }>;
 
-// ── Ship marker: simple upward arrow, bow pointing up, centered at 0,0 ─────
-const ARROW_D = "M 0,-14 L 6,7 L 0,2 L -6,7 Z";
+// ── Ship marker: slim arrowhead, bow pointing up, centered at 0,0 ─────────
+// Narrower than old 12-unit-wide shape — 7-unit width gives a sleeker silhouette.
+const ARROW_D = "M 0,-11 L 3.5,6.5 L 0,1.5 L -3.5,6.5 Z";
 
 function mapShipLabel(name: string): string {
   // Show USS/USNS + up to 2 name words: "USS Nimitz", "USS Theodore Roosevelt", "USS George H.W."
@@ -275,7 +276,7 @@ export function WorldMap({
               return (
                 <g key={s.hull}
                   className={`osint-ship osint-ship--${s.kind}${inPort ? " is-port" : ""}`}
-                  transform={`translate(${x},${y}) scale(0.72)`}
+                  transform={`translate(${x},${y}) scale(0.65)`}
                   onMouseMove={(e) => setShipHover({ ship: s, x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY })}
                   onMouseLeave={() => setShipHover(null)}
                   onClick={() => s.url && window.open(s.url, "_blank", "noopener")}

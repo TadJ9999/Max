@@ -196,38 +196,6 @@ Parser rules:
 - [x] Settings: **auto-delegate toggle (Manual / Smart-Auto)** + cloud on/off + **parallel limits** — live via `/config`, persisted to `.maxconfig.json`
 - [x] **Workspace folder allowlist** — add/remove paths in settings, persisted
 
-### Phase 4 — Delegate system: parallel sessions & multi-model orchestration  🎯 *run many tasks at once, each on its own model*
-*Engine side built + tested (29 tests); the dashboard/streaming UI lands with the Tauri app (Phase 3).*
-- [x] Session manager: spawn / track / cancel concurrent sessions, each bound to a provider+model
-- [x] **Mode (config): Manual** (you assign model+task) **and Smart-Auto** (engine decides local vs cloud)
-- [x] Smart-Auto router: choose local vs cloud per task by **task complexity** (+ local queue depth)
-- [x] Task scheduler aware of the **12 GB VRAM limit** (cloud + small-local run in parallel; heavy local models queue)
-- [x] Manual override (backend): `promote` a queued session to cloud when local is backed up
-- [x] **Isolated sessions** — each tracked + retrieved separately (`/sessions` API)
-- [x] **Queue dashboard** (UI) — live task cards poll `/sessions`; cancel/promote wired; **cards now render live output** (per-session SSE: `snapshot` then `chunk` deltas, blinking caret while running)
-- [x] Streaming each session's output concurrently to the client — **SSE** `GET /sessions/{id}/stream` (replays a `snapshot`, then live `chunk`s → `done`); engine fan-out via per-session subscribers
-- [x] **Delegator/coordinator**: `POST /sessions/coordinate` — a planner model decomposes one request into independent subtasks, each fanned out as a parallel session (defensive JSON parse + single-task fallback; planner stays local unless Smart-Auto + cloud)
-
-### Phase 5 — VS Code extension  🎯 *type `. … .` live → code appears; `!.` routes to cloud*
-*Built in `extension/` (TypeScript, bundled with esbuild; typecheck + build clean). Run with F5.*
-- [x] **Trigger (configurable)** — `auto` fires on the closing delimiter (debounced, ignores our own edits); `manual` uses the `ctrl/cmd+enter` keybinding (which also works in auto mode)
-- [x] **Sigil routing honored from the editor** — the raw command is sent to `/command`; the engine parses `@`/`#`/`!` and routes (cloud blocked → surfaced as an error)
-- [x] Stream results; **inline replace** — the command span is replaced with the streamed output as it arrives (single undo)
-- [x] Engine status + active-model surface; **cloud (☁) indicator** while a `!` command runs (status-bar item, polls `/health`)
-- [x] Ghost-text **FIM autocomplete** — `InlineCompletionItemProvider` → engine `POST /complete` (Ollama FIM via `/api/generate` prefix+suffix), debounced/cancellable, toggleable
-
-**Phase 5 complete.** ✅
-
-### Phase 6 — Context & RAG (Max knows your codebase)  🎯 *context-aware answers*
-*Engine side built + tested (`engine/max_engine/rag/`, 17 tests). Indexing is scoped to the workspace allowlist (privacy). UI wiring + session memory still open.*
-- [x] Workspace indexer — file walk with noise-dir pruning + text/size filters; line-aligned overlapping chunker (`rag/chunker.py`)
-- [x] Embeddings + local vector store (sqlite-vec, `rag/store.py`); **incremental re-index** keyed on per-file content hash (skip unchanged, drop deleted)
-- [x] Retrieval injected into prompts — `POST /rag/ask` retrieves context and streams a grounded answer **cited by `file:line`** (+ `/rag/index`, `/rag/search`, `/rag/status`, `/rag/clear`)
-- [x] **UI**: a **"knows your code" (🧠) toggle** in the chat bar routes plain questions to `/rag/ask`; a **⟳ index button** runs `/rag/index` and shows live `files / chunks` counts; a **✕ new-conversation** button clears session memory
-- [x] **Session memory** — `SessionMemory` carries prior turns per `session_id`: fed to the model **and** used to widen retrieval so terse follow-ups still pull the right code; `/rag/ask` records each turn; `GET`/`clear` via `/rag/memory/{id}`. The widget threads a stable session id.
-
-**Phase 6 complete.** ✅
-
 ### Phase 7 — Performance & privacy polish  🎯 *snappy, stable, provably local-by-default*
 - [ ] **Two-model routing**: tiny resident completer + heavy on-demand gen/chat
 - [ ] Keep-alive + smart load/unload to respect 12 GB VRAM
@@ -338,3 +306,35 @@ Parser rules:
 - Does v1 chat app need **codebase RAG**, or is plain chat + model config enough to start?
 - Default per-task models — propose a concrete default mapping after the Phase 0 benchmark?
 - **Engine end-to-end verification** (next milestone): which local model(s) to pull first for the smoke test, and do we test the `!` cloud path now or after a key is set up?
+
+---
+
+## ✅ Completed Phases
+
+### Phase 4 — Delegate system: parallel sessions & multi-model orchestration ✅
+*Engine side built + tested (29 tests); dashboard/streaming UI wired in the Tauri app.*
+- [x] Session manager: spawn / track / cancel concurrent sessions, each bound to a provider+model
+- [x] **Mode (config): Manual** (you assign model+task) **and Smart-Auto** (engine decides local vs cloud)
+- [x] Smart-Auto router: choose local vs cloud per task by **task complexity** (+ local queue depth)
+- [x] Task scheduler aware of the **12 GB VRAM limit** (cloud + small-local run in parallel; heavy local models queue)
+- [x] Manual override (backend): `promote` a queued session to cloud when local is backed up
+- [x] **Isolated sessions** — each tracked + retrieved separately (`/sessions` API)
+- [x] **Queue dashboard** (UI) — live task cards poll `/sessions`; cancel/promote wired; **cards now render live output** (per-session SSE: `snapshot` then `chunk` deltas, blinking caret while running)
+- [x] Streaming each session's output concurrently to the client — **SSE** `GET /sessions/{id}/stream`; engine fan-out via per-session subscribers
+- [x] **Delegator/coordinator**: `POST /sessions/coordinate` — planner decomposes request into parallel subtasks (defensive JSON parse + single-task fallback)
+
+### Phase 5 — VS Code extension ✅
+*Built in `extension/` (TypeScript, esbuild; typecheck + build clean). Run with F5.*
+- [x] **Trigger (configurable)** — `auto` fires on closing delimiter (debounced); `manual` uses `ctrl/cmd+enter`
+- [x] **Sigil routing honored from the editor** — raw command sent to `/command`; engine parses `@`/`#`/`!` and routes
+- [x] Stream results; **inline replace** — command span replaced with streamed output as it arrives (single undo)
+- [x] Engine status + active-model surface; **cloud (☁) indicator** while a `!` command runs
+- [x] Ghost-text **FIM autocomplete** — `InlineCompletionItemProvider` → engine `POST /complete` (Ollama FIM), debounced/cancellable, toggleable
+
+### Phase 6 — Context & RAG (Max knows your codebase) ✅
+*Engine side built + tested (`engine/max_engine/rag/`, 17 tests). Scoped to workspace allowlist for privacy.*
+- [x] Workspace indexer — file walk with noise-dir pruning + text/size filters; line-aligned overlapping chunker
+- [x] Embeddings + local vector store (sqlite-vec); **incremental re-index** keyed on per-file content hash
+- [x] Retrieval injected into prompts — `POST /rag/ask` streams grounded answers **cited by `file:line`**
+- [x] **UI**: 🧠 toggle routes questions to `/rag/ask`; ⟳ index button shows live `files / chunks` counts; ✕ clears session memory
+- [x] **Session memory** — `SessionMemory` carries prior turns per `session_id`; fed to model + used to widen retrieval so terse follow-ups still pull the right code

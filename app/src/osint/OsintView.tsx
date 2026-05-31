@@ -47,6 +47,60 @@ function timeAgo(iso: string | null): string {
   return `${Math.round(hrs / 24)}d ago`;
 }
 
+// ── Political lean lookup ─────────────────────────────────────────────────────
+// Scores: -1.0 = far left, 0.0 = center, +1.0 = far right
+// Based on AllSides / Media Bias Fact Check approximations.
+const LEAN_DB: Record<string, number> = {
+  // Center / slight lean
+  "reuters.com": -0.05, "apnews.com": -0.1, "thehill.com": -0.05,
+  "axios.com": -0.1, "usatoday.com": -0.15, "newsweek.com": -0.2,
+  "bbc.com": -0.2, "bbc.co.uk": -0.2, "politico.com": -0.2,
+  "businessinsider.com": -0.2, "wsj.com": 0.25, "reason.com": 0.3,
+  "nypost.com": 0.4, "msn.com": -0.1,
+  // Center-left
+  "npr.org": -0.3, "cbsnews.com": -0.3, "nbcnews.com": -0.35,
+  "abcnews.go.com": -0.35, "time.com": -0.3, "theatlantic.com": -0.4,
+  "aljazeera.com": -0.3, "cbc.ca": -0.2, "globalnews.ca": -0.2,
+  "independent.co.uk": -0.35, "telegraph.co.uk": 0.4,
+  // Left
+  "nytimes.com": -0.45, "washingtonpost.com": -0.5, "theguardian.com": -0.6,
+  "cnn.com": -0.55, "msnbc.com": -0.7, "huffpost.com": -0.7,
+  "huffingtonpost.com": -0.7, "vox.com": -0.65, "slate.com": -0.65,
+  "motherjones.com": -0.8, "thenation.com": -0.8,
+  // Right
+  "foxnews.com": 0.65, "washingtonexaminer.com": 0.6,
+  "nationalreview.com": 0.65, "washingtontimes.com": 0.6,
+  "dailycaller.com": 0.7, "thefederalist.com": 0.75,
+  "townhall.com": 0.75, "pjmedia.com": 0.7,
+  "dailywire.com": 0.8, "breitbart.com": 0.9,
+};
+
+function domainLean(domain: string): number | null {
+  const d = domain.replace(/^www\./, "");
+  if (d in LEAN_DB) return LEAN_DB[d];
+  const parts = d.split(".");
+  if (parts.length > 2) {
+    const base = parts.slice(-2).join(".");
+    if (base in LEAN_DB) return LEAN_DB[base];
+  }
+  return null;
+}
+
+function LeanBar({ domain }: { domain: string }) {
+  const lean = domainLean(domain);
+  if (lean === null) return null;
+  const pct = ((lean + 1) / 2) * 100;
+  return (
+    <div className="news-card__lean">
+      <span className="news-card__lean-l">L</span>
+      <div className="news-card__lean-track">
+        <div className="news-card__lean-dot" style={{ left: `${pct}%` }} />
+      </div>
+      <span className="news-card__lean-r">R</span>
+    </div>
+  );
+}
+
 // ── News card ─────────────────────────────────────────────────────────────────
 function ArticleCard({ article, expanded, onToggle }: {
   article: Article;
@@ -64,12 +118,15 @@ function ArticleCard({ article, expanded, onToggle }: {
       tabIndex={0}
       onKeyDown={(e) => e.key === "Enter" && onToggle()}
     >
-      {/* collapsed header — always visible */}
+      {/* header — always visible */}
       <div className="news-card__head">
         <span className="news-card__tier" title={tier.label} />
         <span className="news-card__headline">{article.title}</span>
         <span className="news-card__chevron">{expanded ? "▲" : "▼"}</span>
       </div>
+
+      {/* political lean slider — shown when source is known */}
+      <LeanBar domain={article.domain} />
 
       {/* expanded body */}
       {expanded && (
