@@ -21,15 +21,15 @@ def test_split_system_lifts_system_messages():
 
 def test_anthropic_streams_text_deltas():
     events = [
-        'event: content_block_delta',
+        "event: content_block_delta",
         'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello"}}',
-        '',
-        'event: content_block_delta',
+        "",
+        "event: content_block_delta",
         'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":" world"}}',
-        '',
-        'event: message_stop',
+        "",
+        "event: message_stop",
         'data: {"type":"message_stop"}',
-        '',
+        "",
     ]
     body = "\n".join(events) + "\n"
 
@@ -41,17 +41,10 @@ def test_anthropic_streams_text_deltas():
         return httpx.Response(200, text=body)
 
     async def run():
-        client = httpx.AsyncClient(
-            transport=httpx.MockTransport(handler), base_url="http://test"
-        )
-        provider = AnthropicProvider(
-            api_key="test-key", base_url="http://test", client=client
-        )
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://test")
+        provider = AnthropicProvider(api_key="test-key", base_url="http://test", client=client)
         chunks = [
-            c
-            async for c in provider.chat(
-                "claude-opus-4-8", [{"role": "user", "content": "hi"}]
-            )
+            c async for c in provider.chat("claude-opus-4-8", [{"role": "user", "content": "hi"}])
         ]
         await client.aclose()
         return chunks
@@ -59,6 +52,33 @@ def test_anthropic_streams_text_deltas():
     chunks = asyncio.run(run())
     assert "".join(c.text for c in chunks) == "Hello world"
     assert chunks[-1].done is True
+
+
+def test_anthropic_surfaces_api_error_message():
+    """A 4xx from the API yields the real error message, not a generic status."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={
+                "type": "error",
+                "error": {"type": "invalid_request_error", "message": "credit balance is too low"},
+            },
+        )
+
+    async def run():
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://test")
+        provider = AnthropicProvider(api_key="test-key", base_url="http://test", client=client)
+        try:
+            return [
+                c
+                async for c in provider.chat("claude-opus-4-8", [{"role": "user", "content": "x"}])
+            ]
+        finally:
+            await client.aclose()
+
+    with pytest.raises(RuntimeError, match="credit balance is too low"):
+        asyncio.run(run())
 
 
 def test_anthropic_requires_api_key():

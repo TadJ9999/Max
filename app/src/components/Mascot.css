@@ -1,0 +1,405 @@
+/*
+ * Mascot — thin-wireframe holographic instrument wrapped around an
+ * Apple-Intelligence-style liquid-glass core orb. The wireframe rings/gauges
+ * stay razor-thin; the centre is a glossy pearlescent sphere with pastel fluid
+ * (pink / lavender / cyan) swirling inside, a specular highlight and a soft
+ * shadow. The orb shifts palette + speeds up + reverses flow while "thinking",
+ * and turns red when the host is down. Ring rotation is rAF-driven (seamless).
+ */
+
+.hud {
+  position: relative;
+  width: var(--hud-size, 160px);
+  height: var(--hud-size, 160px);
+  display: grid;
+  place-items: center;
+  background: transparent;
+  --accent: rgb(34, 211, 238); /* heat-driven primary (set inline) */
+  --accent-2: rgb(168, 120, 255); /* violet structural accent (sci-fi) */
+  --line: rgba(222, 240, 255, 0.42);
+  --line-dim: rgba(222, 240, 255, 0.15);
+
+  /* ── liquid core palette (idle — vivid) ─────────────────────────── */
+  --orb-hi: #ffffff; /* top specular / highlight  */
+  --orb-1: #8db8ff; /* blue base                 */
+  --orb-2: #2e7fff; /* deep blue fluid           */
+  --orb-3: #9b5cff; /* vivid lavender fluid      */
+  --orb-4: #ff50b8; /* hot pink fluid            */
+  --orb-glow: rgba(110, 160, 255, 0.7);
+  --orb-spin: 9s; /* base fluid period         */
+}
+
+.hud__svg {
+  display: block;
+  overflow: visible;
+}
+.hud__svg line,
+.hud__svg circle {
+  vector-effect: non-scaling-stroke; /* keep 1px regardless of render size */
+  fill: none;
+}
+
+/* rotating groups spin around their own centre */
+.hud__spin {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* monochrome wireframe */
+.hud__hair {
+  stroke: var(--line-dim);
+  stroke-width: 1;
+}
+.hud__tick {
+  stroke: var(--line);
+  stroke-width: 1;
+  opacity: 0.55;
+}
+.hud__tick--maj {
+  stroke: var(--line);
+  stroke-width: 1;
+  opacity: 0.95;
+}
+.hud__cross line {
+  stroke: var(--line-dim);
+  stroke-width: 1;
+}
+
+/* outer ring tinted violet so the instrument doesn't read as "just blue" */
+.hud__ring--alt .hud__hair {
+  stroke: var(--accent-2);
+  opacity: 0.45;
+}
+.hud__ring--alt .hud__tick {
+  stroke: var(--accent-2);
+  opacity: 0.55;
+}
+.hud__ring--alt .hud__tick--maj {
+  stroke: var(--accent-2);
+  opacity: 0.9;
+}
+
+/* heat-accent inner ring */
+.hud__hair-accent {
+  stroke: var(--accent);
+  stroke-width: 1;
+  opacity: 0.7;
+  transition: stroke 0.8s linear;
+}
+.hud__tick--accent {
+  stroke: var(--accent);
+  stroke-width: 1;
+  opacity: 0.85;
+  transition: stroke 0.8s linear;
+}
+
+/* ── ambient halo ───────────────────────────────────────────────────── */
+.hud__halo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hud-breathe 6s ease-in-out infinite;
+}
+@keyframes hud-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+
+/* ── sparse particle field ──────────────────────────────────────────── */
+.hud__particle {
+  /* fill set inline (cyan / violet / faint white) */
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  filter: drop-shadow(0 0 2px var(--accent-2));
+  animation-name: hud-twinkle;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+}
+@keyframes hud-twinkle {
+  0%, 100% { opacity: 0; transform: scale(0.4) translateY(0); }
+  50% { opacity: 0.85; transform: scale(1) translateY(-3px); }
+}
+
+/* DB read/write pulse — the particle field flares to signal memory activity
+   ("Max is learning"). One-shot scale + glow on the whole mote field. */
+.hud__particles--db {
+  transform-box: view-box;
+  transform-origin: 100px 100px;
+  animation: hud-db-pulse 0.7s ease-out;
+  filter: drop-shadow(0 0 5px var(--accent));
+}
+.hud__particles--db .hud__particle {
+  filter: drop-shadow(0 0 5px var(--accent));
+}
+@keyframes hud-db-pulse {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.16); }
+  100% { transform: scale(1); }
+}
+
+/* metric gauges */
+.hud__gauge-track {
+  stroke: var(--line-dim);
+  stroke-width: 1;
+}
+.hud__gauge-fill {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  transition:
+    stroke-dasharray 0.6s ease,
+    stroke 0.8s linear;
+}
+.hud__gauge-label {
+  fill: var(--line);
+  font-size: 5px;
+  text-anchor: middle;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  letter-spacing: 0.04em;
+}
+
+/* ── Apple-Intelligence liquid-glass core orb ───────────────────────── */
+.hud__orb {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 30%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  overflow: hidden;
+  isolation: isolate; /* contain blend modes to the orb */
+  z-index: 1;
+  /* pearly sphere base + sphere shading + outer glow */
+  background:
+    radial-gradient(circle at 50% 30%, var(--orb-hi) 0%, var(--orb-1) 38%, var(--orb-2) 92%);
+  box-shadow:
+    0 0 16px 1px var(--orb-glow),
+    inset 0 6px 9px rgba(255, 255, 255, 0.45),
+    inset 0 -10px 18px rgba(40, 18, 80, 0.45);
+  filter: drop-shadow(0 4px 7px rgba(8, 10, 30, 0.5));
+  animation: orb-breathe 4.4s ease-in-out infinite;
+  transition: box-shadow 0.6s linear;
+}
+@keyframes orb-breathe {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50% { transform: translate(-50%, -50%) scale(1.04); }
+}
+
+/* fluid lobes drifting inside the glass — each flows a different direction */
+.hud__orb-fluid {
+  position: absolute;
+  left: -30%;
+  top: -30%;
+  width: 160%;
+  height: 160%;
+  border-radius: 42% 58% 55% 45%;
+  filter: blur(5px);
+  will-change: transform;
+}
+.hud__orb-fluid--a {
+  background: radial-gradient(circle at 36% 38%, var(--orb-4) 0%, transparent 52%);
+  mix-blend-mode: normal;
+  opacity: 1;
+  animation: orb-swirl-cw var(--orb-spin) linear infinite;
+}
+.hud__orb-fluid--b {
+  background: radial-gradient(circle at 64% 60%, var(--orb-2) 0%, transparent 54%);
+  mix-blend-mode: normal;
+  opacity: 0.95;
+  animation: orb-swirl-ccw calc(var(--orb-spin) * 1.25) linear infinite;
+}
+.hud__orb-fluid--c {
+  background: radial-gradient(circle at 50% 66%, var(--orb-3) 0%, transparent 56%);
+  mix-blend-mode: normal;
+  opacity: 1;
+  animation: orb-pan calc(var(--orb-spin) * 1.6) ease-in-out infinite;
+}
+@keyframes orb-swirl-cw {
+  to { transform: rotate(360deg); }
+}
+@keyframes orb-swirl-ccw {
+  to { transform: rotate(-360deg); }
+}
+@keyframes orb-pan {
+  0%, 100% { transform: translate(-6%, 4%) rotate(0deg); }
+  50% { transform: translate(8%, -6%) rotate(180deg); }
+}
+
+/* specular highlight — the glossy top-left hotspot */
+.hud__orb-gloss {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 33% 24%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 20%),
+    radial-gradient(circle at 68% 80%, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 20%);
+}
+
+/* thinking → richer palette, faster flow, reversed directions */
+.hud[data-thinking="true"] {
+  --orb-2: #0060ff;
+  --orb-3: #8a2fff;
+  --orb-4: #ff00a8;
+  --orb-glow: rgba(160, 80, 255, 0.85);
+  --orb-spin: 3.4s;
+}
+.hud[data-thinking="true"] .hud__orb-fluid--a {
+  animation-direction: reverse;
+}
+.hud[data-thinking="true"] .hud__orb-fluid--b {
+  animation-direction: reverse;
+}
+.hud[data-thinking="true"] .hud__orb {
+  animation-duration: 2.4s;
+}
+
+/* error → warm/red fluid */
+.hud[data-state="error"] {
+  --orb-1: #ffd9d4;
+  --orb-2: #ff7a6b;
+  --orb-3: #ff5d6c;
+  --orb-4: #ffb072;
+  --orb-glow: rgba(255, 90, 90, 0.6);
+}
+
+/* ── HTML effect layer (centred over the orb) ───────────────────────── */
+.hud__fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+.hud__fx > * {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* comet strike: a quick bright flash as the comet is absorbed */
+.hud__absorb {
+  width: 34%;
+  height: 34%;
+  background: radial-gradient(circle, #ffffff 0%, var(--orb-3) 35%, transparent 70%);
+  mix-blend-mode: screen;
+  animation: hud-absorb 0.5s ease-out forwards;
+}
+@keyframes hud-absorb {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(0.35); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.25); }
+}
+
+/* response: a tiny ripple shockwave ring + a colour glow blast */
+.hud__ripple {
+  width: 16%;
+  height: 16%;
+  border: 1.5px solid var(--orb-hi);
+  box-shadow: 0 0 10px var(--orb-glow), inset 0 0 6px var(--orb-glow);
+  animation: hud-ripple 0.7s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+@keyframes hud-ripple {
+  0% { opacity: 0.9; transform: translate(-50%, -50%) scale(0.4); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(5); }
+}
+.hud__blast {
+  width: 42%;
+  height: 42%;
+  background: radial-gradient(circle, var(--orb-3) 0%, var(--orb-2) 45%, transparent 72%);
+  mix-blend-mode: screen;
+  animation: hud-blast 0.55s ease-out forwards;
+}
+@keyframes hud-blast {
+  0% { opacity: 0.85; transform: translate(-50%, -50%) scale(0.3); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.6); }
+}
+
+/* ── request comets — a streak flies from the rim into the core ─────── */
+.hud__comets {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.comet {
+  position: absolute;
+  inset: 0;
+  transform-origin: center;
+}
+.comet__streak {
+  position: absolute;
+  left: 50%;
+  top: -45%;
+  width: 1.5px;
+  height: 40%; /* head (bottom) reaches the centre at top:10% */
+  transform: translateX(-50%);
+  background: linear-gradient(to bottom, transparent, var(--accent));
+  border-radius: 2px;
+  animation: comet-in 0.75s cubic-bezier(0.45, 0, 0.55, 1) forwards;
+}
+.comet__streak::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -2px;
+  width: 3px;
+  height: 3px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
+@keyframes comet-in {
+  0% { top: -45%; opacity: 0; }
+  18% { opacity: 1; }
+  82% { opacity: 1; }
+  100% { top: 10%; opacity: 0; }
+}
+
+/* ── system offline — orb forced red + flicker, instrument dimmed ────── */
+.hud[data-down="true"] {
+  --orb-1: #ffd9d4;
+  --orb-2: #ff6b6b;
+  --orb-3: #ff4d5e;
+  --orb-4: #ff7a45;
+  --orb-glow: rgba(255, 70, 70, 0.5);
+}
+.hud[data-down="true"] .hud__ring,
+.hud[data-down="true"] .hud__gauges {
+  opacity: 0.3;
+}
+.hud[data-down="true"] .hud__halo {
+  opacity: 0.3;
+}
+.hud[data-down="true"] .hud__particles {
+  opacity: 0.2;
+}
+.hud[data-down="true"] .hud__comets,
+.hud[data-down="true"] .hud__fx {
+  display: none;
+}
+.hud[data-down="true"] .hud__orb {
+  animation: hud-flicker 2.2s steps(1, end) infinite;
+}
+@keyframes hud-flicker {
+  0%, 8%, 12%, 38%, 42%, 68%, 100% { opacity: 0.8; transform: translate(-50%, -50%) scale(1); }
+  10%, 40% { opacity: 0.15; transform: translate(-50%, -50%) scale(0.97); }
+  70% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .comet__streak,
+  .hud__halo,
+  .hud__particle,
+  .hud__orb,
+  .hud__orb-fluid,
+  .hud__absorb,
+  .hud__ripple,
+  .hud__blast {
+    animation: none;
+  }
+  .hud__particle { opacity: 0.55; }
+  .comet__streak { display: none; }
+}

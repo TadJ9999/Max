@@ -1,0 +1,27 @@
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import { OsintView } from "./osint/OsintView";
+import { MarketView } from "./market/MarketView";
+import { ApolloView } from "./apollo/ApolloView";
+import { HubView, type HubTab } from "./hub/HubView";
+
+// The features open in the unified Hub window (#hub or #hub:<tab>). The legacy
+// per-feature hashes (#osint / #market / #apollo) still resolve to their
+// standalone view for direct links. Empty hash = the floating widget shell.
+const hash = window.location.hash;
+
+function pickRoot() {
+  if (hash.startsWith("#hub")) {
+    const tab = hash.split(":")[1] as HubTab | undefined;
+    return <HubView initialTab={tab ?? "apollo"} />;
+  }
+  if (hash === "#osint") return <OsintView />;
+  if (hash === "#market") return <MarketView />;
+  if (hash === "#apollo") return <ApolloView />;
+  return <App />;
+}
+
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  <React.StrictMode>{pickRoot()}</React.StrictMode>,
+);

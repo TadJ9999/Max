@@ -1,6 +1,8 @@
 # Max — Local-First AI Engine · Roadmap & Brainstorm
 
-> Status: **DRAFT / living document** — still brainstorming. Nothing is locked.
+> Status: **living document** — core decisions locked and the engine MVP is scaffolded
+> (DSL parser, router, Ollama/Claude adapters, delegate engine + `/sessions` API; 29 tests).
+> The phase checklists below track real, code-verified status.
 
 A **local-first**, private AI engine for a powerful workstation, with an **explicit
 opt-in cloud escape hatch**. One always-on **engine** (daemon) does the thinking;
@@ -26,6 +28,16 @@ model on a different task, in parallel.
 - **Workspace access:** a **folder allowlist** set in the UI; anything inside listed paths is in-scope ✅
 - VS Code integration is a **later phase** (after the chat app) ✅
 - Hardware can be upgraded later if the project proves out ✅
+- **Both local (Ollama) + cloud (Claude) wired from day one** (cloud gated by `allow_cloud`) ✅
+- **Fix/refactor operator = `~`** (`!` is reserved as the cloud sigil) ✅
+- **Beyond coding:** Max grows from coding assistant → **general personal assistant** (reports, music, voice, …) ✅
+- **Two planes:** **control plane** (REST + WS/SSE — the client backbone, kept) vs **capability plane** (**MCP** for skills, added) ✅
+- **Capabilities via MCP:** the engine is an **MCP host**; skills plug in behind an internal **capability registry** (MCP = default adapter, *not* hard-wired) ✅
+- **Intent router:** generalize the delegate from "local vs cloud" → **skill domain + model + locality**; the sigil DSL stays the explicit/manual path ✅
+- **Voice:** orchestration via capabilities, but **audio on a dedicated realtime WS channel** (not MCP) ✅
+- **Home/LAN:** networked engine adds **bearer-token auth**; MCP skills run as local subprocess *or* networked service ✅
+- **OSINT news map:** a glowing 2D world map with a **news heat choropleth** (GDELT + RSS, free/key-less) and a **live day/night terminator**, opened in a dedicated large window from below the chat bar; news egress lives in the engine (see [Phase 10](#phase-10--osint-global-news-map---a-glowing-world-map-of-where-the-news-is-happening-with-a-live-daynight-terminator)) ✅
+- *(Full layered design in [docs/architecture.md](docs/architecture.md).)*
 
 ---
 
@@ -92,7 +104,7 @@ work against Max for free; the DSL + routing is the value-add on top.
 | Engine | **Python + FastAPI** ✅ |
 | Local inference | **Ollama** first; adapter to swap → llama.cpp / vLLM |
 | Cloud inference | **Anthropic (Claude)** adapter; pattern reusable for others |
-| Desktop UI | Tauri (light) or Electron — decide in Phase 0 |
+| Desktop UI | **Tauri** ✅ (locked) |
 | VS Code ext | TypeScript |
 | Vector store | sqlite-vec or LanceDB (embedded) |
 
@@ -138,51 +150,60 @@ Parser rules:
 
 ## 3. Phases, milestones & checklist
 
+> Legend: `[x]` done · `[~]` partial (note explains what's left) · `[ ]` not started.
+
 ### Phase 0 — Foundations & decisions  🎯 *stack locked, models benchmarked*
 - [x] Engine language = Python/FastAPI
-- [ ] Desktop UI shell decision (Tauri vs Electron)
-- [ ] Monorepo structure (`/engine`, `/app`, `/extension`, `/docs`)
-- [ ] Install + smoke-test Ollama; set up Anthropic API access for `!`
+- [x] Desktop UI shell decision — **Tauri** (locked)
+- [x] Monorepo structure (`/engine`, `/app`, `/docs` exist; `/extension` lands in Phase 5)
+- [x] Install + smoke-test Ollama ✅ (0.24; `qwen2.5-coder:3b`+`:14b`, smoke all PASS); Anthropic API access for `!` ✅ (key in `engine/.env`)
 - [ ] **Benchmark local models on the 4070 Ti** (tokens/s, VRAM, quality) → shortlist
-- [ ] Dev tooling: lint/format/test/CI; SessionStart hook for web sessions
-- [ ] Lock the DSL grammar (sigils + operators + escaping)
+- [~] Dev tooling: lint/format/test done (**ruff + pytest, 29 passing**); **CI** + SessionStart hook pending
+- [x] Lock the DSL grammar (sigils + operators + escaping) — parser implemented + tested
 
 ### Phase 1 — Engine MVP (the brain)  🎯 *`curl` can chat with Max via any provider*
 - [x] Provider adapter interface
-- [x] Ollama (local) adapter (streaming; mock-tested) — *needs live Ollama to verify end-to-end*
-- [x] Anthropic/Claude (cloud) adapter (streaming; mock-tested) — *needs API key to verify end-to-end*
+- [x] Ollama (local) adapter (streaming) — **verified end-to-end** against live Ollama (`/command` + `/v1/chat/completions` stream real tokens; sessions run → done)
+- [x] Anthropic/Claude (cloud) adapter (streaming) — **verified end-to-end** (`!` + cloud sessions stream real Claude output; API errors surfaced)
 - [x] OpenAI-compatible `/v1/chat/completions` with **streaming** (SSE); `provider` selectable
 - [x] `/command` endpoint: full DSL → router → provider stream (sigil picks local/cloud)
 - [x] Per-provider model overrides (cloud `!` → Claude model, local → coder model)
-- [ ] Provider router (sigil → adapter+model) + per-task default model config
-- [ ] Config system (models, sigils, params, API keys) — file-based, hot-reload
-- [ ] **Privacy guard**: detect + mark cloud egress; secure API-key storage
-- [ ] Health/status endpoint; run as background daemon
+- [x] Provider router (sigil → adapter+model) + per-task default model config (`router.py`; per-task default *provider* still TODO)
+- [~] Config system — defaults + **file-backed persistence for UI settings** (`/config` GET/PUT → `.maxconfig.json`: cloud, delegate mode, parallel limits, workspace allowlist); models/sigils/keys + hot-reload still pending
+- [~] **Privacy guard** — cloud routes flagged (`is_cloud`) + `allow_cloud` gate + keys from env; **egress audit log + secure key store pending**
+- [~] Health/status endpoint (`/health` ✅); **background daemon mode pending**
 
 ### Phase 2 — Command DSL & routing  🎯 *send `!.`/`@..`/`#.` strings → correct provider + behavior*
-- [ ] DSL parser (sigils + `.`/`..`, escaping, nested code)
-- [ ] Wire parser → router → adapter
-- [ ] `.` → code generation (insertable code, not chatty prose)
-- [ ] `..` → docstring / README generation
-- [ ] Output post-processing (strip fences, match indentation/style)
+- [x] DSL parser (sigils + `.`/`..`, escaping, nested code) — `dsl/parser.py`, tested
+- [x] Wire parser → router → adapter — the `/command` endpoint
+- [x] `.` → code generation — `generate` system prompt (output quality to tune post-benchmark)
+- [x] `..` → docstring / README generation — `summarize` system prompt
+- [ ] Output post-processing (strip fences, match indentation/style) — *prompt-only today; no post-processor yet*
 
-### Phase 3 — Desktop chat app  🎯 **v1 — chat + configure everything from the app**
-- [ ] Chat UI (streaming, markdown, code blocks, copy) with a **cloud indicator** when `!` used
+### Phase 3 — Desktop widget app  🎯 **v1 — floating widget + configure everything** ([UI design](docs/ui.md))
+- [x] **Floating transparent widget** — frameless/transparent/always-on-top/skip-taskbar window, **top-right anchoring**, **global hotkey toggle** (`Ctrl+Shift+M`), and **click-through-when-idle** (Rust cursor-poll). ✅ *Confirmed on-screen (placement, hotkey, hover interactivity).*
+- [x] **Live vector mascot** ("X") reacting to engine state (idle / thinking / busy / done / error) — built as a **"Jarvis"-style SVG + CSS HUD** (not Rive; same state API)
+- [x] **Task cards** per session (model · provider · state · ☁ marker · cancel/promote) — **live**: polls the engine's `/sessions` (~2s), cancel/promote call the engine; mascot reacts to real session states. Falls back to placeholders when the engine is offline.
+- [x] **SYS INFO** meters (CPU · GPU · **VRAM** · RAM) + **⚙ settings** cog — **live** values (Rust `sysinfo` for CPU/RAM, `nvidia-smi` for GPU/VRAM, polled ~1.5s); mascot reacts to real VRAM
+- [x] Chat UI — plain chat (`/chat`) + DSL commands (`/command`), **markdown with code blocks + copy button**, cloud (`!`) indicator, SSE streaming, `/health` status dot
 - [ ] **Model manager**: list / download / switch / params (temp, ctx, quant)
 - [ ] **Routing config**: map sigils → providers/models, set **per-task defaults**, assign **hotkeys**
-- [ ] **Provider/key management** (add Claude key, toggle cloud on/off)
+- [~] **Provider/key management** — cloud on/off ✅ + **key-set status** shown in settings; per-provider key *entry* stays in `engine/.env` by design (no secret-handling in the UI)
 - [ ] Engine start/stop/restart + live VRAM/RAM meters
-- [ ] Settings: **auto-delegate toggle (Manual / Smart-Auto)**, cloud on/off
-- [ ] **Workspace folder allowlist** — list the paths Max may read/operate on
+- [x] Settings: **auto-delegate toggle (Manual / Smart-Auto)** + cloud on/off + **parallel limits** — live via `/config`, persisted to `.maxconfig.json`
+- [x] **Workspace folder allowlist** — add/remove paths in settings, persisted
 
 ### Phase 4 — Delegate system: parallel sessions & multi-model orchestration  🎯 *run many tasks at once, each on its own model*
-- [ ] Session manager: spawn / track / cancel concurrent sessions, each bound to a provider+model
-- [ ] **Mode toggle (settings): Manual** (you assign model+task) **and Smart-Auto** (AI decides local vs cloud)
-- [ ] Smart-Auto router: choose local vs cloud per task, primarily by **task complexity** (queue depth as tie-breaker)
-- [ ] Task scheduler aware of the **12 GB VRAM limit** (cloud + small-local run in parallel; heavy local models queue)
-- [ ] **Queue dashboard** with manual override: push a queued task to cloud when local is backed up
+*Engine side built + tested (29 tests); the dashboard/streaming UI lands with the Tauri app (Phase 3).*
+- [x] Session manager: spawn / track / cancel concurrent sessions, each bound to a provider+model
+- [x] **Mode (config): Manual** (you assign model+task) **and Smart-Auto** (engine decides local vs cloud)
+- [x] Smart-Auto router: choose local vs cloud per task by **task complexity** (+ local queue depth)
+- [x] Task scheduler aware of the **12 GB VRAM limit** (cloud + small-local run in parallel; heavy local models queue)
+- [x] Manual override (backend): `promote` a queued session to cloud when local is backed up
+- [x] **Isolated sessions** — each tracked + retrieved separately (`/sessions` API)
+- [ ] **Queue dashboard** (UI) — live view + drag-to-cloud (with Tauri app)
+- [ ] Streaming each session's output concurrently to the client (SSE/WebSocket)
 - [ ] Delegator/coordinator (optional): decompose one request into subtasks fanned out to workers
-- [ ] **Isolated sessions** — each result in its own pane/view, all streaming concurrently
 
 ### Phase 5 — VS Code extension  🎯 *type `. … .` live → code appears; `!.` routes to cloud*
 - [ ] **Live-as-you-type** detection (fire on closing delimiter) + debounce/cancel
@@ -207,7 +228,52 @@ Parser rules:
 - [ ] Multi-file / repo-wide edits with plan + approval
 - [ ] User-defined custom commands & template library
 - [ ] More providers (OpenAI, local llama.cpp/vLLM) + more clients (CLI, Neovim, LAN)
-- [ ] Voice input, vision models, tool-calling/agents
+- [ ] Vision models  *(voice + tool-calling/agents → **Phase 9** capability platform)*
+
+### Phase 9 — Capability platform & general assistant (beyond coding)  🎯 *add skills, not rewrite the core* ([architecture](docs/architecture.md))
+*Turns Max from a coding assistant into a general personal assistant. Layered so each new ability is a plug-in, not a core change. Builds on the engine/delegate already in place — keeps 100% of current functionality.*
+- [ ] **MCP host** in the engine — discover/load/manage MCP servers (stdio + networked) and expose their tools to models
+- [ ] **Capability registry** — internal `Capability` interface; **MCP is the default adapter**, with native-Python / HTTP adapters possible (no lock-in)
+- [ ] **Intent router** — classify free-form requests into a **skill domain** (code / music / report / Q&A / …) + pick capability + model; tiny resident local model as the classifier; the sigil DSL stays the explicit path
+- [ ] **First skills** (prove the platform): **write reports**, **play music**, **web/search**, **files/calendar** — each an MCP server
+- [ ] **Voice** — wake word + STT + TTS as a capability over a **dedicated low-latency WebSocket audio pipeline** (kept separate from the control plane)
+- [ ] **Auth for home/LAN** — bearer-token on the API once it leaves localhost-only; per-skill placement (local subprocess vs networked)
+- [ ] **Outward MCP façade (optional)** — expose Max *itself* as an MCP server so external agents (Claude Desktop, Cursor) can "ask Max" / use its local models
+
+### Phase 10 — OSINT global news map  🎯 *a glowing world map of where the news is happening, with a live day/night terminator*
+*A button below the chat bar opens a large dedicated window (the 360×640 widget is too small) with a 2D world map: glowing-blue country wireframe, a news-driven heat choropleth, and a real-time day/night terminator. All news egress lives in the engine (clients stay thin), consistent with the privacy-marked model; the map atlas is bundled locally so only news data touches the network.*
+
+**Decisions locked:** 2D flat (equirectangular) map · dedicated large window (browser-preview falls back to an in-page overlay) · **GDELT + RSS** from day one (free, no key) · engine-side egress · bundled atlas.
+
+- [x] **Engine OSINT module** (`engine/max_engine/osint/`): GDELT DOC 2.0 client + stdlib RSS/Atom fetcher + country gazetteer (name/demonym → ISO-A3) + importance scorer (volume × source-diversity × recency) + TTL-cached aggregator service
+- [x] **Endpoints**: `GET /osint/heatmap` (per-country 0..1 intensity), `GET /osint/articles?country=&limit=` (ranked, newest-first), `GET /osint/sources`
+- [x] **Config**: `OsintConfig` (GDELT query/timespan/max-records, feed list, cache TTL); no new Python deps (stdlib XML, existing httpx)
+- [x] **Tests**: `tests/test_osint.py` — gazetteer, GDELT/RSS parsing, scoring, dedup, caching, endpoints (13 tests, network mocked) — full suite 50 passing, ruff clean
+- [x] **Desktop map** (`app/src/osint/`): `WorldMap` (d3-geo equirectangular + `world-atlas` TopoJSON, glow wireframe, heat choropleth, hover/select), `terminator.ts` (subsolar point + night ring, refreshed each minute), `OsintView` (map + ranked countries + article panel), `OsintButton` (below chat bar)
+- [x] **Dedicated window**: `#osint` hash route in `main.tsx`; Tauri `WebviewWindow` (1180×760, resizable) + `core:webview:allow-create-webview-window` capability; in-page overlay fallback outside Tauri
+- [x] **Severity classification** — Critical / High / Medium / Low from headline *content* (word-boundary keyword tiers, `osint/severity.py`); country badge = **recency-weighted mean** so one outlier story can't flip a whole country; filter bar (top of view) gates map + hotspots + articles by tier
+- [x] **Sleeker "threat-intercept" redesign** — dropped the rainbow heat ramp for a discrete dark-ops threat scale (cyan→amber→orange→rose) with per-tier glow; tactical graticule; severity-coded hotspot bars + article edges (shadowbroker-style aesthetic)
+- [x] **Naval layer (US fleet positions)** — `osint/naval.py`: parses the latest USNI Fleet Tracker (read via its WordPress *feed*, which dodges Cloudflare) + TWZ Carrier Tracker, anchors on hull tokens (`CVN-73`) with name fallback, geocodes the nearest region phrase via a sea/port/AOR gazetteer (open-water beats homeport), and serves `GET /osint/naval`. Carrier (gold chevron) + amphib (steel diamond) markers with a `⚓ Fleet` toggle; positions flagged **estimated / region-level / dated** (no real-time GPS exists publicly). 6 naval tests. Groundwork for future track prediction.
+- [x] **Verified end-to-end**: live GDELT+RSS (e.g. 360 signals / 61 countries), severity tiers (Zaporizhzhia/Iran/Israel → Critical/High), threat shading, moving terminator + subsolar marker, filter toggles, country click → filtered articles; `npm run build` + `tsc` clean
+- [ ] **Surface egress in settings/privacy guard** (OSINT makes outbound calls to public news; mark it like the cloud `!` sigil) + optional network kill-switch integration (Phase 7)
+- [ ] **Tauri external links** via the opener plugin (article links use `<a target=_blank>`; fine in the browser, route through `opener` inside the desktop shell)
+- [ ] **Tuning & breadth**: GDELT theme-query tuning for "most important"; expand the gazetteer beyond the newsworthy core; per-source toggles in the UI; optional GDELT tone signal in the score
+- [ ] *(stretch)* time-scrubber to replay the last 24h of heat; cluster/event detail on click
+
+---
+
+### Phase 11 — Market: live stocks + AI Ingest  🎯 *a live US-stock tape with an on-demand AI read*
+*A `$` button below the chat bar (next to OSINT) opens a large dedicated window: a live US-stock board on the left and an AI analysis panel on the right. Quote egress lives in the engine. Mirrors the OSINT feature's shape.*
+
+**Decisions locked:** **Finnhub** as the source (free `FINNHUB_API_KEY` in `engine/.env`, treated like the cloud key — never stored) · **user-editable** watchlist (curated megacap default, persisted) · AI analysis runs **only** on the top **"Ingest"** button (cloud Claude when `allow_cloud`, else local) · "live" = frontend polls every ~10s against a 10s engine TTL cache.
+
+- [x] **Engine market module** (`engine/max_engine/market/`): Finnhub `/quote` + `/stock/profile2` client (per-symbol failures swallowed), `MarketService` with concurrent fetch + TTL cache + watchlist mutation, `Quote`/`MarketBoard` models
+- [x] **Endpoints**: `GET /market/quotes` (live board), `GET`/`PUT /market/watchlist` (editable + persisted), `GET /market/sources` (provider + `key_set`), `POST /market/analyze` (SSE — the "Ingest" read, reuses `_sse_stream` + the `market` analyst prompt)
+- [x] **Config**: `MarketConfig` (watchlist + cache TTL); watchlist round-trips through the persisted-override subset; no new Python deps (existing httpx)
+- [x] **Tests**: `tests/test_market.py` — quote parsing, unknown-symbol/HTTP-error skip, board aggregation + caching, no-key empty board, watchlist round-trip/dedup, endpoints (network mocked)
+- [x] **Desktop board** (`app/src/market/`): `MarketView` (polling stock rows, green-up/red-down, watchlist add/remove, streaming Ingest panel), `MarketButton` (`$` icon, next to OSINT), `market.ts` client; `#market` hash route + `market` Tauri window capability; in-page overlay fallback
+- [ ] **Surface egress in settings/privacy guard** (Market makes outbound calls to Finnhub; mark it like OSINT / the cloud `!` sigil)
+- [ ] *(stretch)* WebSocket trade stream for true real-time ticks; per-ticker AI drill-down; sparkline charts; intraday history
 
 ---
 
@@ -221,8 +287,7 @@ Parser rules:
 6. **Everything configurable** (sigils, operators, per-task models, hotkeys, templates) — your core ask.
 
 ## 5. Open questions (next round)
-- Desktop shell: **Tauri** (light, Rust+web) or **Electron** (familiar, heavier)?
-- For chat-app v1, do we wire **both** local (Ollama) and cloud (Claude) from day one, or local-only first then add `!`?
-- Operator collision: `!` is the cloud sigil — keep `!` for fix/refactor, or pick a different operator (e.g. `~`)?
+*(Resolved: Tauri shell, `~` fix operator, and both local+cloud from day one — now under "Decisions locked".)*
 - Does v1 chat app need **codebase RAG**, or is plain chat + model config enough to start?
-- Default per-task models — want me to propose a concrete default mapping after the Phase 0 benchmark?
+- Default per-task models — propose a concrete default mapping after the Phase 0 benchmark?
+- **Engine end-to-end verification** (next milestone): which local model(s) to pull first for the smoke test, and do we test the `!` cloud path now or after a key is set up?

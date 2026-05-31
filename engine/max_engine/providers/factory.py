@@ -15,5 +15,7 @@ def build_provider(name: str, config: EngineConfig) -> Provider:
     if pc.kind == "cloud":
         return AnthropicProvider(name=pc.name)
     return OllamaProvider(
-        name=pc.name, base_url=pc.base_url or "http://127.0.0.1:11434"
+        name=pc.name,
+        base_url=pc.base_url or "http://127.0.0.1:11434",
+        keep_alive=config.idle.keep_alive,
     )

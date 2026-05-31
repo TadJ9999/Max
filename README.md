@@ -8,6 +8,7 @@ thin **clients** (a desktop chat app and, later, a VS Code extension) talk to it
 - ☁️ **Cloud on demand** — the `!` sigil routes to a cloud model (e.g. Claude), clearly marked.
 - 🧩 **DSL commands** — `. generate code .` and `.. document this ..`, with provider sigils.
 - 🪄 **Delegate system** — run many tasks in parallel, Manual or Smart-Auto (AI picks local vs cloud).
+- 📈 **Market** — a live US-stock tape (Finnhub) with an editable watchlist and on-demand AI **"Ingest"** analysis. Needs a free `FINNHUB_API_KEY` in `engine/.env`.
 - ⚙️ **Everything configurable** — per-task models, sigils, hotkeys, prompt templates.
 
 See **[ROADMAP.md](./ROADMAP.md)** for the full plan and **[docs/architecture.md](./docs/architecture.md)**.
@@ -32,5 +33,10 @@ uvicorn max_engine.main:app --reload
 # health check:  curl http://127.0.0.1:8000/health
 ```
 
-> Status: early scaffold. The DSL parser is implemented and tested; provider adapters
-> and the delegate scheduler are stubs that map directly to the roadmap phases.
+For a full end-to-end check (engine + local models + cloud), see
+**[docs/setup.md](./docs/setup.md)** and run `./scripts/smoke.ps1 -Start`.
+
+> Status: early scaffold. The DSL parser, provider router, Ollama/Claude adapters, and the
+> delegate engine + `/sessions` API are implemented and tested (mock-tested; live Ollama and an
+> Anthropic key are still needed for end-to-end verification). The desktop app is not yet scaffolded.
+> See [ROADMAP.md](./ROADMAP.md) for phase-by-phase status.

@@ -72,13 +72,9 @@ class DelegateEngine:
         if self.config.delegate.mode != "smart-auto":
             return "ollama"
         local_queue = sum(
-            1
-            for s in self.manager.list()
-            if s.state == SessionState.QUEUED and not s.is_cloud
+            1 for s in self.manager.list() if s.state == SessionState.QUEUED and not s.is_cloud
         )
-        want_cloud = self.config.allow_cloud and Scheduler.prefer_cloud(
-            complexity, local_queue
-        )
+        want_cloud = self.config.allow_cloud and Scheduler.prefer_cloud(complexity, local_queue)
         return "claude" if want_cloud else "ollama"
 
     def promote_to_cloud(self, session_id: str, provider: str = "claude") -> Session:

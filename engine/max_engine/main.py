@@ -12,27 +12,154 @@ Run::
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import AsyncIterator
+from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from . import __version__
-from .config import load_config
+from .apollo import ApolloService, VectorStore
+from .config import load_config, save_overrides
+from .delegate.engine import DelegateEngine
 from .dsl import ParseError, parse_command
-from .prompts import messages_for
+from .market import MarketService, board_digest
+from .osint import EventsService, NavalService, OsintService
+from .prompts import market_chat_messages, messages_for
 from .providers.base import Provider
 from .providers.factory import build_provider
 from .router import resolve
 
+# Load engine/.env (e.g. ANTHROPIC_API_KEY) if present, before providers read it.
+# Explicit path so it works regardless of the launch directory; override=True so
+# the file is authoritative over a stale/empty pre-existing env var.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
+
 app = FastAPI(title="Max Engine", version=__version__)
+
+# The engine binds to localhost and is consumed by local clients (the Tauri
+# widget's webview, browser previews, VS Code). Allow any local origin so those
+# clients can call it; tighten if the engine is ever exposed on the network.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 config = load_config()
+delegate = DelegateEngine(config)
+osint = OsintService(
+    feeds=config.osint.feeds,
+    query=config.osint.gdelt_query,
+    timespan=config.osint.gdelt_timespan,
+    max_records=config.osint.gdelt_max_records,
+    ttl_seconds=config.osint.ttl_seconds,
+)
+naval = NavalService(
+    twz_url=config.osint.naval_twz_url,
+    ttl_seconds=config.osint.naval_ttl_seconds,
+)
+events = EventsService()
+market = MarketService(
+    symbols=config.market.watchlist,
+    api_key=os.environ.get("FINNHUB_API_KEY"),
+    ttl_seconds=config.market.ttl_seconds,
+)
+def _make_store(path: str) -> VectorStore | None:
+    """Best-effort: a VectorStore if sqlite-vec loads, else None (Apollo still
+    runs, just without memory)."""
+    try:
+        store = VectorStore(path)
+        store.stats()  # forces connect + extension load; surfaces failure now
+        return store
+    except Exception as e:  # pragma: no cover - environment-dependent
+        print(f"[apollo] vector store unavailable ({e}); memory disabled")
+        return None
+
+
+_ollama_pc = next((p for p in config.providers if p.name == "ollama"), None)
+apollo = ApolloService(
+    osint=osint,
+    market=market,
+    store=_make_store(config.apollo.db_path),
+    embed_model=config.apollo.embed_model,
+    base_url=(_ollama_pc.base_url if _ollama_pc else "http://127.0.0.1:11434"),
+    ttl_seconds=config.apollo.ttl_seconds,
+    retrieve_k=config.apollo.retrieve_k,
+)
 
 
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "version": __version__}
+
+
+# ---- Settings (UI-editable config) -------------------------------------
+
+
+def _config_view() -> dict:
+    """The UI-facing settings. Never exposes the API key — only whether one is set."""
+    return {
+        "allow_cloud": config.allow_cloud,
+        "cloud_key_set": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "delegate": {
+            "mode": config.delegate.mode,
+            "max_parallel_local": config.delegate.max_parallel_local,
+            "max_parallel_cloud": config.delegate.max_parallel_cloud,
+        },
+        "idle": {"keep_alive": config.idle.keep_alive},
+        "workspace_allowlist": config.workspace_allowlist,
+    }
+
+
+@app.get("/config")
+def get_config() -> dict:
+    return _config_view()
+
+
+class DelegatePatch(BaseModel):
+    mode: str | None = None
+    max_parallel_local: int | None = None
+    max_parallel_cloud: int | None = None
+
+
+class IdlePatch(BaseModel):
+    keep_alive: str | None = None
+
+
+class ConfigPatch(BaseModel):
+    allow_cloud: bool | None = None
+    workspace_allowlist: list[str] | None = None
+    delegate: DelegatePatch | None = None
+    idle: IdlePatch | None = None
+
+
+@app.put("/config")
+def update_config(patch: ConfigPatch) -> dict:
+    """Apply UI settings to the live config and persist them."""
+    if patch.allow_cloud is not None:
+        config.allow_cloud = patch.allow_cloud
+    if patch.workspace_allowlist is not None:
+        config.workspace_allowlist = patch.workspace_allowlist
+    if patch.delegate is not None:
+        d = patch.delegate
+        if d.mode is not None:
+            if d.mode not in ("manual", "smart-auto"):
+                raise HTTPException(status_code=400, detail="mode must be 'manual' or 'smart-auto'")
+            config.delegate.mode = d.mode
+        if d.max_parallel_local is not None:
+            config.delegate.max_parallel_local = max(1, d.max_parallel_local)
+        if d.max_parallel_cloud is not None:
+            config.delegate.max_parallel_cloud = max(1, d.max_parallel_cloud)
+    if patch.idle is not None and patch.idle.keep_alive is not None:
+        config.idle.keep_alive = patch.idle.keep_alive
+    save_overrides(config)
+    return _config_view()
 
 
 class ParseRequest(BaseModel):
@@ -118,8 +245,7 @@ async def chat_completions(req: ChatRequest):
         "object": "chat.completion",
         "model": req.model,
         "choices": [
-            {"index": 0, "message": {"role": "assistant", "content": text},
-             "finish_reason": "stop"}
+            {"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}
         ],
     }
 
@@ -148,4 +274,334 @@ async def command(req: CommandRequest):
     return _sse_stream(provider, route.model, messages)
 
 
-# TODO(Phase 4): /sessions  (delegate: spawn / list / cancel)
+class ChatTextRequest(BaseModel):
+    text: str
+
+
+@app.post("/chat")
+async def chat(req: ChatTextRequest):
+    """Plain conversational chat (no DSL operators required). Routes to the
+    default local provider with the configured chat model and streams the reply.
+    Use the ``/command`` endpoint for DSL commands (``.``/``..``/``~`` + sigils)."""
+    provider = build_provider("ollama", config)
+    model = config.task_models.get("chat", "qwen2.5-coder:14b")
+    messages = messages_for("chat", req.text)
+    return _sse_stream(provider, model, messages)
+
+
+# ---- Delegate system: parallel sessions --------------------------------
+
+
+class TaskSpec(BaseModel):
+    task: str
+    action: str = "generate"
+    provider: str | None = None  # None => decided by delegate mode (Manual/Smart-Auto)
+    complexity: float = 0.5  # Smart-Auto hint (0..1); higher => more likely cloud
+
+
+class SubmitRequest(BaseModel):
+    tasks: list[TaskSpec]
+
+
+@app.post("/sessions")
+async def create_sessions(req: SubmitRequest):
+    """Fan out one or more tasks as isolated parallel sessions, then schedule them."""
+    created = []
+    for spec in req.tasks:
+        try:
+            s = delegate.submit(
+                spec.task,
+                action=spec.action,
+                provider=spec.provider,
+                complexity=spec.complexity,
+            )
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e)) from e
+        created.append(s)
+    await delegate.kick()
+    return {"sessions": [s.to_dict() for s in created]}
+
+
+@app.get("/sessions")
+def list_sessions():
+    """List all sessions (isolated — each output viewed separately)."""
+    return {"sessions": [s.to_dict() for s in delegate.manager.list()]}
+
+
+@app.get("/sessions/{session_id}")
+def get_session(session_id: str):
+    s = delegate.manager.get(session_id)
+    if s is None:
+        raise HTTPException(status_code=404, detail="no such session")
+    return s.to_dict()
+
+
+@app.post("/sessions/{session_id}/cancel")
+def cancel_session(session_id: str):
+    if delegate.manager.get(session_id) is None:
+        raise HTTPException(status_code=404, detail="no such session")
+    delegate.cancel(session_id)
+    return delegate.manager.get(session_id).to_dict()
+
+
+@app.post("/sessions/{session_id}/promote")
+async def promote_session(session_id: str):
+    """Manual override: push a still-queued session to the cloud, then reschedule."""
+    try:
+        s = delegate.promote_to_cloud(session_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="no such session") from e
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    await delegate.kick()
+    return s.to_dict()
+
+
+# ---- OSINT: global news heat map ---------------------------------------
+
+
+@app.get("/osint/heatmap")
+async def osint_heatmap() -> dict:
+    """Per-country news intensity (0..1) from GDELT + RSS, cached for a TTL.
+
+    Outbound egress to public news services; aggregated in the engine so the
+    client stays thin. Returns empty ``countries`` if every source is unreachable.
+    """
+    heatmap = await osint.get_heatmap()
+    return heatmap.to_dict()
+
+
+@app.get("/osint/articles")
+async def osint_articles(country: str | None = None, limit: int = 50) -> dict:
+    """Ranked articles, newest first. Pass ``country`` (ISO-A3) to scope to one;
+    omit it for the global top."""
+    articles = await osint.get_articles(iso=country, limit=limit)
+    return {
+        "country": country.upper() if country else None,
+        "articles": [a.to_dict() for a in articles],
+    }
+
+
+@app.get("/osint/sources")
+def osint_sources() -> dict:
+    """Where the heat map's data comes from (for the UI's source panel)."""
+    return osint.sources()
+
+
+@app.get("/osint/events")
+async def osint_events() -> dict:
+    """Geospatial event markers (earthquakes ≥ M4.5, GDACS disaster alerts).
+    Free, key-less sources; cached 5 min. Overlay-ready lat/lon + severity."""
+    return await events.get()
+
+
+@app.get("/osint/naval")
+async def osint_naval() -> dict:
+    """US carrier / big-deck amphib position *estimates* from public OSINT
+    trackers (USNI + TWZ). Region-level and dated — not real-time GPS."""
+    return await naval.get()
+
+
+# ---- Market: live US-stock board + AI "Ingest" -------------------------
+
+
+def _ai_route() -> tuple[str, str]:
+    """Pick (provider, model) for an AI analysis stream: cloud Claude when
+    allowed, else the local default. Mirrors the resolve() cloud gate without the
+    DSL. Used by Market and Apollo."""
+    if config.allow_cloud:
+        model = config.provider_models.get("claude", {}).get("chat", "claude-sonnet-4-6")
+        return "claude", model
+    return "ollama", config.task_models.get("chat", "qwen2.5-coder:14b")
+
+
+def _stream_ai(action: str, payload: dict) -> StreamingResponse:
+    """Route to cloud/local, build messages for ``action`` from a JSON payload,
+    and stream the reply. The shared path behind Market analyze + Apollo reports."""
+    provider_name, model = _ai_route()
+    try:
+        provider = build_provider(provider_name, config)
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return _sse_stream(provider, model, messages_for(action, json.dumps(payload)))
+
+
+@app.get("/market/quotes")
+async def market_quotes() -> dict:
+    """Live quotes for the watchlist (Finnhub), cached for a short TTL. Returns an
+    empty board if ``FINNHUB_API_KEY`` is unset or every fetch fails."""
+    board = await market.get_board()
+    return board.to_dict()
+
+
+@app.get("/market/watchlist")
+def market_watchlist() -> dict:
+    return {"watchlist": market.get_watchlist()}
+
+
+class WatchlistPatch(BaseModel):
+    symbols: list[str]
+
+
+@app.put("/market/watchlist")
+def market_set_watchlist(patch: WatchlistPatch) -> dict:
+    """Replace the watchlist and persist it (user-editable, survives restarts)."""
+    symbols = market.set_watchlist(patch.symbols)
+    config.market.watchlist = symbols
+    save_overrides(config)
+    return {"watchlist": symbols}
+
+
+@app.get("/market/sources")
+def market_sources() -> dict:
+    """Where the board's data comes from + whether the API key is set (for the UI)."""
+    return market.sources()
+
+
+@app.post("/market/analyze")
+async def market_analyze():
+    """The "Ingest" action: snapshot the live board (quotes + computed breadth +
+    recent market news) and stream a structured AI read of it.
+
+    Routes to cloud Claude when ``allow_cloud`` is on, else the local model.
+    Informational only — not financial advice (see the ``market`` prompt)."""
+    board = await market.get_board()
+    news = await market.get_news(count=8)
+    payload = {"board": board.to_dict(), "stats": board_digest(board), "news": news}
+    return _stream_ai("market", payload)
+
+
+class MarketChatRequest(BaseModel):
+    messages: list[ChatMessage]
+
+
+@app.post("/market/chat")
+async def market_chat_endpoint(req: MarketChatRequest):
+    """Conversational Q&A about the live board, through the same AI pipeline as
+    Ingest (cloud Claude when ``allow_cloud`` is on, else the local model). The
+    current board snapshot is folded into the system prompt. Informational only."""
+    board = await market.get_board()
+    snapshot = json.dumps(board.to_dict())
+    provider_name, model = _ai_route()
+    try:
+        provider = build_provider(provider_name, config)
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    history = [msg.model_dump() for msg in req.messages]
+    messages = market_chat_messages(snapshot, history)
+    return _sse_stream(provider, model, messages)
+
+
+# ---- Local model lifecycle ---------------------------------------------
+
+
+@app.post("/engine/unload")
+async def engine_unload() -> dict:
+    """Free the local chat model from RAM/VRAM now (Ollama ``keep_alive=0``).
+    It reloads automatically on the next local request. Idle models also unload
+    on their own after ``config.idle.keep_alive`` (see settings)."""
+    model = config.task_models.get("chat", "qwen2.5-coder:14b")
+    provider = build_provider("ollama", config)
+    unloaded = await provider.unload(model)  # type: ignore[attr-defined]
+    return {"unloaded": unloaded, "model": model, "keep_alive": config.idle.keep_alive}
+
+
+# ---- Apollo: prediction engine -----------------------------------------
+#
+# Apollo's SSE carries two kinds of events besides the model deltas:
+#   {"object":"apollo.status","stage":..., "db":0|1|-1}  — live call trace; `db`
+#       is +1 for a vector-memory WRITE, -1 for a READ, 0 otherwise (drives the
+#       UI call-log + the mascot's "learning" pulse).
+# Model text uses the same chat.completion.chunk shape as everywhere else.
+
+
+def _ev(payload: dict) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+def _status_ev(stage: str, db: int = 0) -> str:
+    return _ev({"object": "apollo.status", "stage": stage, "db": db})
+
+
+def _delta_ev(text: str, model: str) -> str:
+    return _ev(
+        {
+            "object": "chat.completion.chunk",
+            "model": model,
+            "choices": [{"index": 0, "delta": {"content": text}, "finish_reason": None}],
+        }
+    )
+
+
+async def _apollo_run(kind: str):
+    """Generator for an Apollo report/prediction: emit a real call trace as each
+    stage runs (aggregate → embed/store or retrieve → generate), then stream the
+    model. ``kind`` is 'osint' | 'market' | 'predict'."""
+
+    async def gen():
+        try:
+            yield _status_ev("Contacting engine…")
+            if kind == "osint":
+                yield _status_ev("Pulling GDELT + RSS feeds…")
+                payload = await apollo.osint_payload()
+                yield _status_ev("Scoring severity · ranking hotspots…")
+                yield _status_ev("Embedding criticals → vector memory", db=1)
+                n = await apollo.ingest_osint(payload)
+                yield _status_ev(f"Wrote {n} memories · purged >24h", db=1)
+                action = "apollo_osint"
+            elif kind == "market":
+                yield _status_ev("Fetching quotes · breadth · market news…")
+                payload = await apollo.market_payload()
+                yield _status_ev("Embedding market snapshot → vector memory", db=1)
+                n = await apollo.ingest_market(payload)
+                yield _status_ev(f"Wrote {n} memories · purged >24h", db=1)
+                action = "apollo_market"
+            else:  # predict
+                yield _status_ev("Assembling OSINT + market signals…")
+                payload = await apollo.combined_payload()
+                yield _status_ev("Recalling related memory (vector search)…", db=-1)
+                memory = await apollo.retrieve_for_prediction(payload)
+                yield _status_ev(f"Recalled {len(memory)} prior signals", db=-1)
+                payload["memory"] = memory
+                action = "apollo_predict"
+
+            provider_name, model = _ai_route()
+            yield _status_ev(f"Generating via {provider_name} · {model}…")
+            provider = build_provider(provider_name, config)
+            async for chunk in provider.chat(model, messages_for(action, json.dumps(payload))):
+                if chunk.text:
+                    yield _delta_ev(chunk.text, model)
+            yield "data: [DONE]\n\n"
+        except Exception as e:  # surface backend errors to the client
+            yield _ev({"error": {"message": str(e), "type": type(e).__name__}})
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@app.post("/apollo/osint-report")
+async def apollo_osint_report():
+    """Stream an AI situational report over the highest-severity world news,
+    embedding the criticals into 24h vector memory as it goes."""
+    return await _apollo_run("osint")
+
+
+@app.post("/apollo/market-report")
+async def apollo_market_report():
+    """Stream an AI market report (quotes + breadth + news), embedding the
+    snapshot into vector memory."""
+    return await _apollo_run("market")
+
+
+@app.post("/apollo/predict")
+async def apollo_predict():
+    """Stream forward-looking predictions on global conflicts + markets, grounded
+    in the current brief, the live market, and recalled vector memory."""
+    return await _apollo_run("predict")
+
+
+@app.get("/apollo/status")
+def apollo_status() -> dict:
+    """Vector-memory stats (counts by kind, oldest/newest) for the UI."""
+    return apollo.memory_stats()
