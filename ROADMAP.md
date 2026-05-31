@@ -216,9 +216,12 @@ Parser rules:
 - [ ] (Stretch) ghost-text **FIM autocomplete** as a separate fast channel
 
 ### Phase 6 — Context & RAG (Max knows your codebase)  🎯 *context-aware answers*
-- [ ] Workspace indexer (walk, chunk, ignore rules)
-- [ ] Embeddings + local vector store; incremental re-index
-- [ ] Retrieval injected into prompts; per-project / session **memory**
+*Engine side built + tested (`engine/max_engine/rag/`, 17 tests). Indexing is scoped to the workspace allowlist (privacy). UI wiring + session memory still open.*
+- [x] Workspace indexer — file walk with noise-dir pruning + text/size filters; line-aligned overlapping chunker (`rag/chunker.py`)
+- [x] Embeddings + local vector store (sqlite-vec, `rag/store.py`); **incremental re-index** keyed on per-file content hash (skip unchanged, drop deleted)
+- [x] Retrieval injected into prompts — `POST /rag/ask` retrieves context and streams a grounded answer **cited by `file:line`** (+ `/rag/index`, `/rag/search`, `/rag/status`, `/rag/clear`)
+- [ ] **UI**: a "knows your code" toggle/affordance in the widget (index button + grounded ask)
+- [ ] Per-project / session **memory** (carry retrieved/used context across turns)
 
 ### Phase 7 — Performance & privacy polish  🎯 *snappy, stable, provably local-by-default*
 - [ ] **Two-model routing**: tiny resident completer + heavy on-demand gen/chat

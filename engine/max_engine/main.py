@@ -30,10 +30,11 @@ from .delegate.session import TERMINAL_STATES
 from .dsl import ParseError, parse_command
 from .market import MarketService, board_digest
 from .osint import EventsService, NavalService, OsintService
-from .prompts import market_chat_messages, messages_for
+from .prompts import market_chat_messages, messages_for, rag_messages
 from .providers.base import Provider
 from .providers.factory import build_provider
-from .router import resolve
+from .rag import RagService, RagStore
+from .router import model_for, resolve
 
 # Load engine/.env (e.g. ANTHROPIC_API_KEY) if present, before providers read it.
 # Explicit path so it works regardless of the launch directory; override=True so
@@ -84,6 +85,14 @@ def _make_store(path: str) -> VectorStore | None:
 
 
 _ollama_pc = next((p for p in config.providers if p.name == "ollama"), None)
+_ollama_base = _ollama_pc.base_url if _ollama_pc else "http://127.0.0.1:11434"
+rag = RagService(
+    RagStore(config.rag.db_path),
+    embed_model=config.rag.embed_model,
+    base_url=_ollama_base,
+    max_chars=config.rag.max_chars,
+    overlap_lines=config.rag.overlap_lines,
+)
 apollo = ApolloService(
     osint=osint,
     market=market,
@@ -404,6 +413,75 @@ async def promote_session(session_id: str):
         raise HTTPException(status_code=403, detail=str(e)) from e
     await delegate.kick()
     return s.to_dict()
+
+
+# ---- Codebase RAG -------------------------------------------------------
+
+
+def _within_allowlist(roots: list[str]) -> list[str]:
+    """Restrict requested roots to paths inside the workspace allowlist (privacy:
+    Max only ever indexes folders the user has explicitly opted in)."""
+    allow = [os.path.abspath(p) for p in config.workspace_allowlist]
+    if not allow:
+        return []
+    out = []
+    for r in roots:
+        ra = os.path.abspath(r)
+        if any(ra == a or ra.startswith(a + os.sep) for a in allow):
+            out.append(ra)
+    return out
+
+
+class RagIndexRequest(BaseModel):
+    roots: list[str] | None = None  # default: the whole workspace allowlist
+
+
+@app.post("/rag/index")
+async def rag_index(req: RagIndexRequest):
+    """(Re)index the workspace allowlist (incremental). Pass ``roots`` to scope to
+    a subset — anything outside the allowlist is ignored."""
+    requested = req.roots if req.roots is not None else config.workspace_allowlist
+    return await rag.index(_within_allowlist(requested))
+
+
+class RagSearchRequest(BaseModel):
+    query: str
+    k: int | None = None
+
+
+@app.post("/rag/search")
+async def rag_search(req: RagSearchRequest):
+    return {"hits": await rag.search(req.query, k=req.k or config.rag.retrieve_k)}
+
+
+@app.get("/rag/status")
+def rag_status() -> dict:
+    return {**rag.status(), "allowlist": config.workspace_allowlist}
+
+
+@app.post("/rag/clear")
+def rag_clear() -> dict:
+    rag.store.clear()
+    return rag.status()
+
+
+class RagAskRequest(BaseModel):
+    question: str
+    k: int | None = None
+    provider: str = "ollama"
+
+
+@app.post("/rag/ask")
+async def rag_ask(req: RagAskRequest):
+    """Retrieve workspace context for the question, then stream a grounded answer
+    (cited by file:line). Falls back gracefully when nothing is indexed."""
+    context = await rag.context_for(req.question, k=req.k or config.rag.retrieve_k)
+    try:
+        provider = build_provider(req.provider, config)
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    model = model_for(req.provider, "chat", config)
+    return _sse_stream(provider, model, rag_messages(context, req.question))
 
 
 # ---- OSINT: global news heat map ---------------------------------------
