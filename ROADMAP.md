@@ -220,8 +220,10 @@ Parser rules:
 - [x] Workspace indexer — file walk with noise-dir pruning + text/size filters; line-aligned overlapping chunker (`rag/chunker.py`)
 - [x] Embeddings + local vector store (sqlite-vec, `rag/store.py`); **incremental re-index** keyed on per-file content hash (skip unchanged, drop deleted)
 - [x] Retrieval injected into prompts — `POST /rag/ask` retrieves context and streams a grounded answer **cited by `file:line`** (+ `/rag/index`, `/rag/search`, `/rag/status`, `/rag/clear`)
-- [x] **UI**: a **"knows your code" (🧠) toggle** in the chat bar routes plain questions to `/rag/ask`; a **⟳ index button** runs `/rag/index` and shows live `files / chunks` counts
-- [ ] Per-project / session **memory** (carry retrieved/used context across turns)
+- [x] **UI**: a **"knows your code" (🧠) toggle** in the chat bar routes plain questions to `/rag/ask`; a **⟳ index button** runs `/rag/index` and shows live `files / chunks` counts; a **✕ new-conversation** button clears session memory
+- [x] **Session memory** — `SessionMemory` carries prior turns per `session_id`: fed to the model **and** used to widen retrieval so terse follow-ups still pull the right code; `/rag/ask` records each turn; `GET`/`clear` via `/rag/memory/{id}`. The widget threads a stable session id.
+
+**Phase 6 complete.** ✅
 
 ### Phase 7 — Performance & privacy polish  🎯 *snappy, stable, provably local-by-default*
 - [ ] **Two-model routing**: tiny resident completer + heavy on-demand gen/chat

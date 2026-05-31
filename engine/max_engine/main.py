@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -33,7 +33,7 @@ from .osint import EventsService, NavalService, OsintService
 from .prompts import market_chat_messages, messages_for, rag_messages
 from .providers.base import Provider
 from .providers.factory import build_provider
-from .rag import RagService, RagStore
+from .rag import RagService, RagStore, SessionMemory
 from .router import model_for, resolve
 
 # Load engine/.env (e.g. ANTHROPIC_API_KEY) if present, before providers read it.
@@ -93,6 +93,7 @@ rag = RagService(
     max_chars=config.rag.max_chars,
     overlap_lines=config.rag.overlap_lines,
 )
+rag_memory = SessionMemory()
 apollo = ApolloService(
     osint=osint,
     market=market,
@@ -194,12 +195,21 @@ def parse(req: ParseRequest) -> dict:
     }
 
 
-def _sse_stream(provider: Provider, model: str, messages: list[dict]) -> StreamingResponse:
-    """Stream a provider response as OpenAI-compatible SSE chunks."""
+def _sse_stream(
+    provider: Provider,
+    model: str,
+    messages: list[dict],
+    on_done: Callable[[str], None] | None = None,
+) -> StreamingResponse:
+    """Stream a provider response as OpenAI-compatible SSE chunks. If ``on_done``
+    is given, it's called with the full assembled text after a clean finish (used
+    to record a turn into session memory)."""
 
     async def event_stream() -> AsyncIterator[str]:
+        parts: list[str] = []
         try:
             async for chunk in provider.chat(model, messages):
+                parts.append(chunk.text)
                 delta = {"content": chunk.text} if chunk.text else {}
                 payload = {
                     "object": "chat.completion.chunk",
@@ -213,6 +223,8 @@ def _sse_stream(provider: Provider, model: str, messages: list[dict]) -> Streami
                     ],
                 }
                 yield f"data: {json.dumps(payload)}\n\n"
+            if on_done is not None:
+                on_done("".join(parts))
             yield "data: [DONE]\n\n"
         except Exception as e:  # surface backend errors to the client
             err = {"error": {"message": str(e), "type": type(e).__name__}}
@@ -469,19 +481,53 @@ class RagAskRequest(BaseModel):
     question: str
     k: int | None = None
     provider: str = "ollama"
+    session_id: str | None = None  # opt-in conversational memory across turns
 
 
 @app.post("/rag/ask")
 async def rag_ask(req: RagAskRequest):
     """Retrieve workspace context for the question, then stream a grounded answer
-    (cited by file:line). Falls back gracefully when nothing is indexed."""
-    context = await rag.context_for(req.question, k=req.k or config.rag.retrieve_k)
+    (cited by file:line). Falls back gracefully when nothing is indexed.
+
+    With a ``session_id``, prior turns are fed to the model and the last user
+    turns widen retrieval (so a terse follow-up still pulls the right code); the
+    new Q&A is appended to that session's memory on completion."""
+    sid = req.session_id
+    history = rag_memory.history(sid) if sid else []
+
+    # Widen the retrieval query with recent user turns for follow-up continuity.
+    retrieval_query = req.question
+    if sid:
+        recent = rag_memory.recent_user_text(sid)
+        if recent:
+            retrieval_query = f"{recent}\n{req.question}"
+    context = await rag.context_for(retrieval_query, k=req.k or config.rag.retrieve_k)
+
     try:
         provider = build_provider(req.provider, config)
     except KeyError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     model = model_for(req.provider, "chat", config)
-    return _sse_stream(provider, model, rag_messages(context, req.question))
+
+    on_done = None
+    if sid:
+
+        def on_done(answer: str) -> None:
+            rag_memory.append(sid, "user", req.question)
+            rag_memory.append(sid, "assistant", answer)
+
+    return _sse_stream(provider, model, rag_messages(context, req.question, history), on_done)
+
+
+@app.get("/rag/memory/{session_id}")
+def rag_memory_get(session_id: str) -> dict:
+    return {"session_id": session_id, "history": rag_memory.history(session_id)}
+
+
+@app.post("/rag/memory/{session_id}/clear")
+def rag_memory_clear(session_id: str) -> dict:
+    rag_memory.clear(session_id)
+    return {"session_id": session_id, "history": []}
 
 
 # ---- OSINT: global news heat map ---------------------------------------

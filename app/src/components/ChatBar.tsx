@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  clearRagMemory,
   getHealth,
   getRagStatus,
   indexWorkspace,
@@ -33,6 +34,10 @@ export function ChatBar({
   const [codeMode, setCodeMode] = useState(false);
   const [rag, setRag] = useState<RagStatus | null>(null);
   const [indexing, setIndexing] = useState(false);
+  // Stable per-app-session id so grounded chat carries memory across turns.
+  const sessionId = useRef<string>(
+    (globalThis.crypto?.randomUUID?.() ?? `s-${Date.now()}-${Math.random()}`),
+  ).current;
 
   // Pull the index status when code mode turns on, so the counts are current.
   useEffect(() => {
@@ -79,10 +84,14 @@ export function ChatBar({
     const ac = new AbortController();
     abortRef.current = ac;
     // DSL command (`. … .`, `!. … .`, `~ … ~`) → /command. Plain text → /chat,
-    // or /rag/ask (grounded in the indexed workspace) when code mode is on.
-    const stream = isDslCommand(q) ? streamCommand : codeMode ? streamAsk : streamChat;
+    // or /rag/ask (grounded in the indexed workspace, with memory) in code mode.
+    const iterator = isDslCommand(q)
+      ? streamCommand(q, ac.signal)
+      : codeMode
+        ? streamAsk(q, sessionId, ac.signal)
+        : streamChat(q, ac.signal);
     try {
-      for await (const delta of stream(q, ac.signal)) {
+      for await (const delta of iterator) {
         setOutput((o) => o + delta);
       }
     } catch (e) {
@@ -92,6 +101,12 @@ export function ChatBar({
       onBusyChange?.(false); // mascot: response complete → ripple blast
       abortRef.current = null;
     }
+  };
+
+  const newConversation = () => {
+    void clearRagMemory(sessionId);
+    setOutput("");
+    setErr(null);
   };
 
   const onKey = (e: React.KeyboardEvent) => {
@@ -157,6 +172,15 @@ export function ChatBar({
             }
           >
             {indexing ? "…" : "⟳"}
+          </button>
+        )}
+        {codeMode && (
+          <button
+            className="chat__index"
+            onClick={newConversation}
+            title="New conversation — clear grounded-chat memory"
+          >
+            ✕
           </button>
         )}
         <button className="chat__send" onClick={() => void send()} disabled={busy} title="Send">
