@@ -1,6 +1,6 @@
 @echo off
 rem ============================================================================
-rem  Max launcher — double-click to start the desktop app.
+rem  Max launcher — double-click to build (if needed) and start the desktop app.
 rem  The app OWNS the engine: on launch it starts the FastAPI engine
 rem  (uvicorn on port 8001) if it isn't already running, and stops it on
 rem  shutdown. Close the app with the red shutdown button to free the port.
@@ -9,22 +9,29 @@ setlocal
 cd /d "%~dp0"
 
 set "MAXEXE=%~dp0app\src-tauri\target\release\Max.exe"
-if not exist "%MAXEXE%" goto :nobuild
+if not exist "%MAXEXE%" goto :build
 
 echo [Max] Launching desktop app - the engine starts automatically...
 start "" "%MAXEXE%"
 goto :end
 
-:nobuild
+:build
 echo.
-echo   [Max] Max.exe not built yet. From the app folder, run:
-echo         npm run tauri build -- --no-bundle
-echo   Then double-click Max.cmd again.
+echo   [Max] Max.exe not found — building now (this may take a few minutes)...
 echo.
-echo   [Max] Note: the engine venv must exist at engine\.venv for the app
-echo         to start the engine automatically.
+cd /d "%~dp0app"
+call npm run tauri build -- --no-bundle
+if errorlevel 1 (
+    echo.
+    echo   [Max] Build failed. Check the output above for errors.
+    echo.
+    pause
+    goto :end
+)
+cd /d "%~dp0"
 echo.
-pause
+echo   [Max] Build complete. Launching...
+start "" "%MAXEXE%"
 
 :end
 endlocal

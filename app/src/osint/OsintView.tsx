@@ -2,6 +2,14 @@
 // and a slide-in AI chat panel grounded in the indexed articles.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+function stripHtml(s: string): string {
+  return s
+    .replace(/<[^>]*>/g, "")
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .trim();
+}
 import { WorldMap } from "./WorldMap";
 import { SEVERITY_TIERS, severityColor, severityTier } from "./countries";
 import {
@@ -109,8 +117,15 @@ function ArticleCard({ article, expanded, onToggle }: {
 }) {
   const color = severityColor(article.severity);
   const tier  = severityTier(article.severity);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (expanded) cardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [expanded]);
+
   return (
     <div
+      ref={cardRef}
       className={`news-card${expanded ? " is-open" : ""}`}
       style={{ ["--tier-color" as string]: color }}
       onClick={onToggle}
@@ -121,7 +136,7 @@ function ArticleCard({ article, expanded, onToggle }: {
       {/* header — always visible */}
       <div className="news-card__head">
         <span className="news-card__tier" title={tier.label} />
-        <span className="news-card__headline">{article.title}</span>
+        <span className="news-card__headline">{stripHtml(article.title)}</span>
         <span className="news-card__chevron">{expanded ? "▲" : "▼"}</span>
       </div>
 

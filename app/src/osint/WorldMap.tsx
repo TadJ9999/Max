@@ -22,7 +22,7 @@ const land = feature(
 
 // ── Ship marker: slim arrowhead, bow pointing up, centered at 0,0 ─────────
 // Narrower than old 12-unit-wide shape — 7-unit width gives a sleeker silhouette.
-const ARROW_D = "M 0,-11 L 3.5,6.5 L 0,1.5 L -3.5,6.5 Z";
+const ARROW_D = "M 0,-9 L 3.5,6 L 0,1.5 L -3.5,6 Z";
 
 function mapShipLabel(name: string): string {
   // Show USS/USNS + up to 2 name words: "USS Nimitz", "USS Theodore Roosevelt", "USS George H.W."
