@@ -4,7 +4,9 @@
 
 import type { Session, SessionState } from "./types";
 
-export const ENGINE_URL = "http://127.0.0.1:8000";
+// The engine runs on 8001 (8000 is commonly taken by other local dev servers).
+// Market, OSINT, and chat all share this single base URL.
+export const ENGINE_URL = "http://127.0.0.1:8001";
 
 export type Health = { status: string; version: string };
 

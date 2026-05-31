@@ -16,9 +16,10 @@ export type SysInfo = {
 type Props = {
   sys: SysInfo;
   onSettings: () => void;
+  onShutdown: () => void;
 };
 
-export function TopBar({ sys, onSettings }: Props) {
+export function TopBar({ sys, onSettings, onShutdown }: Props) {
   return (
     <header className="topbar">
       <div className="topbar__meters">
@@ -27,9 +28,19 @@ export function TopBar({ sys, onSettings }: Props) {
         <Meter label="VRAM" percent={sys.vram} emphasis />
         <Meter label="RAM" percent={sys.ram} />
       </div>
-      <button className="cog" onClick={onSettings} title="Settings" aria-label="Settings">
-        ⚙
-      </button>
+      <div className="topbar__actions">
+        <button className="cog" onClick={onSettings} title="Settings" aria-label="Settings">
+          ⚙
+        </button>
+        <button
+          className="power"
+          onClick={onShutdown}
+          title="Shut down Max"
+          aria-label="Shut down Max"
+        >
+          ⏻
+        </button>
+      </div>
     </header>
   );
 }

@@ -4,10 +4,10 @@ import { TaskCard } from "./components/TaskCard";
 import { Mascot } from "./components/Mascot";
 import { ChatBar } from "./components/ChatBar";
 import { SettingsPanel } from "./components/SettingsPanel";
-import { OsintButton } from "./osint/OsintButton";
+import { HubButtons } from "./hub/HubButtons";
 import { deriveMascotState } from "./mascot/deriveMascotState";
 import { initFloatingWindow } from "./window";
-import { getSystemStats } from "./system";
+import { getSystemStats, shutdownApp } from "./system";
 import { getSessions, cancelSession, promoteSession } from "./engine";
 import { type Session } from "./types";
 import "./App.css";
@@ -136,7 +136,11 @@ function App() {
 
   return (
     <div className="widget">
-      <TopBar sys={sys} onSettings={() => setShowSettings((v) => !v)} />
+      <TopBar
+        sys={sys}
+        onSettings={() => setShowSettings((v) => !v)}
+        onShutdown={() => void shutdownApp()}
+      />
 
       {showSettings && <SettingsPanel />}
 
@@ -161,7 +165,10 @@ function App() {
 
       <ChatBar onRequest={ping} onBusyChange={setChatThinking} />
 
-      <OsintButton />
+      {/* Feature launchers — each opens the unified Hub on its tab */}
+      <div className="widget-actions">
+        <HubButtons />
+      </div>
     </div>
   );
 }

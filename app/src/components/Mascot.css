@@ -120,6 +120,23 @@
   50% { opacity: 0.85; transform: scale(1) translateY(-3px); }
 }
 
+/* DB read/write pulse — the particle field flares to signal memory activity
+   ("Max is learning"). One-shot scale + glow on the whole mote field. */
+.hud__particles--db {
+  transform-box: view-box;
+  transform-origin: 100px 100px;
+  animation: hud-db-pulse 0.7s ease-out;
+  filter: drop-shadow(0 0 5px var(--accent));
+}
+.hud__particles--db .hud__particle {
+  filter: drop-shadow(0 0 5px var(--accent));
+}
+@keyframes hud-db-pulse {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.16); }
+  100% { transform: scale(1); }
+}
+
 /* metric gauges */
 .hud__gauge-track {
   stroke: var(--line-dim);

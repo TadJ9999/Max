@@ -12,6 +12,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from .market.finnhub import DEFAULT_WATCHLIST as MARKET_DEFAULT_WATCHLIST
 from .osint.gdelt import DEFAULT_QUERY as OSINT_DEFAULT_QUERY
 from .osint.naval import DEFAULT_TWZ_URL as OSINT_DEFAULT_TWZ_URL
 from .osint.rss import DEFAULT_FEEDS as OSINT_DEFAULT_FEEDS
@@ -33,6 +34,15 @@ class DelegateConfig(BaseModel):
     max_parallel_cloud: int = 8
 
 
+class IdleConfig(BaseModel):
+    """Local model lifecycle. Ollama keeps a model resident in RAM/VRAM for this
+    window after the last request, then unloads it to free memory; the next
+    request transparently reloads it. ``"0"`` unloads immediately after each call;
+    ``"-1"`` keeps it loaded forever. Accepts Ollama duration strings (e.g. ``"10m"``)."""
+
+    keep_alive: str = "10m"
+
+
 class OsintConfig(BaseModel):
     """Global news heat map (GDELT + RSS). Egress is outbound to public news."""
 
@@ -44,6 +54,24 @@ class OsintConfig(BaseModel):
     # Naval layer: US carrier/amphib positions from public OSINT trackers.
     naval_twz_url: str = OSINT_DEFAULT_TWZ_URL
     naval_ttl_seconds: int = 21_600  # trackers update ~weekly
+
+
+class MarketConfig(BaseModel):
+    """Live US-stock board (Finnhub). The API key is read from the environment
+    (``FINNHUB_API_KEY``), never stored here. The watchlist is user-editable."""
+
+    watchlist: list[str] = Field(default_factory=lambda: list(MARKET_DEFAULT_WATCHLIST))
+    ttl_seconds: int = 10  # cache window; the UI polls ~every 10s
+
+
+class ApolloConfig(BaseModel):
+    """Apollo prediction engine. Local sqlite-vec memory + Ollama embeddings.
+    Everything stays on the machine; memory auto-expires after ``ttl_seconds``."""
+
+    db_path: str = str(Path(__file__).resolve().parent.parent / ".apollo.db")
+    embed_model: str = "nomic-embed-text"
+    ttl_seconds: int = 86_400  # 24h auto-purge
+    retrieve_k: int = 6
 
 
 class EngineConfig(BaseModel):
@@ -83,7 +111,10 @@ class EngineConfig(BaseModel):
     allow_cloud: bool = True
     workspace_allowlist: list[str] = Field(default_factory=list)
     delegate: DelegateConfig = Field(default_factory=DelegateConfig)
+    idle: IdleConfig = Field(default_factory=IdleConfig)
     osint: OsintConfig = Field(default_factory=OsintConfig)
+    market: MarketConfig = Field(default_factory=MarketConfig)
+    apollo: ApolloConfig = Field(default_factory=ApolloConfig)
 
 
 def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
@@ -99,6 +130,12 @@ def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
         cfg.delegate.max_parallel_local = max(1, int(d["max_parallel_local"]))
     if "max_parallel_cloud" in d:
         cfg.delegate.max_parallel_cloud = max(1, int(d["max_parallel_cloud"]))
+    idle = data.get("idle") or {}
+    if "keep_alive" in idle:
+        cfg.idle.keep_alive = str(idle["keep_alive"])
+    mk = data.get("market") or {}
+    if "watchlist" in mk:
+        cfg.market.watchlist = [str(s) for s in mk["watchlist"]]
 
 
 def load_config() -> EngineConfig:
@@ -122,5 +159,7 @@ def save_overrides(cfg: EngineConfig) -> None:
             "max_parallel_local": cfg.delegate.max_parallel_local,
             "max_parallel_cloud": cfg.delegate.max_parallel_cloud,
         },
+        "idle": {"keep_alive": cfg.idle.keep_alive},
+        "market": {"watchlist": cfg.market.watchlist},
     }
     CONFIG_FILE.write_text(json.dumps(data, indent=2))

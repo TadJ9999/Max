@@ -8,6 +8,7 @@ thin **clients** (a desktop chat app and, later, a VS Code extension) talk to it
 - ☁️ **Cloud on demand** — the `!` sigil routes to a cloud model (e.g. Claude), clearly marked.
 - 🧩 **DSL commands** — `. generate code .` and `.. document this ..`, with provider sigils.
 - 🪄 **Delegate system** — run many tasks in parallel, Manual or Smart-Auto (AI picks local vs cloud).
+- 📈 **Market** — a live US-stock tape (Finnhub) with an editable watchlist and on-demand AI **"Ingest"** analysis. Needs a free `FINNHUB_API_KEY` in `engine/.env`.
 - ⚙️ **Everything configurable** — per-task models, sigils, hotkeys, prompt templates.
 
 See **[ROADMAP.md](./ROADMAP.md)** for the full plan and **[docs/architecture.md](./docs/architecture.md)**.

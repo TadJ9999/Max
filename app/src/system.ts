@@ -27,3 +27,15 @@ export async function getSystemStats(): Promise<SysInfo | null> {
     return null;
   }
 }
+
+// Shut the whole app down (red power button). Exits the Tauri process so every
+// window closes. Outside Tauri (browser preview) there's nothing to kill.
+export async function shutdownApp(): Promise<void> {
+  if (!inTauri()) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("quit_app");
+  } catch {
+    /* ignore — process is going away anyway */
+  }
+}

@@ -1,0 +1,4 @@
+# Apollo local vector memory (sqlite-vec) — regenerated at runtime
+.apollo.db
+.apollo.db-wal
+.apollo.db-shm

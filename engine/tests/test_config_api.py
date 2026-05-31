@@ -53,3 +53,11 @@ def test_parallel_limits_floored_to_one(monkeypatch, tmp_path):
 def test_invalid_mode_rejected(monkeypatch, tmp_path):
     c = _isolated(monkeypatch, tmp_path)
     assert c.put("/config", json={"delegate": {"mode": "bogus"}}).status_code == 400
+
+
+def test_idle_keep_alive_persists(monkeypatch, tmp_path):
+    c = _isolated(monkeypatch, tmp_path)
+    assert c.get("/config").json()["idle"]["keep_alive"] == "10m"  # default
+    body = c.put("/config", json={"idle": {"keep_alive": "30m"}}).json()
+    assert body["idle"]["keep_alive"] == "30m"
+    assert c.get("/config").json()["idle"]["keep_alive"] == "30m"  # persisted

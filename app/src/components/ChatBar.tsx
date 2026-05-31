@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getHealth, isDslCommand, streamChat, streamCommand } from "../engine";
 import { MarkdownView } from "./MarkdownView";
+import { CopyButton } from "./CopyButton";
 
 export function ChatBar({
   onRequest,
@@ -72,6 +73,7 @@ export function ChatBar({
     <div className="chat">
       {(output || err || busy) && (
         <div className="chat__out">
+          {output && !err && <CopyButton text={output} className="chat__copy" />}
           {err ? (
             <span className="chat__err">⚠ {err}</span>
           ) : output ? (

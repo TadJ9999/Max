@@ -27,6 +27,11 @@ export interface MascotProps {
   thinking?: boolean;
   /** Engine/host unreachable — the core destabilises and glows red. */
   systemDown?: boolean;
+  /**
+   * Increment on every vector-DB read/write to pulse the particle field — the
+   * "Max is learning" cue. Each bump flashes the motes brighter for a beat.
+   */
+  dbActivity?: number;
 }
 
 const ZERO: MascotMetrics = { cpu: 0, gpu: 0, vram: 0, ram: 0, gpuTemp: 0 };
@@ -115,8 +120,20 @@ export function Mascot({
   signal,
   thinking,
   systemDown = false,
+  dbActivity,
 }: MascotProps) {
   const isThinking = (Boolean(thinking) || state === "thinking" || state === "busy") && !systemDown;
+
+  // DB read/write pulse: flash the particle field briefly on each bump.
+  const [dbPulsing, setDbPulsing] = useState(false);
+  const lastDb = useRef(dbActivity);
+  useEffect(() => {
+    if (dbActivity === undefined || dbActivity === lastDb.current) return;
+    lastDb.current = dbActivity;
+    setDbPulsing(true);
+    const t = window.setTimeout(() => setDbPulsing(false), 700);
+    return () => window.clearTimeout(t);
+  }, [dbActivity]);
 
   // Request comets: a streak flies in from a random angle and lands on the core.
   const [comets, setComets] = useState<Array<{ id: number; angle: number }>>([]);
@@ -267,8 +284,8 @@ export function Mascot({
           <Gauge r={57} pct={metrics.ram} label="R" />
         </g>
 
-        {/* sparse drifting particle field */}
-        <g className="hud__particles">
+        {/* sparse drifting particle field (pulses on DB read/write) */}
+        <g className={`hud__particles${dbPulsing ? " hud__particles--db" : ""}`}>
           {particles.map((p, i) => (
             <circle
               key={i}

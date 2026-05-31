@@ -405,6 +405,7 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  min-height: 0; /* let .osint__articles scroll instead of stretching the column */
   border-left: 1px solid var(--osint-border);
   background: var(--osint-glass);
 }
