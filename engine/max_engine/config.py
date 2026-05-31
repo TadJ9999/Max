@@ -74,6 +74,18 @@ class ApolloConfig(BaseModel):
     retrieve_k: int = 6
 
 
+class RagConfig(BaseModel):
+    """Codebase RAG. Local sqlite-vec index of the workspace allowlist + Ollama
+    embeddings. Indexing only ever touches allowlisted paths; nothing leaves the
+    machine."""
+
+    db_path: str = str(Path(__file__).resolve().parent.parent / ".maxrag.db")
+    embed_model: str = "nomic-embed-text"
+    max_chars: int = 1200  # chunk size target
+    overlap_lines: int = 8  # context continuity between chunks
+    retrieve_k: int = 6
+
+
 class EngineConfig(BaseModel):
     # sigil -> provider name
     sigils: dict[str, str] = Field(
@@ -115,6 +127,7 @@ class EngineConfig(BaseModel):
     osint: OsintConfig = Field(default_factory=OsintConfig)
     market: MarketConfig = Field(default_factory=MarketConfig)
     apollo: ApolloConfig = Field(default_factory=ApolloConfig)
+    rag: RagConfig = Field(default_factory=RagConfig)
 
 
 def _apply_overrides(cfg: EngineConfig, data: dict) -> None:

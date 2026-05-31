@@ -17,6 +17,13 @@ SYSTEM_PROMPTS: dict[str, str] = {
         "unless a bug is being fixed. Output only the code unless asked to explain."
     ),
     "chat": "You are Max, a helpful, concise assistant.",
+    "rag": (
+        "You are Max, answering questions about the user's codebase. Use the "
+        "provided CONTEXT (retrieved excerpts, each headed by a `// file:line` "
+        "comment) as the primary source of truth, and cite the relevant file:line "
+        "when you rely on it. If the context doesn't contain the answer, say so "
+        "plainly rather than inventing details. Be concise and concrete."
+    ),
     "plan": (
         "You are a planning coordinator. Break the user's request into a small set "
         "of concrete subtasks that can run in PARALLEL and independently (none "
@@ -95,6 +102,22 @@ def messages_for(action: str, body: str) -> list[dict]:
     return [
         {"role": "system", "content": system},
         {"role": "user", "content": body},
+    ]
+
+
+def rag_messages(context: str, question: str) -> list[dict]:
+    """System prompt + the retrieved context folded in front of the question."""
+    if context:
+        user = f"CONTEXT:\n{context}\n\nQUESTION: {question}"
+    else:
+        user = (
+            f"QUESTION: {question}\n\n(No indexed workspace context matched this "
+            "question — answer from general knowledge and say the index had no "
+            "relevant match.)"
+        )
+    return [
+        {"role": "system", "content": SYSTEM_PROMPTS["rag"]},
+        {"role": "user", "content": user},
     ]
 
 

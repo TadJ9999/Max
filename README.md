@@ -12,6 +12,7 @@ prediction engine, all behind one local API.
 - 🧩 **DSL commands** — `. generate code .`, `.. document this ..`, `~ fix this ~`, with provider sigils (`@` Ollama · `#` Qwen · `!` Claude).
 - 🪄 **Delegate system** — run many tasks in **parallel**, **Manual** or **Smart-Auto** (the engine picks local vs cloud by task complexity), within a 12 GB-VRAM-aware scheduler. A **coordinator** can auto-decompose one request into parallel subtasks.
 - 📡 **Live everything** — per-session output **streams** to the UI token-by-token (SSE).
+- 🧠 **Knows your codebase** — local RAG indexes your workspace (sqlite-vec, incremental, allowlist-scoped) and answers grounded questions **cited by `file:line`**.
 - 🛰️ **OSINT** — a glowing world map of where the news is happening (GDELT + RSS, free/key-less), severity tiers, a live day/night terminator, and US-fleet positions.
 - 📈 **Market** — a live US-stock tape (Finnhub) with an editable watchlist and on-demand AI **"Ingest"** analysis.
 - 🔭 **Apollo** — a prediction engine with vector memory that fuses OSINT + market into forward-looking SITREPs.
@@ -75,6 +76,7 @@ Examples: `!. add a retry decorator .` (cloud generate) · `@.. document this ..
 | Core | `GET /health` · `GET/PUT /config` · `POST /parse` |
 | Chat / DSL | `POST /chat` · `POST /command` · `POST /v1/chat/completions` (OpenAI-compatible, SSE) |
 | Delegate | `POST /sessions` (fan-out) · `POST /sessions/coordinate` (auto-decompose) · `GET /sessions` · `GET /sessions/{id}` · `GET /sessions/{id}/stream` (SSE) · `POST /sessions/{id}/cancel` · `POST /sessions/{id}/promote` |
+| Codebase RAG | `POST /rag/index` (incremental, allowlist-scoped) · `POST /rag/search` · `POST /rag/ask` (SSE, cited by file:line) · `GET /rag/status` · `POST /rag/clear` |
 | OSINT | `GET /osint/heatmap` · `/osint/articles` · `/osint/sources` · `/osint/events` · `/osint/naval` |
 | Market | `GET /market/quotes` · `GET/PUT /market/watchlist` · `GET /market/sources` · `POST /market/analyze` (SSE) · `POST /market/chat` (SSE) |
 | Apollo | `POST /apollo/osint-report` · `/apollo/market-report` · `/apollo/predict` · `GET /apollo/status` |
