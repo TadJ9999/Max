@@ -1,8 +1,11 @@
 # Max — Local-First AI Engine · Roadmap & Brainstorm
 
-> Status: **living document** — core decisions locked and the engine MVP is scaffolded
-> (DSL parser, router, Ollama/Claude adapters, delegate engine + `/sessions` API; 29 tests).
-> The phase checklists below track real, code-verified status.
+> Status: **living document** — Phases 1–4 are **built & working** (DSL + routing,
+> Ollama/Claude streaming, the full delegate system: parallel sessions, Smart-Auto,
+> coordinator, live per-session SSE), plus the v1 Tauri widget, OSINT map, market tape,
+> and Apollo. **104 engine tests pass; the app typechecks & builds.** Next: VS Code
+> extension, codebase RAG, and the MCP capability platform. Checklists below are
+> code-verified.
 
 A **local-first**, private AI engine for a powerful workstation, with an **explicit
 opt-in cloud escape hatch**. One always-on **engine** (daemon) does the thinking;
@@ -201,9 +204,9 @@ Parser rules:
 - [x] Task scheduler aware of the **12 GB VRAM limit** (cloud + small-local run in parallel; heavy local models queue)
 - [x] Manual override (backend): `promote` a queued session to cloud when local is backed up
 - [x] **Isolated sessions** — each tracked + retrieved separately (`/sessions` API)
-- [ ] **Queue dashboard** (UI) — live view + drag-to-cloud (with Tauri app)
-- [ ] Streaming each session's output concurrently to the client (SSE/WebSocket)
-- [ ] Delegator/coordinator (optional): decompose one request into subtasks fanned out to workers
+- [x] **Queue dashboard** (UI) — live task cards poll `/sessions`; cancel/promote wired; **cards now render live output** (per-session SSE: `snapshot` then `chunk` deltas, blinking caret while running)
+- [x] Streaming each session's output concurrently to the client — **SSE** `GET /sessions/{id}/stream` (replays a `snapshot`, then live `chunk`s → `done`); engine fan-out via per-session subscribers
+- [x] **Delegator/coordinator**: `POST /sessions/coordinate` — a planner model decomposes one request into independent subtasks, each fanned out as a parallel session (defensive JSON parse + single-task fallback; planner stays local unless Smart-Auto + cloud)
 
 ### Phase 5 — VS Code extension  🎯 *type `. … .` live → code appears; `!.` routes to cloud*
 - [ ] **Live-as-you-type** detection (fire on closing delimiter) + debounce/cancel

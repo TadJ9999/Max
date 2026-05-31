@@ -192,6 +192,32 @@ body {
 .card__provider {
   color: var(--accent);
 }
+.card__output {
+  margin: 7px 0 0;
+  padding: 6px 8px;
+  max-height: 132px;
+  overflow: auto;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+}
+/* A faint cyan caret while output is still streaming. */
+.card__output--live::after {
+  content: "▋";
+  color: var(--accent);
+  animation: caret-blink 1s steps(2, start) infinite;
+}
+@keyframes caret-blink {
+  to {
+    opacity: 0;
+  }
+}
 .card__actions {
   display: flex;
   gap: 6px;

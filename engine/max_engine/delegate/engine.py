@@ -21,6 +21,7 @@ from ..prompts import messages_for
 from ..providers.base import Provider
 from ..providers.factory import build_provider
 from ..router import is_cloud_provider, model_for
+from .coordinator import collect, parse_plan
 from .scheduler import Scheduler
 from .session import Session, SessionManager, SessionState
 
@@ -91,6 +92,48 @@ class DelegateEngine:
         s.model = model_for(provider, s.action, self.config)
         return s
 
+    # ---- coordinator (auto-delegate) -----------------------------------
+
+    def _planner_provider(self) -> str:
+        """Pick the model that plans the breakdown. Prefer a strong cloud planner
+        when cloud is enabled and we're in Smart-Auto; otherwise stay local."""
+        if (
+            self.config.delegate.mode == "smart-auto"
+            and self.config.allow_cloud
+            and is_cloud_provider("claude", self.config)
+        ):
+            return "claude"
+        return "ollama"
+
+    async def coordinate(
+        self,
+        request: str,
+        planner: str | None = None,
+        max_subtasks: int = 6,
+    ) -> dict:
+        """Decompose ``request`` into subtasks via a planner model, then submit
+        each as a parallel session. Returns the plan + the created sessions."""
+        provider = planner or self._planner_provider()
+        # Never silently route the planner to the cloud when it's disabled.
+        if is_cloud_provider(provider, self.config) and not self.config.allow_cloud:
+            provider = "ollama"
+
+        model = model_for(provider, "chat", self.config)
+        planner_client = self.build_provider(provider, self.config)
+        raw = await collect(planner_client.chat(model, messages_for("plan", request)))
+        specs = parse_plan(raw, fallback_task=request, max_subtasks=max_subtasks)
+
+        sessions = [
+            self.submit(spec.task, action=spec.action, complexity=spec.complexity)
+            for spec in specs
+        ]
+        await self.kick()
+        return {
+            "request": request,
+            "planner": {"provider": provider, "model": model},
+            "sessions": [s.to_dict() for s in sessions],
+        }
+
     def cancel(self, session_id: str) -> None:
         self.manager.cancel(session_id)
         t = self._tasks.get(session_id)
@@ -113,12 +156,10 @@ class DelegateEngine:
         try:
             provider = self.build_provider(s.provider, self.config)
             messages = messages_for(s.action, s.task)
-            parts: list[str] = []
             async for chunk in provider.chat(s.model, messages):
                 if s.state == SessionState.CANCELLED:
                     break
-                parts.append(chunk.text)
-            s.output = "".join(parts)
+                s.emit(chunk.text)  # accumulates into output + streams live
             if s.state != SessionState.CANCELLED:
                 s.state = SessionState.DONE
         except asyncio.CancelledError:
@@ -126,9 +167,10 @@ class DelegateEngine:
             raise
         except Exception as e:  # isolate failures to the session
             s.state = SessionState.ERROR
-            s.output = f"{type(e).__name__}: {e}"
+            s.emit(f"[error] {type(e).__name__}: {e}")
         finally:
             self._tasks.pop(s.id, None)
+            s.finish()  # notify live subscribers of the terminal state
             await self.kick()  # free capacity -> start the next queued session
 
     async def drain(self) -> None:
