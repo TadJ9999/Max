@@ -163,3 +163,183 @@ export async function getAegisSources(): Promise<AegisSources | null> {
     return null;
   }
 }
+
+// ─── Phase 16: Security Posture ──────────────────────────────────────────────
+
+export type SecurityFindingStatus = "open" | "fixed" | "ignored";
+export type SecurityFindingCategory = "sast" | "sca";
+
+export type SecurityFinding = {
+  id: string;
+  fingerprint: string;
+  scan_id: string | null;
+  first_scan_id: string | null;
+  category: SecurityFindingCategory;
+  rule_id: string | null;
+  cwe: string | null;
+  cve_id: string | null;
+  package: string | null;
+  installed_version: string | null;
+  fixed_version: string | null;
+  severity: AegisSeverity;
+  title: string;
+  file: string | null;
+  line: number | null;
+  snippet: string | null;
+  message: string | null;
+  recommendation: string | null;
+  ai_confidence: number | null;
+  ai_summary: string | null;
+  status: SecurityFindingStatus;
+  first_ts: string;
+  last_ts: string;
+  log_id: string | null;
+};
+
+export type ScanRun = {
+  id: string;
+  ts: string;
+  finished_ts: string | null;
+  status: "running" | "done" | "error";
+  trigger: string | null;
+  files_scanned: number;
+  score: number | null;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+};
+
+export type Posture = {
+  score: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  last_scan_ts: string | null;
+  at_risk: boolean;
+  history: { ts: string; score: number }[];
+};
+
+export type ScanStatus = {
+  running: boolean;
+  scan_id: string | null;
+  files_scanned: number;
+};
+
+export async function runScan(): Promise<{ scan_id: string | null; started: boolean }> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/aegis/scan`, { method: "POST" });
+    if (!r.ok) return { scan_id: null, started: false };
+    return (await r.json()) as { scan_id: string | null; started: boolean };
+  } catch {
+    return { scan_id: null, started: false };
+  }
+}
+
+export async function getScanStatus(): Promise<ScanStatus> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/aegis/scan/status`);
+    if (!r.ok) return { running: false, scan_id: null, files_scanned: 0 };
+    return (await r.json()) as ScanStatus;
+  } catch {
+    return { running: false, scan_id: null, files_scanned: 0 };
+  }
+}
+
+export async function getPosture(): Promise<Posture | null> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/aegis/posture`);
+    if (!r.ok) return null;
+    return (await r.json()) as Posture;
+  } catch {
+    return null;
+  }
+}
+
+export async function getFindings(
+  category?: SecurityFindingCategory,
+  status?: SecurityFindingStatus,
+): Promise<SecurityFinding[]> {
+  try {
+    const params = new URLSearchParams();
+    if (category) params.set("category", category);
+    if (status) params.set("status", status);
+    const r = await fetch(`${ENGINE_URL}/aegis/findings?${params}`);
+    if (!r.ok) return [];
+    const data = (await r.json()) as { findings: SecurityFinding[] };
+    return data.findings ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getScans(limit = 20): Promise<ScanRun[]> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/aegis/scans?limit=${limit}`);
+    if (!r.ok) return [];
+    const data = (await r.json()) as { scans: ScanRun[] };
+    return data.scans ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function* streamFindingFix(
+  findingId: string,
+  signal?: AbortSignal,
+): AsyncGenerator<string> {
+  const r = await fetch(`${ENGINE_URL}/aegis/findings/${findingId}/fix`, {
+    method: "POST",
+    signal,
+  });
+  if (!r.ok || !r.body) throw new Error(`engine returned HTTP ${r.status}`);
+
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t.startsWith("data:")) continue;
+      const data = t.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+      const obj = JSON.parse(data);
+      if (obj.error) throw new Error(obj.error.message ?? "engine error");
+      const delta: string | undefined = obj.choices?.[0]?.delta?.content;
+      if (delta) yield delta;
+    }
+  }
+}
+
+export async function setFindingStatus(
+  findingId: string,
+  status: SecurityFindingStatus,
+): Promise<boolean> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/aegis/findings/${findingId}/status`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function getReport(): Promise<string> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/aegis/report`);
+    if (!r.ok) return "";
+    const data = (await r.json()) as { report: string };
+    return data.report ?? "";
+  } catch {
+    return "";
+  }
+}

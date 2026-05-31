@@ -710,12 +710,46 @@ export function SettingsView() {
 
         {/* ── Aegis ────────────────────────────────────────────────── */}
         <Section title="Aegis" glyph="🛡" defaultOpen={false}>
-          <EgressHint sources="Cloud Claude (when allow_cloud is on) — sends code snippets and log excerpts for AI diagnosis" />
+          <EgressHint sources="Cloud Claude (when allow_cloud is on) — sends code snippets and log excerpts for AI diagnosis and security fixes" />
           <p className="stg-hint">
-            Aegis only calls the cloud when diagnosing an error and <code>allow_cloud</code> is enabled.
+            Aegis only calls the cloud when diagnosing or fixing, and <code>allow_cloud</code> is enabled.
             All secrets are redacted before any data leaves the machine.
-            Autonomy and cooldown settings are in the Aegis tab.
           </p>
+          <label className="stg-row">
+            <span className="stg-row__label">Security scan enabled</span>
+            <Toggle
+              on={cfg.aegis?.scan_enabled ?? true}
+              onChange={(v) => void patch({ aegis: { scan_enabled: v } })}
+            />
+          </label>
+          <label className="stg-row">
+            <span className="stg-row__label">Scan on startup</span>
+            <Toggle
+              on={cfg.aegis?.scan_on_startup ?? false}
+              onChange={(v) => void patch({ aegis: { scan_on_startup: v } })}
+            />
+          </label>
+          <NumField
+            label="Scan interval (hours)"
+            value={cfg.aegis?.scan_interval_hours ?? 24}
+            min={1}
+            max={168}
+            onChange={(v) => void patch({ aegis: { scan_interval_hours: v } })}
+          />
+          <NumField
+            label="Score threshold (below = at risk)"
+            value={cfg.aegis?.score_threshold ?? 70}
+            min={0}
+            max={100}
+            onChange={(v) => void patch({ aegis: { score_threshold: v } })}
+          />
+          <label className="stg-row">
+            <span className="stg-row__label">OSV.dev dependency scan</span>
+            <Toggle
+              on={cfg.aegis?.osv_enabled ?? true}
+              onChange={(v) => void patch({ aegis: { osv_enabled: v } })}
+            />
+          </label>
         </Section>
 
         {/* ── Workspace Allowlist ───────────────────────────────────── */}

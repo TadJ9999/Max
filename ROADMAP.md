@@ -1,12 +1,11 @@
 # Max — Local-First AI Engine · Roadmap & Brainstorm
 
-> Status: **living document** — Phases 1–14 are **built & working** (DSL + routing,
+> Status: **living document** — Phases 1–15 are **built & working** (DSL + routing,
 > Ollama/Claude streaming, the full delegate system, v1 Tauri widget, OSINT map,
-> market tape, Apollo prediction engine, Polymarket intelligence, Aegis self-repair,
-> Leo boot-rescue terminal, and Phase 14: Voice I/O, Jarvis personality, persistent
-> user memory, and Apollo chat). **185+ engine tests pass; the app typechecks & builds.**
-> Phase 12 (Sentinel 3D space view) is the next major build. Checklists below are
-> code-verified.
+> market tape, Apollo prediction engine, Polymarket intelligence, Sentinel 3D space view,
+> Aegis self-repair + Leo boot-rescue terminal, Voice I/O + Jarvis personality + Apollo
+> chat, and Phase 15: Shadow Net Tor dark-web browser). **185+ engine tests pass; the
+> app typechecks & builds.** Checklists below are code-verified.
 
 A **local-first**, private AI engine for a powerful workstation, with an **explicit
 opt-in cloud escape hatch**. One always-on **engine** (daemon) does the thinking;
@@ -274,7 +273,7 @@ Parser rules:
 
 ---
 
-### Phase 12 — Sentinel: 3D Space Intelligence  🎯 *interactive 3D Earth globe + live solar system with asteroid tracking*
+### Phase 12 — Sentinel: 3D Space Intelligence  ✅ *interactive 3D Earth globe + live solar system with asteroid tracking*
 *A new Hub tab (◈ Sentinel) alongside Apollo/OSINT/Market/Settings. Two internal sub-views: Earth View (live satellite tracking on a 3D globe) and Solar System View (heliocentric planets + asteroid orbits). Mirrors the OSINT module pattern — thin React frontend, thick cached Python backend, SSE for AI chat. Adds Three.js as the first 3D library in the project.*
 
 **Decisions locked:** **Three.js** for 3D rendering (both views) · **satellite.js Web Worker** for client-side SGP4 propagation off the main thread (5000+ satellites at 30fps) · **CelesTrak TLEs** (free, no key) as the satellite data source · **NASA NeoWs** (free NASA API key) for asteroid close approaches · **VSOP87 truncated coefficients** hardcoded in `solarUtils.ts` for planet positions (no external call) · same Hub tab/lazy-mount pattern as existing modules · extra data layers beyond the reference sites (NOAA SWPC, NASA CNEOS, RocketLaunch.live, open-notify.org ISS).
@@ -296,17 +295,17 @@ Parser rules:
 - RocketLaunch.live → launch pad markers + countdown sidebar panel
 - ISS crew via open-notify.org → crew panel in Earth View info sidebar
 
-- [ ] **Engine sentinel module** (`engine/max_engine/sentinel/`): `tle.py` (CelesTrak group fetcher + 3-line parser), `asteroids.py` (NeoWs close-approaches + JPL SBDB orbital elements), `space_weather.py` (NOAA SWPC JSON), `fireballs.py` (CNEOS), `launches.py` (RocketLaunch.live), `iss.py` (open-notify.org); `SentinelService` with per-feed TTL cache + async locks
-- [ ] **New Python deps**: `sgp4>=2.22` (SGP4 propagation for backend `/sentinel/satellites/now`), `numpy>=1.26` (vectorized batch propagation)
-- [ ] **Endpoints**: `GET /sentinel/tle`, `GET /sentinel/satellites/now`, `GET /sentinel/neo`, `GET /sentinel/space-weather`, `GET /sentinel/launches`, `GET /sentinel/fireballs`, `GET /sentinel/iss`, `POST /sentinel/chat` (SSE, same `_sse_stream` helper)
-- [ ] **Config**: `SentinelConfig` in `config.py` (TLE groups, TTLs, `neo_days_ahead`, `fireball_days`); `NASA_API_KEY` from env
-- [ ] **New npm deps**: `three ^0.167.0`, `@types/three`, `satellite.js ^5.0.0`, `@types/satellite.js`
-- [ ] **Frontend** (`app/src/sentinel/`): `SentinelView.tsx` (Earth/Solar sub-tab toggle + AI chat slide-in), `EarthView.tsx` (Three.js globe), `SolarView.tsx` (Three.js heliocentric), `earthUtils.ts`, `solarUtils.ts` (VSOP87 constants + Kepler solver), `satelliteWorker.ts` (Web Worker), `useThreeScene.ts` (shared Three.js lifecycle hook), `sentinel.ts` (API client), `Sentinel.css`
-- [ ] **Earth View**: Earth sphere + day/night textures (NASA Visible Earth, bundled), Fresnel atmosphere glow, `DirectionalLight` from `terminator.ts` subsolar point, satellite `Points` geometry (updated by worker ~100ms), selected satellite orbit `Line`, aurora `TorusGeometry` rings at ±65° (Kp-driven), fireball `ConeGeometry` markers, launch pad markers, `OrbitControls`
-- [ ] **Solar System View**: Sun + `PointLight` at origin, planet orbit `RingGeometry`, planet spheres at VSOP87 positions (log-scale radii), main-belt asteroid `InstancedMesh` (1500 instances), NEA `Line` tracks, time scrubber `<input type="range" min={-365} max={365}>`, hazardous NEA red glow, `OrbitControls` default top-down
-- [ ] **Hub integration**: add `"sentinel"` to `HubTab` union + `TABS[]` in `HubView.tsx`; lazy-mount view; add launcher button to `HubButtons.tsx`; sentinel tab accent in `Hub.css`; `#sentinel` hash route in `main.tsx`; `"sentinel"` in `capabilities/default.json`
-- [ ] **AI chat** (`POST /sentinel/chat`): grounded in live snapshot (space weather, ISS crew, NEA close approaches, next launch); mascot `mascot:signal` on submit — mirrors OSINT chat exactly
-- [ ] **Tests**: `tests/test_sentinel.py` — TLE parsing, SGP4 propagation, space weather parsing, asteroid model, endpoints (network mocked); add `sgp4`/`numpy` to test env
+- [x] **Engine sentinel module** (`engine/max_engine/sentinel/`): `tle.py` (CelesTrak group fetcher + 3-line parser), `asteroids.py` (NeoWs close-approaches + JPL SBDB orbital elements), `space_weather.py` (NOAA SWPC JSON), `fireballs.py` (CNEOS), `launches.py` (RocketLaunch.live), `iss.py` (open-notify.org); `SentinelService` with per-feed TTL cache + async locks
+- [x] **New Python deps**: `sgp4>=2.22` (SGP4 propagation for backend `/sentinel/satellites/now`), `numpy>=1.26` (vectorized batch propagation)
+- [x] **Endpoints**: `GET /sentinel/tle`, `GET /sentinel/satellites/now`, `GET /sentinel/neo`, `GET /sentinel/space-weather`, `GET /sentinel/launches`, `GET /sentinel/fireballs`, `GET /sentinel/iss`, `POST /sentinel/chat` (SSE, same `_sse_stream` helper)
+- [x] **Config**: `SentinelConfig` in `config.py` (TLE groups, TTLs, `neo_days_ahead`, `fireball_days`); `NASA_API_KEY` from env
+- [x] **New npm deps**: `three ^0.167.0`, `@types/three`, `satellite.js ^5.0.0`, `@types/satellite.js`
+- [x] **Frontend** (`app/src/sentinel/`): `SentinelView.tsx` (Earth/Solar sub-tab toggle + AI chat slide-in), `EarthView.tsx` (Three.js globe), `SolarView.tsx` (Three.js heliocentric), `earthUtils.ts`, `solarUtils.ts` (VSOP87 constants + Kepler solver), `satelliteWorker.ts` (Web Worker), `useThreeScene.ts` (shared Three.js lifecycle hook), `sentinel.ts` (API client), `Sentinel.css`
+- [x] **Earth View**: neon-hologram Earth sphere + day/night textures, Fresnel atmosphere glow, `DirectionalLight` from subsolar point, satellite `Points` geometry (SGP4 Web Worker ~100ms), selected satellite orbit `Line`, aurora `TorusGeometry` rings at ±65° (Kp-driven), fireball `ConeGeometry` markers, launch pad markers, `OrbitControls`
+- [x] **Solar System View**: Sun + `PointLight` at origin, planet orbit `RingGeometry`, planet spheres at VSOP87 positions (log-scale radii), main-belt asteroid `InstancedMesh`, NEA `Line` tracks, time scrubber, hazardous NEA red glow, `OrbitControls` default top-down
+- [x] **Hub integration**: `"sentinel"` Hub tab (🛰 Sentinel) + launcher button in `HubButtons.tsx`; `#sentinel` hash route in `main.tsx`
+- [x] **AI chat** (`POST /sentinel/chat`): grounded in live snapshot (space weather, ISS crew, NEA close approaches, next launch); mascot `mascot:signal` on submit
+- [x] **Tests**: `tests/test_sentinel.py` — TLE parsing, SGP4 propagation, space weather parsing, asteroid model, endpoints (network mocked); `sgp4`/`numpy` in test env
 
 ---
 
@@ -413,18 +412,18 @@ secrets redacted before any store or egress.
 
 ---
 
-### Phase 15 — Shadow Net: Tor Dark Web Browser  🔒 *Anonymous browsing with live Tor visualization*
+### Phase 15 — Shadow Net: Tor Dark Web Browser  ✅ *Anonymous browsing with live Tor visualization*
 
 *Adds a Shadow Net Hub tab backed by a bundled Tor daemon, giving anonymous access to both .onion and clearnet sites via onion routing. A persistent TorLock widget above the mascot shows circuit state globally — green when connected, red when dark. Requests and responses animate as vertical streaks between mascot core and lock.*
 
 **Decisions locked:** Tor only (no separate VPN — Tor provides stronger anonymity + dark web access in one) · Tor Expert Bundle (BSD 3-Clause) bundled as Tauri sidecar binary in `resources/tor/` · `stem` Python library for circuit control (new-identity, bootstrap polling) · `socksio` + httpx SOCKS5 client (`proxy=socks5://127.0.0.1:9050`) for all dark web fetches · `beautifulsoup4` for HTML proxy-renderer link rewriting · proxy-renderer browser (engine fetches + rewrites HTML, iframe srcdoc) rather than full WebView proxy · TorLock always visible above mascot when Tor is active, regardless of active Hub tab · lock click opens inline popover (not modal) with exit IP + disconnect + new identity · disconnect from lock widget returns Shadow Net tab to connect screen.
 
-- [ ] **Phase A — Tor lifecycle**: Tor Expert Bundle in `resources/tor/windows/`; Rust `TorProcess(Mutex<Option<Child>>)` state + `start_tor()`, `stop_tor()`, `tor_running()` Tauri commands in `lib.rs`; data dir in OS app-data; killed on app exit ✅
-- [ ] **Phase B — Backend**: `engine/max_engine/darknet/` module (`service.py`, `fetcher.py`, `client.py`, `models.py`); `TorService` with `stem` circuit control + httpx SOCKS5 client; BeautifulSoup4 link rewriter; `GET /dark/status`, `POST /dark/new-circuit`, `GET /dark/fetch` (SSE), `GET /dark/search` endpoints; `DarkNetConfig` in `config.py`; `socksio`, `stem`, `beautifulsoup4` deps; 13 tests ✅
-- [ ] **Phase C — TorLock widget**: `TorLock.tsx` SVG padlock with `off`/`connecting`/`connected`/`error` states; green glow (connected), red (off), amber pulse + spin arc (connecting); inline popover (exit IP, circuit age, new-identity, disconnect); positioned above mascot in `App.tsx` via `.widget__mascot-wrap`; polls `/dark/status` every 5s ✅
-- [ ] **Phase D — Shadow Net tab**: `ShadowNetView.tsx`; connect screen with Tor onion SVG logo + bootstrap progress bar; browser pane with address bar, back/forward history stack (`useReducer`), Ahmia + DDG onion quick-search, proxy-rendered HTML in sandboxed iframe; added to HubView + HubButtons (`⬡` glyph) + `#shadow` hash route ✅
-- [ ] **Phase E — Streak animations**: `mascot:tor-request` event → upward green streak from core (750ms); `mascot:tor-response` → downward streak (600ms); `torStreaks` state + `tor-streak--up/down` CSS keyframes in `Mascot.tsx`/`Mascot.css`; BroadcastChannel + Tauri events wired in `App.tsx` ✅
-- [ ] **Phase F — Polish**: circuit info bar (exit IP, circuit age), "New Identity" in status bar, Ahmia/DDG quick search, home page quick links, `.onion` error states ✅
+- [x] **Phase A — Tor lifecycle**: Tor Expert Bundle in `resources/tor/windows/`; Rust `TorProcess(Mutex<Option<Child>>)` state + `start_tor()`, `stop_tor()`, `tor_running()` Tauri commands in `lib.rs`; data dir in OS app-data; killed on app exit
+- [x] **Phase B — Backend**: `engine/max_engine/darknet/` module (`service.py`, `fetcher.py`, `client.py`, `models.py`); `TorService` with `stem` circuit control + httpx SOCKS5 client; BeautifulSoup4 link rewriter; `GET /dark/status`, `POST /dark/new-circuit`, `GET /dark/fetch` (SSE), `GET /dark/search` endpoints; `DarkNetConfig` in `config.py`; `socksio`, `stem`, `beautifulsoup4` deps; 13 tests
+- [x] **Phase C — TorLock widget**: `TorLock.tsx` SVG padlock with `off`/`connecting`/`connected`/`error` states; green glow (connected), red (off), amber pulse + spin arc (connecting); inline popover (exit IP, circuit age, new-identity, disconnect); positioned above mascot in `App.tsx` via `.widget__mascot-wrap`; polls `/dark/status` every 5s
+- [x] **Phase D — Shadow Net tab**: `ShadowNetView.tsx`; connect screen with Tor onion SVG logo + bootstrap progress bar; browser pane with address bar, back/forward history stack (`useReducer`), Ahmia + DDG onion quick-search, proxy-rendered HTML in sandboxed iframe; multi-tab browser; added to HubView + HubButtons (`⬡` glyph) + `#shadow` hash route
+- [x] **Phase E — Streak animations**: `mascot:tor-request` event → upward green streak from core (750ms); `mascot:tor-response` → downward streak (600ms); `torStreaks` state + `tor-streak--up/down` CSS keyframes in `Mascot.tsx`/`Mascot.css`; BroadcastChannel + Tauri events wired in `App.tsx`
+- [x] **Phase F — Polish**: circuit info bar (exit IP, circuit age), "New Identity" in status bar, Ahmia/DDG quick search, home page quick links, `.onion` error states; Tor features bar; iframe base URL fix for image/CSS rendering
 
 ---
 
@@ -434,14 +433,31 @@ secrets redacted before any store or egress.
 
 **Decisions locked:** SAST = heuristic rules + AI triage (no new deps) · SCA = **OSV.dev** batch API (free, no key, covers PyPI/npm/crates.io; returns CVE/GHSA + CVSS + fixed version) via existing `httpx`, TTL-cached, offline-safe · in-engine async-interval scheduler + manual trigger (no OS cron) · sub-tab toggle inside Aegis (`Runtime Errors` | `Security Posture`) · posture score 0–100 (`100 − 15·crit − 7·high − 3·med − 1·low`) + severity counts + scan-history trend strip · findings dedup by fingerprint, status open/fixed/ignored, auto-`fixed` on reconcile when no longer seen · "Ask Leo to fix" reuses diagnose/apply/rollback; SCA fixes = manifest version-bump diffs · **ecosystem-aware verify** (Python→pytest, npm→npm ci+tsc, rust→cargo check; missing toolchain → "applied, needs manual verify") · configurable **score-threshold gate** → "at risk" banner · one-click **Markdown posture report** export · new `aegis_scans` + `aegis_findings` tables in `.apollo.db`; reuses `rag/chunker` file-walker, `aegis/redact`, and the provider router.
 
-- [ ] **SAST scanner** (`aegis/scanner.py`): heuristic rule registry (secrets, eval/exec, shell=True, SQL injection, unsafe pickle/yaml, XSS sinks, disabled TLS, weak hashing, debug/CORS) + AI triage; snippets redacted via `aegis/redact.py`; file walk via `rag/chunker.gather_files`.
-- [ ] **SCA scanner** (`aegis/deps.py` + `aegis/osv.py`): parse `engine/pyproject.toml` / `app/package-lock.json` / `app/src-tauri/Cargo.lock`; OSV.dev `querybatch` → CVE findings with fixed versions + CVSS→severity; injectable httpx; offline-safe.
-- [ ] **Store + scan service**: `aegis_scans` / `aegis_findings` tables in `store.py`; `scan_service.py` `run_scan` (SAST+SCA independent), dedup/reconcile, posture score; in-engine scheduler + `scan_on_startup` (add FastAPI startup hook).
-- [ ] **Endpoints** (`main.py`): `POST /aegis/scan`, `GET /aegis/scan/status`, `GET /aegis/posture`, `GET /aegis/findings`, `GET /aegis/scans`, `POST /aegis/findings/{id}/fix` (SSE), `POST /aegis/findings/{id}/status`, `GET /aegis/report`.
-- [ ] **Ask-Leo-to-fix + ecosystem-aware apply**: `fix_finding` SSE (SAST = code diff, SCA = version bump); generalize `AegisService` verify by changed paths (pytest / npm / cargo).
-- [ ] **Security Posture UI** (`app/src/aegis/SecurityPostureView.tsx`): score gauge, at-risk banner, trend strip, SAST/SCA finding list + detail, fix/approve/ignore/reopen, report export; sub-tab toggle added to `AegisView.tsx`; styles in `Aegis.css`.
-- [ ] **Config + Settings**: `AegisConfig` scan/OSV/threshold fields in `config.py` exposed via `/config`; controls in `settings/SettingsView.tsx`; `aegis_security` prompt in `prompts.py`.
-- [ ] **Tests**: `test_aegis_scanner.py`, `test_aegis_deps_osv.py` (mocked httpx), `test_aegis_scan_store.py`.
+- [x] **SAST scanner** (`aegis/scanner.py`): 10-rule heuristic registry (secrets, eval/exec, shell=True, SQL injection, pickle/yaml, XSS sinks, TLS verify=False, weak hashing, debug=True, permissive CORS) + AI triage; snippets redacted via `aegis/redact.py`; file walk via `rag/chunker.gather_files`.
+- [x] **SCA scanner** (`aegis/deps.py` + `aegis/osv.py`): parse `engine/pyproject.toml` / `app/package-lock.json` / `app/src-tauri/Cargo.lock`; OSV.dev `querybatch` → CVE findings with fixed versions + CVSS→severity; injectable httpx; offline-safe.
+- [x] **Store + scan service**: `aegis_scans` / `aegis_findings` tables in `store.py`; `scan_service.py` `run_scan` (SAST+SCA independent), dedup/reconcile, posture score; in-engine scheduler + `scan_on_startup` (FastAPI startup hook).
+- [x] **Endpoints** (`main.py`): `POST /aegis/scan`, `GET /aegis/scan/status`, `GET /aegis/posture`, `GET /aegis/findings`, `GET /aegis/scans`, `POST /aegis/findings/{id}/fix` (SSE), `POST /aegis/findings/{id}/status`, `GET /aegis/report`.
+- [x] **Ask-Leo-to-fix + ecosystem-aware apply**: `fix_finding` SSE (SAST = code diff, SCA = version bump); `_verify_for(changed_paths)` dispatches pytest / tsc / cargo check by changed file type.
+- [x] **Security Posture UI** (`app/src/aegis/SecurityPostureView.tsx`): circular score gauge, at-risk banner, history strip, SAST/SCA finding list + detail, fix/approve/ignore/reopen, report export; `Runtime Errors | Security Posture` sub-tab toggle in `AegisView.tsx`; styles in `Aegis.css`.
+- [x] **Config + Settings**: `AegisConfig` scan/OSV/threshold fields in `config.py` exposed via `/config`; scan controls in `settings/SettingsView.tsx`; `aegis_security` prompt in `prompts.py`.
+- [x] **Tests**: `test_aegis_scanner.py`, `test_aegis_deps_osv.py` (mocked httpx), `test_aegis_scan_store.py` — 69 new tests, 268 total green.
+
+---
+
+### Phase 17 — LAN Access: Max on your iPhone & Mac over WiFi  📱 *open Max in a phone/Mac browser on the same network — all compute stays on this PC* — **PLANNED**
+
+*Today Max only runs as the desktop widget. This phase lets you open Max from your iPhone and Mac in a browser over the same WiFi, while the engine, Ollama, Tor, and cloud-API keys stay on this desktop. The frontend already talks to the engine purely over HTTP `fetch` (no Tauri IPC for backend calls), so a plain browser can drive the whole engine — the work is exposing it safely and giving phones a touch-first UI. A **"Share on LAN" toggle** in Settings flips the engine from safe localhost to `0.0.0.0:8443` over HTTPS, serves a dedicated **mobile web UI**, and shows the `https://<pc-name>.local:8443` URL plus a scannable QR code. The desktop widget keeps working unchanged. First step toward a later "accessible from anywhere" phase (Tailscale/Cloudflare) — explicitly out of scope here. Full plan: `C:\Users\tadjo\.claude\plans\lets-plan-a-new-enumerated-parnas.md`.*
+
+**The load-bearing gotcha:** iOS Safari treats a LAN IP/host over plain HTTP as an *insecure context*, which **silently disables the mic / Web Speech / clipboard** (`localhost` is exempt, `192.168.x.x` and `*.local` are not). Voice on mobile is required → **HTTPS via a locally-trusted cert is mandatory**, not optional polish.
+
+**Decisions locked:** mic on mobile required → **HTTPS mandatory** · **engine serves the built frontend** (single origin → no CORS) · desktop Tauri app **stays open** (LAN is an in-app toggle, no standalone launcher) · **no app token** — rely on home LAN + a subnet-scoped Windows firewall rule (`profile=private`, `remoteip=LocalSubnet`) · HTTPS via **mkcert** + install/trust root CA on the iPhone (pure LAN, no internet/accounts) · reach the PC at **`<computer-name>.local`** via mDNS (cert SANs also cover LAN IP + `localhost` + `127.0.0.1`) · **uvicorn built-in TLS** (`--ssl-keyfile/--ssl-certfile`, no Caddy) on port **8443** · connect UX = **toggle + URL + QR** in Settings · **dedicated mobile build** (separate Vite entry, built alongside desktop) · cert setup is **app-assisted** (run mkcert, generate cert w/ SANs, reveal/AirDrop root CA + short trust doc) · LAN state **remembered** across launches · phone feature priority **Chat+Voice · Market/Polymarket · OSINT/Sentinel** (Aegis/Shadow Net deferred).
+
+- [ ] **17.A — Engine serve + dynamic base + HTTP LAN bind**: `main.py` mounts the Vite `dist/` as `StaticFiles` (single origin) with a UA-based mobile redirect (`/` → `/m`); narrow CORS `allow_origins=["*"]` → LAN `allow_origin_regex`; new `EngineConfig` fields (`lan_enabled`, `lan_host`, `lan_port`, `tls_cert`, `tls_key`) round-tripping through `.maxconfig.json`; make `app/src/engine.ts` base URL dynamic (same-origin in a served browser, absolute via a new `engine_base()` Tauri command in the webview); parametrize Rust `spawn_engine()` to bind `0.0.0.0` (HTTP first, to validate).
+- [ ] **17.B — Dedicated mobile build**: multi-page Vite build (`index.mobile.html` + `src/mobile/`) → `dist/mobile.html`; touch-first single-column shell with bottom-tab nav **Chat/Voice · Markets · OSINT/Sentinel**, reusing the existing engine-client modules (`engine.ts`, `market.ts`, `polymarket.ts`, `osint.ts`, `apollo.ts`, `sentinel/*`, `MicButton.tsx`) unchanged; no Tauri `invoke` in the mobile shell.
+- [ ] **17.C — HTTPS: certs + TLS + firewall**: `setup_cert()` / `reveal_root_ca()` Tauri commands run mkcert (`-install`, then SANs `<pc>.local <lan-ip> localhost 127.0.0.1`); Rust spawns uvicorn with `--ssl-keyfile/--ssl-certfile` on `:8443` when LAN-enabled; health/port checks speak HTTPS to `127.0.0.1:8443` (keep `127.0.0.1`, never `localhost`); add/remove the subnet-scoped firewall rule (elevated/UAC) on toggle; `docs/lan.md` with the iPhone "enable full trust" steps.
+- [ ] **17.D — Settings "Share on LAN"**: section in `settings/SettingsView.tsx` with the toggle (`set_lan_mode`), live `lan_status` (`{enabled, url, pc_name, lan_ip, cert_ready}`), copyable `https://<pc-name>.local:8443` URL, **QR code**, cert-helper buttons + trust steps, firewall/Private-network hint; LAN state remembered across launches.
+
+> **Future phase (out of scope here):** remote/internet access (Tailscale `*.ts.net` or Cloudflare Tunnel), app-level auth tokens, and multi-user — noted only as the upgrade path that this single-origin HTTPS app extends into cleanly.
 
 ---
 

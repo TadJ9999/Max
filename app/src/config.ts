@@ -48,6 +48,16 @@ export type EngineConfigView = {
     tts_pitch: number;
     tts_voice_name: string;
   };
+  aegis: {
+    scan_enabled: boolean;
+    scan_interval_hours: number;
+    scan_on_startup: boolean;
+    scan_roots: string[];
+    osv_enabled: boolean;
+    osv_ttl_seconds: number;
+    score_threshold: number;
+    autonomy: string;
+  };
 };
 
 export type ConfigPatch = {
@@ -74,6 +84,15 @@ export type ConfigPatch = {
     tts_rate?: number;
     tts_pitch?: number;
     tts_voice_name?: string;
+  };
+  aegis?: {
+    scan_enabled?: boolean;
+    scan_interval_hours?: number;
+    scan_on_startup?: boolean;
+    scan_roots?: string[];
+    osv_enabled?: boolean;
+    osv_ttl_seconds?: number;
+    score_threshold?: number;
   };
 };
 

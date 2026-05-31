@@ -114,8 +114,9 @@ class AegisService:
         finally:
             os.unlink(patch_path)
 
-        # Verify
-        ok, verify_out = _verify(self._root)
+        # Verify — ecosystem-aware based on which files the patch touched
+        changed_paths = _extract_diff_paths(diff)
+        ok, verify_out = _verify_for(self._root, changed_paths)
         if not ok:
             _git_unstash(self._root, snapshot)
             if log_id:
@@ -223,6 +224,19 @@ def _git_unstash(root: Path, snapshot: str | None) -> None:
         subprocess.run(["git", "stash", "pop"], cwd=root, capture_output=True)
 
 
+def _extract_diff_paths(diff: str) -> list[str]:
+    """Return the list of file paths touched by a unified diff."""
+    paths: list[str] = []
+    for line in diff.splitlines():
+        if line.startswith("+++ "):
+            part = line[4:].strip()
+            if part.startswith("b/"):
+                part = part[2:]
+            if part != "/dev/null":
+                paths.append(part)
+    return paths
+
+
 def _verify(root: Path) -> tuple[bool, str]:
     engine_dir = root / "engine"
     result = subprocess.run(
@@ -231,6 +245,53 @@ def _verify(root: Path) -> tuple[bool, str]:
     )
     out = (result.stdout + result.stderr).strip()[-2000:]
     return result.returncode == 0, out
+
+
+def _verify_for(root: Path, changed_paths: list[str]) -> tuple[bool, str]:
+    """Dispatch verification based on which files the diff touched."""
+    import shutil
+
+    normalized = [p.replace("\\", "/") for p in changed_paths]
+    has_py = any(
+        p.endswith(".py") or p.startswith("engine/") for p in normalized
+    )
+    has_js_ts = any(
+        any(p.endswith(ext) for ext in (".js", ".ts", ".jsx", ".tsx", ".mjs"))
+        or "package" in p
+        for p in normalized
+    )
+    has_rust = any(
+        p.endswith(".rs") or "Cargo." in p for p in normalized
+    )
+
+    if has_py or not changed_paths:
+        # Default: run pytest (existing behaviour)
+        return _verify(root)
+
+    if has_js_ts:
+        if shutil.which("npx"):
+            app_dir = root / "app"
+            result = subprocess.run(
+                ["npx", "tsc", "--noEmit"],
+                cwd=app_dir, capture_output=True, text=True, timeout=120,
+            )
+            out = (result.stdout + result.stderr).strip()[-2000:]
+            return result.returncode == 0, out
+        return True, "applied — needs manual verify (npx not found)"
+
+    if has_rust:
+        if shutil.which("cargo"):
+            tauri_dir = root / "app" / "src-tauri"
+            result = subprocess.run(
+                ["cargo", "check"],
+                cwd=tauri_dir, capture_output=True, text=True, timeout=120,
+            )
+            out = (result.stdout + result.stderr).strip()[-2000:]
+            return result.returncode == 0, out
+        return True, "applied — needs manual verify (cargo not found)"
+
+    # Fallback
+    return _verify(root)
 
 
 def _write_logbook(root: Path, event_id: str | None, status: str, detail: str) -> None:

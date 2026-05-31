@@ -23,7 +23,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from . import __version__
-from .aegis import AegisCapture, AegisService, AegisStore
+from .aegis import AegisCapture, AegisService, AegisStore, ScanService
 from .darknet import TorService
 from .darknet.fetcher import fetch_url as tor_fetch_url
 from .apollo import ApolloService, VectorStore
@@ -135,10 +135,16 @@ _aegis_store = AegisStore(config.apollo.db_path)
 _aegis_capture = AegisCapture(_aegis_store)
 _profile_store = UserProfileStore(config.apollo.db_path)
 _prediction_history = PredictionHistory(config.apollo.db_path)
+_repo_root = str(Path(__file__).resolve().parent.parent.parent)
 aegis_svc = AegisService(
     store=_aegis_store,
     config=config,
-    repo_root=str(Path(__file__).resolve().parent.parent.parent),
+    repo_root=_repo_root,
+)
+scan_svc = ScanService(
+    store=_aegis_store,
+    config=config,
+    repo_root=_repo_root,
 )
 dark_svc = TorService(
     socks_port=config.darknet.socks_port,
@@ -148,6 +154,22 @@ dark_svc = TorService(
 # Register Aegis as the global FastAPI exception handler so unhandled errors
 # are captured into the event store before the 500 response is returned.
 app.add_exception_handler(Exception, _aegis_capture.fastapi_handler)
+
+
+@app.on_event("startup")
+async def _aegis_startup_scan() -> None:
+    """Optionally run a security scan on startup, then schedule the interval loop."""
+    import asyncio
+
+    async def _scheduler() -> None:
+        if config.aegis.scan_on_startup:
+            await scan_svc.run_scan("scheduled")
+        while True:
+            await asyncio.sleep(config.aegis.scan_interval_hours * 3600)
+            if config.aegis.scan_enabled:
+                await scan_svc.run_scan("scheduled")
+
+    asyncio.create_task(_scheduler())
 
 
 @app.get("/health")
@@ -211,6 +233,16 @@ def _config_view() -> dict:
             "tts_rate": config.voice.tts_rate,
             "tts_pitch": config.voice.tts_pitch,
             "tts_voice_name": config.voice.tts_voice_name,
+        },
+        "aegis": {
+            "scan_enabled": config.aegis.scan_enabled,
+            "scan_interval_hours": config.aegis.scan_interval_hours,
+            "scan_on_startup": config.aegis.scan_on_startup,
+            "scan_roots": config.aegis.scan_roots,
+            "osv_enabled": config.aegis.osv_enabled,
+            "osv_ttl_seconds": config.aegis.osv_ttl_seconds,
+            "score_threshold": config.aegis.score_threshold,
+            "autonomy": config.aegis.autonomy,
         },
     }
 
@@ -1203,6 +1235,92 @@ def aegis_log(limit: int = 100) -> dict:
 def aegis_sources() -> dict:
     """Current provider status, autonomy level, store path."""
     return aegis_svc.sources()
+
+
+# ---- Aegis Security Posture (Phase 16) ---------------------------------
+
+
+@app.post("/aegis/scan")
+async def aegis_scan_start() -> dict:
+    """Kick off a manual security scan (returns immediately with scan_id)."""
+    import asyncio
+
+    async def _run() -> None:
+        await scan_svc.run_scan("manual")
+
+    asyncio.create_task(_run())
+    return {"scan_id": scan_svc.current_scan_id, "started": True}
+
+
+@app.get("/aegis/scan/status")
+def aegis_scan_status() -> dict:
+    """Live progress of the current scan (or idle state)."""
+    return {
+        "running": scan_svc.is_running,
+        "scan_id": scan_svc.current_scan_id,
+        "files_scanned": scan_svc.files_scanned,
+    }
+
+
+@app.get("/aegis/posture")
+def aegis_posture() -> dict:
+    """Current posture score, severity counts, scan history, at_risk flag."""
+    p = scan_svc.posture()
+    p["at_risk"] = p["score"] < config.aegis.score_threshold
+    return p
+
+
+@app.get("/aegis/findings")
+def aegis_findings(
+    category: str | None = None,
+    status: str | None = None,
+    limit: int = 200,
+) -> dict:
+    """List findings, optionally filtered by category (sast|sca) and status."""
+    return {"findings": _aegis_store.list_findings(category=category, status=status or "open", limit=limit)}
+
+
+@app.get("/aegis/scans")
+def aegis_scans(limit: int = 20) -> dict:
+    """Scan run history (for the score trend strip)."""
+    return {"scans": _aegis_store.list_scans(limit=limit)}
+
+
+class AegisFindingFixRequest(BaseModel):
+    pass  # ID comes from the path
+
+
+@app.post("/aegis/findings/{finding_id}/fix")
+async def aegis_finding_fix(finding_id: str) -> StreamingResponse:
+    """SSE — stream an AI fix (root cause + unified diff) for one finding."""
+    finding = _aegis_store.get_finding(finding_id)
+    if finding is None:
+        raise HTTPException(status_code=404, detail="finding not found")
+    return StreamingResponse(
+        scan_svc.fix_finding(finding_id), media_type="text/event-stream"
+    )
+
+
+class AegisFindingStatusRequest(BaseModel):
+    status: str  # "open" | "ignored" | "fixed"
+
+
+@app.post("/aegis/findings/{finding_id}/status")
+def aegis_finding_status(finding_id: str, req: AegisFindingStatusRequest) -> dict:
+    """Update a finding's status (open / ignored / fixed)."""
+    finding = _aegis_store.get_finding(finding_id)
+    if finding is None:
+        raise HTTPException(status_code=404, detail="finding not found")
+    if req.status not in ("open", "ignored", "fixed"):
+        raise HTTPException(status_code=422, detail="status must be open, ignored, or fixed")
+    _aegis_store.set_finding_status(finding_id, req.status)
+    return {"ok": True}
+
+
+@app.get("/aegis/report")
+def aegis_report_md() -> dict:
+    """Markdown posture report (score, trend, grouped findings)."""
+    return {"report": scan_svc.report_markdown()}
 
 
 # ---- Sentinel: space situational awareness -----------------------------

@@ -6,6 +6,7 @@ import {
   getAegisEvents,
   streamDiagnosis,
 } from "./aegis";
+import { SecurityPostureView } from "./SecurityPostureView";
 import "./Aegis.css";
 
 // ---- helpers -------------------------------------------------------
@@ -86,10 +87,12 @@ function DiagnosisBody({
 
 // ---- main component ------------------------------------------------
 
+type AegisTab = "runtime" | "posture";
 type DiagState = "idle" | "streaming" | "done" | "error";
 type ApplyState = "idle" | "applying" | "ok" | "error";
 
 export function AegisView() {
+  const [tab, setTab] = useState<AegisTab>("runtime");
   const [events, setEvents] = useState<AegisEvent[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [diagText, setDiagText] = useState("");
@@ -196,24 +199,47 @@ export function AegisView() {
       {/* ---- header ---- */}
       <div className="aegis__header">
         <span className="aegis__title">🛡 Aegis</span>
-        <span className="aegis__badge">Self-Repair Console</span>
-        <div className="aegis__spacer" />
-        <div className="aegis__autonomy">
-          {(["suggest", "ask"] as const).map((a) => (
-            <button
-              key={a}
-              className={`aegis__autonomy-btn${autonomy === a ? " is-active" : ""}`}
-              onClick={() => setAutonomy(a)}
-            >
-              {a}
-            </button>
-          ))}
+        {/* Sub-tab toggle */}
+        <div className="aegis__autonomy" style={{ marginLeft: 8 }}>
+          <button
+            className={`aegis__autonomy-btn${tab === "runtime" ? " is-active" : ""}`}
+            onClick={() => setTab("runtime")}
+          >
+            Runtime Errors
+          </button>
+          <button
+            className={`aegis__autonomy-btn${tab === "posture" ? " is-active" : ""}`}
+            onClick={() => setTab("posture")}
+          >
+            Security Posture
+          </button>
         </div>
-        <button className="aegis__refresh-btn" onClick={load}>
-          ↻ Refresh
-        </button>
+        <div className="aegis__spacer" />
+        {tab === "runtime" && (
+          <>
+            <div className="aegis__autonomy">
+              {(["suggest", "ask"] as const).map((a) => (
+                <button
+                  key={a}
+                  className={`aegis__autonomy-btn${autonomy === a ? " is-active" : ""}`}
+                  onClick={() => setAutonomy(a)}
+                >
+                  {a}
+                </button>
+              ))}
+            </div>
+            <button className="aegis__refresh-btn" onClick={load}>
+              ↻ Refresh
+            </button>
+          </>
+        )}
       </div>
 
+      {/* ---- Security Posture tab ---- */}
+      {tab === "posture" && <SecurityPostureView />}
+
+      {/* ---- Runtime Errors tab ---- */}
+      {tab === "runtime" && <>
       {/* ---- summary strip ---- */}
       {events.length > 0 && (
         <div className="aegis__summary">
@@ -377,6 +403,7 @@ export function AegisView() {
           )}
         </div>
       </div>
+      </>}
     </div>
   );
 }

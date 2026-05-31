@@ -79,6 +79,14 @@ class AegisConfig(BaseModel):
     autonomy: str = "ask"            # suggest | ask | auto
     cooldown_seconds: int = 300      # per-fingerprint re-diagnose cooldown
     max_fixes_per_error: int = 3     # loop-protection cap
+    # ---- Phase 16: Security Posture ----
+    scan_enabled: bool = True
+    scan_interval_hours: int = 24
+    scan_on_startup: bool = False
+    scan_roots: list[str] = Field(default_factory=list)  # empty → repo root
+    osv_enabled: bool = True
+    osv_ttl_seconds: int = 21_600                         # cache OSV results ~6h
+    score_threshold: int = 70                             # below → "at risk" banner
 
 
 class SentinelConfig(BaseModel):
@@ -266,6 +274,21 @@ def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
         cfg.voice.tts_pitch = max(0.5, min(2.0, float(vo["tts_pitch"])))
     if "tts_voice_name" in vo:
         cfg.voice.tts_voice_name = str(vo["tts_voice_name"])
+    ag = data.get("aegis") or {}
+    if "scan_enabled" in ag:
+        cfg.aegis.scan_enabled = bool(ag["scan_enabled"])
+    if "scan_interval_hours" in ag:
+        cfg.aegis.scan_interval_hours = max(1, int(ag["scan_interval_hours"]))
+    if "scan_on_startup" in ag:
+        cfg.aegis.scan_on_startup = bool(ag["scan_on_startup"])
+    if "scan_roots" in ag:
+        cfg.aegis.scan_roots = [str(r) for r in ag["scan_roots"]]
+    if "osv_enabled" in ag:
+        cfg.aegis.osv_enabled = bool(ag["osv_enabled"])
+    if "osv_ttl_seconds" in ag:
+        cfg.aegis.osv_ttl_seconds = max(3600, int(ag["osv_ttl_seconds"]))
+    if "score_threshold" in ag:
+        cfg.aegis.score_threshold = max(0, min(100, int(ag["score_threshold"])))
 
 
 def load_config() -> EngineConfig:
@@ -325,6 +348,15 @@ def save_overrides(cfg: EngineConfig) -> None:
             "tts_rate": cfg.voice.tts_rate,
             "tts_pitch": cfg.voice.tts_pitch,
             "tts_voice_name": cfg.voice.tts_voice_name,
+        },
+        "aegis": {
+            "scan_enabled": cfg.aegis.scan_enabled,
+            "scan_interval_hours": cfg.aegis.scan_interval_hours,
+            "scan_on_startup": cfg.aegis.scan_on_startup,
+            "scan_roots": cfg.aegis.scan_roots,
+            "osv_enabled": cfg.aegis.osv_enabled,
+            "osv_ttl_seconds": cfg.aegis.osv_ttl_seconds,
+            "score_threshold": cfg.aegis.score_threshold,
         },
     }
     CONFIG_FILE.write_text(json.dumps(data, indent=2))

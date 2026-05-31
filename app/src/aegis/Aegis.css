@@ -384,3 +384,176 @@
   margin-left: 2px;
 }
 @keyframes aegis-blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+/* ══════════════════════════════════════════════════════════════════
+   Phase 16 — Security Posture
+   ══════════════════════════════════════════════════════════════════ */
+
+.posture {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ---- at-risk banner ---- */
+.posture__at-risk-banner {
+  background: rgba(255, 80, 40, 0.12);
+  border-bottom: 1px solid rgba(255, 80, 40, 0.3);
+  color: #ff7050;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 16px;
+  text-align: center;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+/* ---- header row ---- */
+.posture__header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0,0,0,0.15);
+  flex-shrink: 0;
+}
+
+/* Circular gauge */
+.posture__gauge-wrap {
+  flex-shrink: 0;
+}
+.posture__gauge-svg {
+  width: 90px;
+  height: 90px;
+}
+
+/* Info column (sev counts + last scan + history) */
+.posture__header-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.posture__sev-counts {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.posture__last-scan {
+  font-size: 10px;
+  color: #3a5068;
+}
+
+/* History strip */
+.posture__history {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 28px;
+}
+.posture__history-bar {
+  width: 10px;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(255,255,255,0.04);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.posture__history-fill {
+  width: 100%;
+  border-radius: 2px;
+  transition: height 0.4s ease;
+  min-height: 4px;
+}
+
+/* Action buttons */
+.posture__header-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ---- filter bar ---- */
+.posture__filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  background: rgba(0,0,0,0.1);
+  flex-shrink: 0;
+}
+.posture__filter-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: #3a5068;
+}
+
+/* ---- finding cards ---- */
+.posture__finding-card { }   /* inherits .aegis__event-card */
+
+.posture__cat-badge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(85, 153, 255, 0.1);
+  color: #5599ff;
+  border: 1px solid rgba(85, 153, 255, 0.25);
+  font-weight: 700;
+}
+
+.posture__status-badge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.posture__status-badge--fixed   { background: rgba(74,222,128,0.1); color: #4ade80; }
+.posture__status-badge--ignored { background: rgba(255,255,255,0.06); color: #5a7090; }
+
+.posture__confidence {
+  font-size: 9px;
+  color: #5a7090;
+  margin-left: auto;
+}
+
+/* ---- detail panel extras ---- */
+.posture__detail-loc {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+.posture__file-path {
+  font-size: 11px;
+  color: #5a7090;
+  word-break: break-all;
+}
+.posture__snippet {
+  background: rgba(0,0,0,0.35);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: #8aaccc;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  max-height: 60px;
+  overflow-y: auto;
+}
+.posture__cve-id {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ff8c42;
+}
+.posture__pkg-info {
+  font-size: 11px;
+  color: #5a7090;
+}
