@@ -169,7 +169,7 @@ function Invoke-EnvSniff {
         $issues.Add("MISSING venv: engine\.venv not found")
         LogLine "✗ venv missing"
     } else {
-        LogLine "✓ venv found"
+        LogLine "OK venv found"
     }
 
     # 2. .env file
@@ -178,19 +178,19 @@ function Invoke-EnvSniff {
         $issues.Add("MISSING .env: engine\.env not found (copy from .env.example)")
         LogLine "✗ .env missing"
     } else {
-        LogLine "✓ .env found"
+        LogLine "OK .env found"
     }
 
     # 3. ANTHROPIC_API_KEY
     $hasKey = $false
     if ($env:ANTHROPIC_API_KEY) {
         $hasKey = $true
-        LogLine "✓ ANTHROPIC_API_KEY set (env)"
+        LogLine "OK ANTHROPIC_API_KEY set (env)"
     } elseif (Test-Path $envFile) {
         $envContent = Get-Content $envFile -Raw
         if ($envContent -match "ANTHROPIC_API_KEY\s*=\s*\S+") {
             $hasKey = $true
-            LogLine "✓ ANTHROPIC_API_KEY found in .env"
+            LogLine "OK ANTHROPIC_API_KEY found in .env"
         }
     }
     if (-not $hasKey) {
@@ -212,7 +212,7 @@ function Invoke-EnvSniff {
     # 5. Ollama
     try {
         $r = Invoke-WebRequest -Uri "http://localhost:11434" -TimeoutSec 1 -ErrorAction Stop -UseBasicParsing
-        LogLine "✓ Ollama reachable (local fallback available)"
+        LogLine "OK Ollama reachable (local fallback available)"
     } catch {
         LogLine "⚠ Ollama unreachable (local fallback offline)"
         $issues.Add("Ollama not running  - local diagnosis fallback unavailable")
@@ -223,7 +223,7 @@ function Invoke-EnvSniff {
     if ($LogFile -and (Test-Path $LogFile)) {
         $lines = Get-Content $LogFile -Tail 30
         $stderrSummary = $lines -join "`n"
-        LogLine "✓ Engine stderr log found ($($lines.Count) lines)"
+        LogLine "OK Engine stderr log found ($($lines.Count) lines)"
     } else {
         LogLine "⚠ No engine stderr log"
     }
@@ -232,7 +232,7 @@ function Invoke-EnvSniff {
 }
 
 # ============================================================
-#  Diagnosis (cloud → local → offline heuristics)
+#  Diagnosis (cloud -> local -> offline heuristics)
 # ============================================================
 function Invoke-Diagnosis([System.Collections.Generic.List[string]]$issues, [string]$stderr) {
     $global:LeoState  = "think"
