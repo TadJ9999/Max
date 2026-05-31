@@ -24,9 +24,8 @@ const land = feature(
 const ARROW_D = "M 0,-14 L 6,7 L 0,2 L -6,7 Z";
 
 function mapShipLabel(name: string): string {
-  const m = name.match(/^(USS|USNS)\s+(\S+)/i);
-  if (m) return `${m[1].toUpperCase()} ${m[2]}`;
-  return name.split(/\s+/).slice(0, 2).join(" ");
+  // Show USS/USNS + up to 2 name words: "USS Nimitz", "USS Theodore Roosevelt", "USS George H.W."
+  return name.split(/\s+/).slice(0, 3).join(" ");
 }
 
 // ── types ───────────────────────────────────────────────────────────────────
