@@ -209,11 +209,14 @@ Parser rules:
 - [x] **Delegator/coordinator**: `POST /sessions/coordinate` — a planner model decomposes one request into independent subtasks, each fanned out as a parallel session (defensive JSON parse + single-task fallback; planner stays local unless Smart-Auto + cloud)
 
 ### Phase 5 — VS Code extension  🎯 *type `. … .` live → code appears; `!.` routes to cloud*
-- [ ] **Live-as-you-type** detection (fire on closing delimiter) + debounce/cancel
-- [ ] Sigil routing honored from the editor
-- [ ] Stream results; **diff preview** before applying; insert/replace
-- [ ] Engine status + active-model surface; cloud-egress indicator
-- [ ] (Stretch) ghost-text **FIM autocomplete** as a separate fast channel
+*Built in `extension/` (TypeScript, bundled with esbuild; typecheck + build clean). Run with F5.*
+- [x] **Trigger (configurable)** — `auto` fires on the closing delimiter (debounced, ignores our own edits); `manual` uses the `ctrl/cmd+enter` keybinding (which also works in auto mode)
+- [x] **Sigil routing honored from the editor** — the raw command is sent to `/command`; the engine parses `@`/`#`/`!` and routes (cloud blocked → surfaced as an error)
+- [x] Stream results; **inline replace** — the command span is replaced with the streamed output as it arrives (single undo)
+- [x] Engine status + active-model surface; **cloud (☁) indicator** while a `!` command runs (status-bar item, polls `/health`)
+- [x] Ghost-text **FIM autocomplete** — `InlineCompletionItemProvider` → engine `POST /complete` (Ollama FIM via `/api/generate` prefix+suffix), debounced/cancellable, toggleable
+
+**Phase 5 complete.** ✅
 
 ### Phase 6 — Context & RAG (Max knows your codebase)  🎯 *context-aware answers*
 *Engine side built + tested (`engine/max_engine/rag/`, 17 tests). Indexing is scoped to the workspace allowlist (privacy). UI wiring + session memory still open.*

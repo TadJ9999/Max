@@ -13,6 +13,7 @@ prediction engine, all behind one local API.
 - 🪄 **Delegate system** — run many tasks in **parallel**, **Manual** or **Smart-Auto** (the engine picks local vs cloud by task complexity), within a 12 GB-VRAM-aware scheduler. A **coordinator** can auto-decompose one request into parallel subtasks.
 - 📡 **Live everything** — per-session output **streams** to the UI token-by-token (SSE).
 - 🧠 **Knows your codebase** — local RAG indexes your workspace (sqlite-vec, incremental, allowlist-scoped) and answers grounded questions **cited by `file:line`**.
+- 🧑‍💻 **In your editor** — a VS Code extension runs DSL commands inline (auto on the closing delimiter or a keybinding), replaces the command with streamed code, and offers ghost-text FIM completion.
 - 🛰️ **OSINT** — a glowing world map of where the news is happening (GDELT + RSS, free/key-less), severity tiers, a live day/night terminator, and US-fleet positions.
 - 📈 **Market** — a live US-stock tape (Finnhub) with an editable watchlist and on-demand AI **"Ingest"** analysis.
 - 🔭 **Apollo** — a prediction engine with vector memory that fuses OSINT + market into forward-looking SITREPs.
@@ -49,6 +50,7 @@ Max/
 ├── engine/          # Python + FastAPI — the brain
 │   └── max_engine/  # dsl · router · providers · delegate · osint · market · apollo
 ├── app/             # Tauri v2 desktop widget (React + TypeScript)
+├── extension/       # VS Code extension (DSL commands, inline replace, FIM ghost text)
 ├── docs/            # architecture · ui · mascot · setup
 ├── scripts/         # smoke.ps1 end-to-end check
 ├── Max.cmd          # double-click launcher (app owns the engine)
@@ -74,7 +76,7 @@ Examples: `!. add a retry decorator .` (cloud generate) · `@.. document this ..
 | Area | Endpoints |
 |------|-----------|
 | Core | `GET /health` · `GET/PUT /config` · `POST /parse` |
-| Chat / DSL | `POST /chat` · `POST /command` · `POST /v1/chat/completions` (OpenAI-compatible, SSE) |
+| Chat / DSL | `POST /chat` · `POST /command` · `POST /v1/chat/completions` (OpenAI-compatible, SSE) · `POST /complete` (FIM, for the editor) |
 | Delegate | `POST /sessions` (fan-out) · `POST /sessions/coordinate` (auto-decompose) · `GET /sessions` · `GET /sessions/{id}` · `GET /sessions/{id}/stream` (SSE) · `POST /sessions/{id}/cancel` · `POST /sessions/{id}/promote` |
 | Codebase RAG | `POST /rag/index` (incremental, allowlist-scoped) · `POST /rag/search` · `POST /rag/ask` (SSE, cited by file:line, opt-in `session_id` memory) · `GET /rag/status` · `POST /rag/clear` · `GET /rag/memory/{id}` · `POST /rag/memory/{id}/clear` |
 | OSINT | `GET /osint/heatmap` · `/osint/articles` · `/osint/sources` · `/osint/events` · `/osint/naval` |
@@ -129,8 +131,9 @@ points; cloud is opt-in, gated, and clearly marked in the UI.
 
 ## Status
 
-The engine core and the v1 desktop widget are **built and working**: DSL + routing,
-Ollama/Claude streaming, the full delegate system (parallel sessions, Smart-Auto,
-coordinator, live SSE), OSINT map, market tape, and Apollo. **104 engine tests pass**;
-the app typechecks and builds. See [ROADMAP.md](./ROADMAP.md) for phase-by-phase detail
-(next up: VS Code extension, codebase RAG, and the MCP capability platform).
+The engine core, the v1 desktop widget, **codebase RAG**, and the **VS Code extension**
+are built and working: DSL + routing, Ollama/Claude streaming, the full delegate system
+(parallel sessions, Smart-Auto, coordinator, live SSE), workspace RAG with session memory,
+FIM completion, OSINT map, market tape, and Apollo. **126 engine tests pass**; the app and
+extension typecheck and build. See [ROADMAP.md](./ROADMAP.md) for phase-by-phase detail
+(next up: the MCP capability platform, and performance/privacy polish).

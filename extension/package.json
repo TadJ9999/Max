@@ -1,0 +1,77 @@
+{
+  "name": "max-vscode",
+  "displayName": "Max",
+  "description": "Max local-first AI in your editor — DSL commands (. .. ~ + sigils), inline replace, and ghost-text completion.",
+  "version": "0.1.0",
+  "publisher": "tadj",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Programming Languages", "Machine Learning", "Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "max.runCommand",
+        "title": "Max: Run command at cursor / selection"
+      },
+      {
+        "command": "max.toggleAutocomplete",
+        "title": "Max: Toggle ghost-text autocomplete"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "max.runCommand",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "editorTextFocus && !suggestWidgetVisible"
+      }
+    ],
+    "configuration": {
+      "title": "Max",
+      "properties": {
+        "max.engineUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8001",
+          "description": "Base URL of the local Max engine (the desktop app runs it on 8001; dev uvicorn uses 8000)."
+        },
+        "max.trigger": {
+          "type": "string",
+          "enum": ["auto", "manual"],
+          "enumDescriptions": [
+            "Fire automatically when you type a command's closing delimiter (the keybinding still works too).",
+            "Only run via the keybinding / command palette."
+          ],
+          "default": "auto",
+          "description": "How a DSL command (. … ., .. … .., ~ … ~) fires in the editor."
+        },
+        "max.autocomplete": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ghost-text fill-in-the-middle completion as you type."
+        },
+        "max.completionDelayMs": {
+          "type": "number",
+          "default": 300,
+          "description": "Idle delay before requesting a ghost-text completion."
+        },
+        "max.maxCompletionTokens": {
+          "type": "number",
+          "default": 96,
+          "description": "Max tokens for a ghost-text completion (keep small for snappy suggestions)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc -p ./ --noEmit",
+    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "vscode:prepublish": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.21.0",
+    "typescript": "^5.4.0"
+  }
+}

@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 from . import __version__
 from .apollo import ApolloService, VectorStore
+from .complete import fim_complete
 from .config import load_config, save_overrides
 from .delegate.engine import DelegateEngine
 from .delegate.session import TERMINAL_STATES
@@ -294,6 +295,28 @@ async def command(req: CommandRequest):
     provider = build_provider(route.provider, config)
     messages = messages_for(cmd.action, cmd.body)
     return _sse_stream(provider, route.model, messages)
+
+
+class CompleteRequest(BaseModel):
+    prefix: str
+    suffix: str = ""
+    model: str | None = None  # default: the configured fast "completion" model
+    max_tokens: int = 96
+
+
+@app.post("/complete")
+async def complete(req: CompleteRequest) -> dict:
+    """Fill-in-the-middle code completion (ghost text for the VS Code extension).
+    Uses the fast local completion model unless ``model`` is given."""
+    model = req.model or config.task_models.get("completion", "qwen2.5-coder:3b")
+    text = await fim_complete(
+        req.prefix,
+        req.suffix,
+        model=model,
+        base_url=_ollama_base,
+        max_tokens=req.max_tokens,
+    )
+    return {"completion": text, "model": model}
 
 
 class ChatTextRequest(BaseModel):
