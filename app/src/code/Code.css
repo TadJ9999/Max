@@ -460,3 +460,270 @@
 .code-view__rollback:hover {
   border-color: #f59e0b;
 }
+
+/* ── Toolbar ── */
+.code-view__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #0d1117;
+  border-bottom: 1px solid #1e2030;
+  flex-shrink: 0;
+}
+
+.code-view__toolbar-btn {
+  background: none;
+  border: 1px solid #2d3748;
+  border-radius: 4px;
+  color: #8892a4;
+  font-size: 11px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.code-view__toolbar-btn:hover:not(:disabled) {
+  border-color: #4a5568;
+  color: #e6edf3;
+}
+
+.code-view__toolbar-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.code-view__toolbar-btn.is-active {
+  background: #1c2a3a;
+  border-color: #58a6ff;
+  color: #58a6ff;
+}
+
+.code-view__toolbar-btn.is-dirty {
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.code-view__toolbar-sep {
+  width: 1px;
+  height: 16px;
+  background: #1e2030;
+  flex-shrink: 0;
+}
+
+.code-view__toolbar-spacer {
+  flex: 1;
+}
+
+/* ── Status bar ── */
+.code-view__status {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 12px;
+  height: 22px;
+  background: #161b22;
+  border-top: 1px solid #1e2030;
+  font-size: 11px;
+  color: #4a5568;
+  flex-shrink: 0;
+  font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+}
+
+.code-view__status span {
+  white-space: nowrap;
+}
+
+/* ── Terminal panel ── */
+.code-view__terminal-panel {
+  flex-direction: column;
+  border-top: 1px solid #1e2030;
+  background: #0d0d0f;
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.code-view__terminal-resize {
+  height: 5px;
+  background: transparent;
+  cursor: ns-resize;
+  flex-shrink: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+}
+
+.code-view__terminal-resize:hover {
+  background: #58a6ff33;
+}
+
+.code-terminal__xterm {
+  flex: 1;
+  padding: 6px 8px;
+  overflow: hidden;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* xterm.js canvas fills its container */
+.code-terminal__xterm .xterm {
+  height: 100%;
+}
+
+.code-terminal__xterm .xterm-viewport {
+  overflow-y: hidden !important;
+}
+
+/* ── File tree: tree head needs flex ── */
+.code-view__tree-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ftree__add-btn {
+  background: none;
+  border: none;
+  color: #4a5568;
+  font-size: 15px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+
+.ftree__add-btn:hover {
+  color: #58a6ff;
+}
+
+/* ── Context menu ── */
+.ftree__ctx-menu {
+  position: fixed;
+  background: #161b22;
+  border: 1px solid #2d3748;
+  border-radius: 6px;
+  padding: 4px 0;
+  z-index: 2000;
+  min-width: 150px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+}
+
+.ftree__ctx-item {
+  display: block;
+  width: 100%;
+  padding: 6px 14px;
+  background: none;
+  border: none;
+  color: #8892a4;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.ftree__ctx-item:hover {
+  background: #1c2a3a;
+  color: #c9d1d9;
+}
+
+.ftree__ctx-item.is-danger:hover {
+  background: #1a0a0a;
+  color: #f87171;
+}
+
+.ftree__ctx-sep {
+  height: 1px;
+  background: #1e2030;
+  margin: 4px 0;
+}
+
+/* ── Inline rename / new-entry input ── */
+.ftree__rename-input {
+  background: #0d1117;
+  border: 1px solid #58a6ff;
+  border-radius: 3px;
+  color: #e6edf3;
+  font-size: 12px;
+  padding: 2px 6px;
+  width: calc(100% - 16px);
+  margin: 2px 8px;
+  font-family: inherit;
+  outline: none;
+  display: block;
+}
+
+/* ── Find in Files panel ── */
+.code-view__find {
+  border-top: 1px solid #1e2030;
+  display: flex;
+  flex-direction: column;
+  max-height: 280px;
+  flex-shrink: 0;
+}
+
+.code-view__find-head {
+  padding: 6px 10px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: #4a5568;
+  text-transform: uppercase;
+  border-bottom: 1px solid #1e2030;
+  flex-shrink: 0;
+}
+
+.code-view__find-input {
+  background: #0d1117;
+  border: none;
+  border-bottom: 1px solid #1e2030;
+  color: #c9d1d9;
+  font-size: 12px;
+  padding: 6px 10px;
+  outline: none;
+  flex-shrink: 0;
+}
+
+.code-view__find-input:focus {
+  border-bottom-color: #58a6ff;
+}
+
+.code-view__find-results {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.code-view__find-loading {
+  padding: 8px 10px;
+  font-size: 11px;
+  color: #4a5568;
+}
+
+.code-view__find-hit {
+  padding: 5px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid #1e203022;
+}
+
+.code-view__find-hit:hover {
+  background: #161b22;
+}
+
+.code-view__find-hit-path {
+  font-size: 11px;
+  color: #58a6ff;
+  font-family: monospace;
+  margin-bottom: 2px;
+}
+
+.code-view__find-hit-text {
+  font-size: 11px;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: monospace;
+}

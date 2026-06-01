@@ -156,6 +156,50 @@ class FileManager:
         except Exception:
             return False
 
+    # ------------------------------------------------------------------
+    # File / directory CRUD
+    # ------------------------------------------------------------------
+
+    def create_file(self, path: str, content: str = "") -> None:
+        p = self._guard(path)
+        if p.exists():
+            raise FileExistsError(f"already exists: {path!r}")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+
+    def create_dir(self, path: str) -> None:
+        p = self._guard(path)
+        if p.exists():
+            raise FileExistsError(f"already exists: {path!r}")
+        p.mkdir(parents=True, exist_ok=False)
+
+    def rename_entry(self, old_path: str, new_name: str) -> str:
+        src = self._guard(old_path)
+        if not src.exists():
+            raise FileNotFoundError(old_path)
+        if "/" in new_name or "\\" in new_name or new_name in (".", ".."):
+            raise ValueError(f"invalid name: {new_name!r}")
+        dst = src.parent / new_name
+        self._guard(str(dst))
+        if dst.exists():
+            raise FileExistsError(f"already exists: {new_name!r}")
+        src.rename(dst)
+        return dst.as_posix()
+
+    def delete_entry(self, path: str, recursive: bool = False) -> None:
+        import shutil
+        p = self._guard(path)
+        if not p.exists():
+            raise FileNotFoundError(path)
+        if p.is_dir():
+            if not recursive:
+                raise IsADirectoryError(f"use recursive=True to delete a directory: {path!r}")
+            shutil.rmtree(p)
+        else:
+            p.unlink()
+
+    # ------------------------------------------------------------------
+
     def _repo_root(self) -> Path | None:
         import subprocess
         if not self._roots:

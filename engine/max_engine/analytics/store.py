@@ -40,6 +40,11 @@ class UsageStore:
         self._lock = threading.Lock()
         self._conn: sqlite3.Connection | None = None
 
+    # ── cost ──────────────────────────────────────────────────────────────────
+
+    def calc_cost(self, provider: str, model: str, in_tokens: int, out_tokens: int) -> float:
+        return calc_cost(provider, model, in_tokens, out_tokens)
+
     # ── connection / schema ──────────────────────────────────────────────────
 
     def _ensure(self) -> sqlite3.Connection:

@@ -98,6 +98,76 @@ export async function rollbackPlan(): Promise<{ ok: boolean }> {
   return r.json() as Promise<{ ok: boolean }>;
 }
 
+// ── File CRUD ──────────────────────────────────────────────────────────────
+
+export async function createFile(path: string, content = ""): Promise<void> {
+  const r = await fetch(`${ENGINE_URL}/code/file/new`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path, content }),
+  });
+  if (!r.ok) {
+    const detail = ((await r.json().catch(() => ({}))) as { detail?: unknown }).detail ?? r.status;
+    throw new Error(String(detail));
+  }
+}
+
+export async function createDir(path: string): Promise<void> {
+  const r = await fetch(`${ENGINE_URL}/code/dir/new`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  if (!r.ok) {
+    const detail = ((await r.json().catch(() => ({}))) as { detail?: unknown }).detail ?? r.status;
+    throw new Error(String(detail));
+  }
+}
+
+export async function renameFile(
+  path: string,
+  newName: string,
+): Promise<{ old_path: string; new_path: string }> {
+  const r = await fetch(`${ENGINE_URL}/code/file/rename`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path, new_name: newName }),
+  });
+  if (!r.ok) {
+    const detail = ((await r.json().catch(() => ({}))) as { detail?: unknown }).detail ?? r.status;
+    throw new Error(String(detail));
+  }
+  return r.json() as Promise<{ ok: boolean; old_path: string; new_path: string }>;
+}
+
+export async function deleteFile(path: string, recursive = false): Promise<void> {
+  const url = `${ENGINE_URL}/code/file?path=${encodeURIComponent(path)}&recursive=${recursive}`;
+  const r = await fetch(url, { method: "DELETE" });
+  if (!r.ok) {
+    const detail = ((await r.json().catch(() => ({}))) as { detail?: unknown }).detail ?? r.status;
+    throw new Error(String(detail));
+  }
+}
+
+// ── Find in Files ───────────────────────────────────────────────────────────
+
+export interface SearchHit {
+  file: string;
+  line: number;
+  text: string;
+}
+
+export async function findInFiles(query: string, maxResults = 50): Promise<SearchHit[]> {
+  const r = await fetch(`${ENGINE_URL}/skills/files/search`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ query, max_results: maxResults }),
+  });
+  if (!r.ok) throw new Error(`findInFiles failed: ${r.status}`);
+  const data = (await r.json()) as { hits: SearchHit[] };
+  return data.hits;
+}
+
 // Custom commands config
 export interface CustomCommand {
   name: string;

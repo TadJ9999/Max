@@ -11,13 +11,15 @@ Run::
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import sys as _sys
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -2436,6 +2438,133 @@ def code_rollback():
     if ok:
         _last_snapshot_ref = None
     return {"ok": ok, "stash_ref": ref}
+
+# ── Code CRUD ────────────────────────────────────────────────────────────────
+
+class CreateFileRequest(BaseModel):
+    path: str
+    content: str = ""
+
+class CreateDirRequest(BaseModel):
+    path: str
+
+class RenameEntryRequest(BaseModel):
+    path: str
+    new_name: str
+
+
+@app.post("/code/file/new")
+def code_create_file(req: CreateFileRequest):
+    fm = _get_file_mgr()
+    try:
+        fm.create_file(req.path, req.content)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
+    except FileExistsError as e:
+        raise HTTPException(409, str(e)) from e
+    return {"ok": True, "path": req.path}
+
+
+@app.post("/code/dir/new")
+def code_create_dir(req: CreateDirRequest):
+    fm = _get_file_mgr()
+    try:
+        fm.create_dir(req.path)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
+    except FileExistsError as e:
+        raise HTTPException(409, str(e)) from e
+    return {"ok": True, "path": req.path}
+
+
+@app.post("/code/file/rename")
+def code_rename_entry(req: RenameEntryRequest):
+    fm = _get_file_mgr()
+    try:
+        new_path = fm.rename_entry(req.path, req.new_name)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
+    except (FileNotFoundError, IsADirectoryError) as e:
+        raise HTTPException(404, str(e)) from e
+    except FileExistsError as e:
+        raise HTTPException(409, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return {"ok": True, "old_path": req.path, "new_path": new_path}
+
+
+@app.delete("/code/file")
+def code_delete_entry(path: str, recursive: bool = False):
+    fm = _get_file_mgr()
+    try:
+        fm.delete_entry(path, recursive=recursive)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e)) from e
+    except IsADirectoryError as e:
+        raise HTTPException(409, str(e)) from e
+    return {"ok": True, "path": path}
+
+
+@app.websocket("/code/ws/terminal")
+async def code_terminal(ws: WebSocket):
+    """Spawn a shell and pipe I/O bidirectionally over the WebSocket."""
+    await ws.accept()
+
+    cwd = config.workspace_allowlist[0] if config.workspace_allowlist else None
+    if _sys.platform == "win32":
+        cmd = ["powershell.exe", "-NoLogo", "-NoExit", "-Command", "-"]
+    else:
+        cmd = ["/bin/bash", "--login"]
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=cwd,
+        )
+    except Exception as exc:
+        await ws.send_text(f"\r\n[terminal error: {exc}]\r\n")
+        await ws.close()
+        return
+
+    async def _pump_output() -> None:
+        assert proc.stdout is not None
+        try:
+            while True:
+                chunk = await proc.stdout.read(1024)
+                if not chunk:
+                    break
+                await ws.send_text(chunk.decode("utf-8", errors="replace"))
+        except Exception:
+            pass
+        finally:
+            try:
+                await ws.close()
+            except Exception:
+                pass
+
+    read_task = asyncio.create_task(_pump_output())
+
+    try:
+        while True:
+            try:
+                data = await ws.receive_text()
+            except WebSocketDisconnect:
+                break
+            if proc.stdin and not proc.stdin.is_closing():
+                proc.stdin.write(data.encode("utf-8"))
+                await proc.stdin.drain()
+    finally:
+        read_task.cancel()
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+
 
 # ── Phase 9: Capabilities & Skills ──────────────────────────────────────────
 
