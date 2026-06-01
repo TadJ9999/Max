@@ -137,7 +137,8 @@
 .hub__view > .market,
 .hub__view > .apollo,
 .hub__view > .aegis,
-.hub__view > .sentinel {
+.hub__view > .sentinel,
+.hub__view > .stg {
   height: 100% !important;
   min-height: 0 !important;
 }

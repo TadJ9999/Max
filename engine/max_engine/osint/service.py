@@ -9,7 +9,7 @@ tests; otherwise one is created per refresh.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from time import monotonic
 
 import httpx
@@ -116,20 +116,79 @@ class OsintService:
 
     # ---- queries --------------------------------------------------------
 
-    async def get_heatmap(self) -> Heatmap:
+    async def get_heatmap(self, domains: set[str] | None = None) -> Heatmap:
         await self.refresh()
         assert self._heatmap is not None
-        return self._heatmap
+        if not domains:
+            return self._heatmap
+        # Re-score from the cached article set, keeping only the allowed domains.
+        # Cheap (in-memory) so per-source domain toggles stay snappy without a refetch.
+        subset = [a for a in self._articles if a.domain in domains]
+        return Heatmap(
+            updated=self._heatmap.updated,
+            countries=score_countries(subset, use_tone=self.tone_signal),
+            total_articles=len(subset),
+        )
 
-    async def get_articles(self, iso: str | None = None, limit: int = 50) -> list[Article]:
+    async def get_articles(
+        self,
+        iso: str | None = None,
+        limit: int = 50,
+        domains: set[str] | None = None,
+    ) -> list[Article]:
         await self.refresh()
         items = self._articles
         if iso:
             iso = iso.upper()
             items = [a for a in items if a.iso == iso]
+        if domains:
+            items = [a for a in items if a.domain in domains]
         # Newest first; undated items sink to the bottom.
         items = sorted(items, key=lambda a: a.published or _EPOCH, reverse=True)
         return items[: max(1, limit)]
+
+    async def get_domains(self) -> list[dict]:
+        """Distinct source domains in the current article set, with article counts.
+
+        Feeds the OSINT view's per-source toggle list. Newest data wins via the
+        same TTL cache as everything else."""
+        await self.refresh()
+        counts: dict[str, dict] = {}
+        for a in self._articles:
+            if not a.domain:
+                continue
+            d = counts.setdefault(
+                a.domain, {"domain": a.domain, "origin": a.origin, "count": 0}
+            )
+            d["count"] += 1
+        return sorted(counts.values(), key=lambda d: (-d["count"], d["domain"]))
+
+    async def get_timeline(self, frames: int = 24, window_hours: float = 24.0) -> dict:
+        """Replay the last ``window_hours`` as ``frames`` heat snapshots.
+
+        Frame *i* is scored over only the articles published at or before that
+        frame's timestamp, with recency decay anchored at that moment — so
+        dragging the scrubber replays how the heat actually built up. Reuses the
+        same :func:`score_countries` model as the live map."""
+        await self.refresh()
+        frames = max(2, min(48, frames))
+        window_hours = max(1.0, min(72.0, window_hours))
+        now = datetime.now(timezone.utc)
+        start = now - timedelta(hours=window_hours)
+        step = (now - start) / (frames - 1)
+        out: list[dict] = []
+        for i in range(frames):
+            at = start + step * i
+            subset = [a for a in self._articles if (a.published or _EPOCH) <= at]
+            countries = score_countries(subset, now=at, use_tone=self.tone_signal)
+            out.append(
+                {
+                    "at": at.isoformat(),
+                    "totalArticles": len(subset),
+                    "countries": [c.to_dict() for c in countries],
+                }
+            )
+        return {"frames": out, "windowHours": window_hours}
 
     def sources(self) -> dict:
         """Static description of where the data comes from (for the UI)."""

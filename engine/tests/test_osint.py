@@ -278,6 +278,63 @@ def test_get_articles_filters_by_country():
     assert arts and all(a.iso == "PAK" for a in arts)
 
 
+def test_get_domains_counts_distinct_sources():
+    async def run():
+        async with _mock_client() as client:
+            svc = OsintService(feeds=["https://x/feed"], client=client)
+            return await svc.get_domains()
+
+    domains = asyncio.run(run())
+    by = {d["domain"]: d for d in domains}
+    # reuters.com appears in both sources but dedupes to one article.
+    assert "reuters.com" in by and "bbc.co.uk" in by
+    assert all(d["count"] >= 1 for d in domains)
+    # sorted by count desc — counts are monotonically non-increasing.
+    counts = [d["count"] for d in domains]
+    assert counts == sorted(counts, reverse=True)
+
+
+def test_get_heatmap_and_articles_filter_by_domain():
+    async def run():
+        async with _mock_client() as client:
+            svc = OsintService(feeds=["https://x/feed"], client=client)
+            await svc.get_heatmap()  # prime cache
+            only_bbc_hm = await svc.get_heatmap(domains={"bbc.co.uk"})
+            only_bbc_arts = await svc.get_articles(domains={"bbc.co.uk"})
+            return only_bbc_hm, only_bbc_arts
+
+    hm, arts = asyncio.run(run())
+    # bbc.co.uk carried the Pakistan flooding story → PAK present, UKR/USA gone.
+    assert all(a.domain == "bbc.co.uk" for a in arts)
+    isos = {c.iso for c in hm.countries}
+    assert "PAK" in isos and "USA" not in isos
+
+
+def test_get_timeline_frames_are_cumulative():
+    async def run():
+        async with _mock_client() as client:
+            svc = OsintService(feeds=["https://x/feed"], client=client)
+            return await svc.get_timeline(frames=6, window_hours=24)
+
+    tl = asyncio.run(run())
+    assert len(tl["frames"]) == 6
+    totals = [f["totalArticles"] for f in tl["frames"]]
+    # cumulative replay: article count never decreases as time advances.
+    assert totals == sorted(totals)
+    assert all("countries" in f and "at" in f for f in tl["frames"])
+
+
+def test_get_timeline_clamps_frame_count():
+    async def run():
+        async with _mock_client() as client:
+            svc = OsintService(feeds=["https://x/feed"], client=client)
+            return await svc.get_timeline(frames=999), await svc.get_timeline(frames=1)
+
+    big, small = asyncio.run(run())
+    assert len(big["frames"]) == 48  # clamped high
+    assert len(small["frames"]) == 2  # clamped low
+
+
 # ---- endpoints ----------------------------------------------------------
 
 
@@ -297,3 +354,17 @@ def test_osint_endpoints(monkeypatch):
     src = c.get("/osint/sources")
     assert src.status_code == 200
     assert "feeds" in src.json()
+
+    dom = c.get("/osint/domains")
+    assert dom.status_code == 200
+    assert isinstance(dom.json()["domains"], list)
+
+    # domain filter narrows the heatmap
+    filt = c.get("/osint/heatmap", params={"domains": "bbc.co.uk"})
+    assert filt.status_code == 200
+    isos = {cc["iso"] for cc in filt.json()["countries"]}
+    assert "USA" not in isos
+
+    tl = c.get("/osint/timeline", params={"frames": 5})
+    assert tl.status_code == 200
+    assert len(tl.json()["frames"]) == 5

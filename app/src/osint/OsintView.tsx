@@ -14,15 +14,19 @@ import { WorldMap } from "./WorldMap";
 import { SEVERITY_TIERS, severityColor, severityTier } from "./countries";
 import {
   getCountryArticles,
+  getDomains,
   getEvents,
   getHeatmap,
   getNaval,
+  getTimeline,
   streamOsintChat,
   type Article,
   type GeoEvent,
   type Heatmap,
   type OsintChatTurn,
   type ShipPosition,
+  type SourceDomain,
+  type Timeline,
 } from "./osint";
 import { MarkdownView } from "../components/MarkdownView";
 import { MicButton } from "../components/MicButton";
@@ -65,6 +69,12 @@ function timeAgo(iso: string | null): string {
   const hrs = Math.round(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.round(hrs / 24)}d ago`;
+}
+
+function clockLabel(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 // ── Political lean lookup ─────────────────────────────────────────────────────
@@ -209,6 +219,24 @@ export function OsintView({ onClose }: { onClose?: () => void }) {
   const [geoEvents, setGeoEvents] = useState<GeoEvent[]>([]);
   const [showEvents, setShowEvents] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [eventDetail, setEventDetail] = useState<GeoEvent[] | null>(null);
+
+  // ── Time-scrubber (24h heat replay) ────────────────────────────────────────
+  const [timeline, setTimeline] = useState<Timeline | null>(null);
+  const [frameIdx, setFrameIdx] = useState<number | null>(null); // null = live (now)
+  const [playing, setPlaying] = useState(false);
+
+  // ── Per-source domain toggles ──────────────────────────────────────────────
+  const [domainList, setDomainList] = useState<SourceDomain[]>([]);
+  const [muted, setMuted] = useState<Set<string>>(new Set());
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  // Allowlist passed to the engine; undefined when nothing is muted (use full set).
+  const allowedDomains = useMemo(
+    () => domainList.filter((d) => !muted.has(d.domain)).map((d) => d.domain),
+    [domainList, muted],
+  );
+  const domainsArgRef = useRef<string[] | undefined>(undefined);
+  domainsArgRef.current = muted.size > 0 ? allowedDomains : undefined;
 
   // ── AI Chat panel ────────────────────────────────────────────────────────
   const [chatOpen, setChatOpen] = useState(false);
@@ -289,14 +317,14 @@ export function OsintView({ onClose }: { onClose?: () => void }) {
 
   const loadHeatmap = useCallback(async () => {
     setLoading(true);
-    setHeatmap(await getHeatmap());
+    setHeatmap(await getHeatmap(domainsArgRef.current));
     setLoading(false);
   }, []);
 
   const loadArticles = useCallback(async (iso: string | null) => {
     setArticlesBusy(true);
     setExpanded(new Set()); // collapse all cards on country switch
-    setArticles(await getCountryArticles(iso));
+    setArticles(await getCountryArticles(iso, 40, domainsArgRef.current));
     setArticlesBusy(false);
   }, []);
 
@@ -305,7 +333,32 @@ export function OsintView({ onClose }: { onClose?: () => void }) {
     void loadArticles(null);
     void (async () => { const d = await getNaval();  if (d) setShips(d.ships); })();
     void (async () => { const d = await getEvents(); if (d) setGeoEvents(d.events); })();
+    void (async () => { setTimeline(await getTimeline()); })();
+    void (async () => { setDomainList(await getDomains()); })();
   }, [loadHeatmap, loadArticles]);
+
+  // Re-filter heat + articles when the source allowlist changes (skip first run;
+  // the mount effect already did the initial load).
+  const mutedFirstRun = useRef(true);
+  useEffect(() => {
+    if (mutedFirstRun.current) { mutedFirstRun.current = false; return; }
+    void loadHeatmap();
+    void loadArticles(selected?.iso ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [muted]);
+
+  // Scrubber playback: advance one frame at a time, snapping back to live at the end.
+  useEffect(() => {
+    if (!playing || !timeline) return;
+    const id = window.setInterval(() => {
+      setFrameIdx((idx) => {
+        const cur = idx === null ? 0 : idx + 1;
+        if (cur >= timeline.frames.length - 1) { setPlaying(false); return null; }
+        return cur;
+      });
+    }, 650);
+    return () => window.clearInterval(id);
+  }, [playing, timeline]);
 
   const onSelect = (iso: string, name: string) => {
     setSelected({ iso, name });
@@ -320,6 +373,24 @@ export function OsintView({ onClose }: { onClose?: () => void }) {
   const refresh = () => {
     void loadHeatmap();
     void loadArticles(selected?.iso ?? null);
+    void (async () => { setTimeline(await getTimeline()); })();
+    void (async () => { setDomainList(await getDomains()); })();
+    setFrameIdx(null);
+    setPlaying(false);
+  };
+
+  const toggleDomain = (domain: string) => {
+    setMuted((prev) => {
+      const next = new Set(prev);
+      if (next.has(domain)) next.delete(domain); else next.add(domain);
+      return next;
+    });
+  };
+
+  const scrubTo = (idx: number) => {
+    setPlaying(false);
+    // Far-right of the track == back to live.
+    setFrameIdx(timeline && idx >= timeline.frames.length - 1 ? null : idx);
   };
 
   const toggleSeverity = (level: number) => {
@@ -339,7 +410,10 @@ export function OsintView({ onClose }: { onClose?: () => void }) {
   };
 
   const offline  = !loading && heatmap === null;
-  const all      = heatmap?.countries ?? [];
+  const live     = heatmap?.countries ?? [];
+  // When scrubbing, the map + hotspots reflect the selected historical frame.
+  const frame    = frameIdx !== null ? timeline?.frames[frameIdx] : undefined;
+  const all      = frame ? frame.countries : live;
   const counts   = useMemo(() => {
     const m = new Map<number, number>();
     for (const c of all) m.set(c.severity, (m.get(c.severity) ?? 0) + 1);
@@ -450,6 +524,45 @@ export function OsintView({ onClose }: { onClose?: () => void }) {
           >
             ⚓ Fleet <span className="osint__sev-n">{ships.length}</span>
           </button>
+          {domainList.length > 0 && (
+            <div className="osint__sources-wrap">
+              <button className={`osint__layer-btn${muted.size > 0 ? " is-on" : ""}`}
+                onClick={() => setSourcesOpen((v) => !v)}
+                title="Toggle individual news sources"
+                style={muted.size > 0 ? { ["--layer-color" as string]: "#7dd3fc" } : undefined}
+              >
+                ⌗ Sources
+                <span className="osint__sev-n">
+                  {domainList.length - muted.size}/{domainList.length}
+                </span>
+              </button>
+              {sourcesOpen && (
+                <div className="osint__sources-pop">
+                  <div className="osint__sources-head">
+                    <span>News sources</span>
+                    <div className="osint__sources-actions">
+                      <button onClick={() => setMuted(new Set())} disabled={muted.size === 0}>All</button>
+                      <button onClick={() => setMuted(new Set(domainList.map((d) => d.domain)))}
+                        disabled={muted.size === domainList.length}>None</button>
+                      <button className="osint__sources-x" onClick={() => setSourcesOpen(false)}>×</button>
+                    </div>
+                  </div>
+                  <div className="osint__sources-list">
+                    {domainList.map((d) => {
+                      const on = !muted.has(d.domain);
+                      return (
+                        <label key={d.domain} className={`osint__source-row${on ? " is-on" : ""}`}>
+                          <input type="checkbox" checked={on} onChange={() => toggleDomain(d.domain)} />
+                          <span className={`osint__src osint__src--${d.origin}`}>{d.domain}</span>
+                          <span className="osint__source-n">{d.count}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <span className="osint__updated">
             {loading ? "loading…" : offline ? "engine offline"
               : `${heatmap?.totalArticles ?? 0} signals`}
@@ -484,7 +597,58 @@ export function OsintView({ onClose }: { onClose?: () => void }) {
             ships={ships} showFleet={showFleet}
             geoEvents={geoEvents} showEvents={showEvents}
             onSelect={onSelect}
+            onEventSelect={(evs) => setEventDetail(evs)}
           />
+
+          {/* ── Event / cluster detail card ── */}
+          {eventDetail && (
+            <div className="osint__event-detail">
+              <div className="osint__event-detail-head">
+                <span>{eventDetail.length === 1 ? "Event detail" : `${eventDetail.length} clustered events`}</span>
+                <button onClick={() => setEventDetail(null)}>×</button>
+              </div>
+              <div className="osint__event-detail-list">
+                {eventDetail.map((ev) => (
+                  <div key={ev.id} className="osint__event-item" style={{ ["--ev-color" as string]: ev.color }}>
+                    <div className="osint__event-item-title">{ev.title}</div>
+                    <div className="osint__event-item-meta">
+                      <span className="osint__event-cat" style={{ color: ev.color }}>{ev.category}</span>
+                      {ev.magnitude > 0 && <span>M{ev.magnitude.toFixed(1)}</span>}
+                      <span className="osint__event-src">{ev.source}</span>
+                      {ev.published && <span className="news-card__time">{timeAgo(ev.published)}</span>}
+                    </div>
+                    {ev.url && (
+                      <button className="news-card__link" onClick={() => void openUrl(ev.url)}>
+                        Read source ↗
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── 24h heat replay scrubber ── */}
+          {timeline && timeline.frames.length > 1 && (
+            <div className="osint__scrubber">
+              <button className="osint__scrub-play" onClick={() => setPlaying((p) => !p)}
+                title={playing ? "Pause" : "Play 24h replay"}>
+                {playing ? "❚❚" : "▶"}
+              </button>
+              <input
+                className="osint__scrub-range"
+                type="range"
+                min={0}
+                max={timeline.frames.length - 1}
+                value={frameIdx ?? timeline.frames.length - 1}
+                onChange={(e) => scrubTo(Number(e.target.value))}
+              />
+              <span className={`osint__scrub-time${frame ? "" : " is-live"}`}>
+                {frame ? clockLabel(frame.at) : "● LIVE"}
+              </span>
+            </div>
+          )}
+
           {offline && (
             <div className="osint__offline-note">
               Engine offline — showing base map. Start Max engine for live intel.

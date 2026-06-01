@@ -74,6 +74,23 @@ export type EventsData = {
   sources: string[];
 };
 
+export type SourceDomain = {
+  domain: string;
+  origin: "gdelt" | "rss";
+  count: number;
+};
+
+export type TimelineFrame = {
+  at: string;
+  totalArticles: number;
+  countries: CountryStat[];
+};
+
+export type Timeline = {
+  frames: TimelineFrame[];
+  windowHours: number;
+};
+
 export async function getEvents(): Promise<EventsData | null> {
   try {
     const r = await fetch(`${ENGINE_URL}/osint/events`);
@@ -94,11 +111,33 @@ export async function getNaval(): Promise<NavalData | null> {
   }
 }
 
-export async function getHeatmap(): Promise<Heatmap | null> {
+export async function getHeatmap(domains?: string[]): Promise<Heatmap | null> {
   try {
-    const r = await fetch(`${ENGINE_URL}/osint/heatmap`);
+    const q = domains && domains.length ? `?domains=${encodeURIComponent(domains.join(","))}` : "";
+    const r = await fetch(`${ENGINE_URL}/osint/heatmap${q}`);
     if (!r.ok) return null;
     return (await r.json()) as Heatmap;
+  } catch {
+    return null;
+  }
+}
+
+export async function getDomains(): Promise<SourceDomain[]> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/osint/domains`);
+    if (!r.ok) return [];
+    const data = (await r.json()) as { domains: SourceDomain[] };
+    return data.domains ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getTimeline(frames = 24): Promise<Timeline | null> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/osint/timeline?frames=${frames}`);
+    if (!r.ok) return null;
+    return (await r.json()) as Timeline;
   } catch {
     return null;
   }
@@ -144,10 +183,12 @@ export async function* streamOsintChat(
 export async function getCountryArticles(
   iso: string | null,
   limit = 40,
+  domains?: string[],
 ): Promise<Article[]> {
   try {
     const q = new URLSearchParams({ limit: String(limit) });
     if (iso) q.set("country", iso);
+    if (domains && domains.length) q.set("domains", domains.join(","));
     const r = await fetch(`${ENGINE_URL}/osint/articles?${q}`);
     if (!r.ok) return [];
     const data = (await r.json()) as { articles: Article[] };
