@@ -130,8 +130,8 @@ def test_board_caches_within_ttl():
             await svc.get_board()  # second call should hit cache, not the network
 
     asyncio.run(run())
-    # exactly one quote + one profile fetch for the single symbol, fetched once
-    assert calls["n"] == 2
+    # one /quote call per symbol (profile2 skipped: with_name=False to stay within free-tier rate limit)
+    assert calls["n"] == 1
 
 
 def test_no_key_yields_empty_board():
