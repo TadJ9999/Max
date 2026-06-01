@@ -486,3 +486,122 @@
 .poly__news-link:hover { text-decoration: underline; }
 .poly__news-desc { font-size: 10px; color: #5a7090; line-height: 1.4; }
 .poly__news-date { font-size: 9px; color: #3a5070; }
+
+/* ── markets / portfolio view toggle ── */
+.poly__view-toggle {
+  display: flex;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  padding: 2px;
+}
+.poly__view-btn {
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #6b7c93;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.poly__view-btn.is-active { color: #05080d; background: #f0b429; }
+
+/* ── live CLOB price badge ── */
+.poly__live {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #22c55e;
+}
+.poly__live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 6px #22c55e;
+  animation: poly-live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes poly-live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* ── read-only portfolio panel ── */
+.poly__portfolio {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
+  gap: 10px;
+  overflow-y: auto;
+}
+.poly__pf-bar { display: flex; gap: 8px; }
+.poly__pf-input {
+  flex: 1;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 12px;
+  color: #d7e2ee;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  outline: none;
+}
+.poly__pf-input:focus { border-color: rgba(240, 180, 41, 0.5); }
+.poly__pf-load {
+  padding: 0 18px;
+  font: inherit;
+  font-weight: 600;
+  color: #05080d;
+  background: #f0b429;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.poly__pf-load:disabled { opacity: 0.4; cursor: default; }
+.poly__pf-hint { font-size: 10.5px; color: #4a5568; }
+.poly__pf-summary {
+  display: flex;
+  gap: 10px;
+}
+.poly__pf-stat {
+  flex: 1;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.poly__pf-stat-lbl { font-size: 10px; color: #6b7c93; text-transform: uppercase; letter-spacing: 0.06em; }
+.poly__pf-stat-val { font-size: 14px; font-weight: 700; color: #d7e2ee; }
+.poly__pf-stat--up .poly__pf-stat-val { color: #22c55e; }
+.poly__pf-stat--down .poly__pf-stat-val { color: #ef4444; }
+.poly__pf-list { display: flex; flex-direction: column; gap: 7px; }
+.poly__pf-pos {
+  padding: 9px 11px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 9px;
+}
+.poly__pf-pos-title { font-size: 12px; color: #c5d3e2; line-height: 1.35; margin-bottom: 5px; }
+.poly__pf-pos-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11px; }
+.poly__pf-outcome {
+  padding: 1px 7px;
+  border-radius: 5px;
+  font-weight: 600;
+  font-size: 10px;
+}
+.poly__pf-outcome--yes { background: rgba(34, 197, 94, 0.16); color: #4ade80; }
+.poly__pf-outcome--no  { background: rgba(239, 68, 68, 0.16); color: #f87171; }
+.poly__pf-outcome--other { background: rgba(240, 180, 41, 0.16); color: #f0b429; }
+.poly__pf-pos-meta { color: #6b7c93; }
+.poly__pf-pnl { margin-left: auto; font-weight: 600; }
+.poly__pf-pnl--up { color: #22c55e; }
+.poly__pf-pnl--down { color: #ef4444; }
+.poly__pf-pnl--flat { color: #6b7c93; }

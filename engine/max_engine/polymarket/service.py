@@ -19,6 +19,7 @@ from .client import (
     _UA,
     fetch_markets,
     fetch_order_book,
+    fetch_positions,
     fetch_price_history,
 )
 from .models import Market, OrderBook, PolymarketBoard, PricePoint
@@ -159,6 +160,32 @@ class PolymarketService:
         finally:
             if owns:
                 await client.aclose()
+
+    # ---- portfolio (read-only by wallet address) -------------------------
+
+    async def get_portfolio(self, address: str) -> dict:
+        """Read-only open positions + aggregate summary for a wallet address."""
+        client, owns = self._make_client()
+        try:
+            positions = await fetch_positions(client, address)
+        finally:
+            if owns:
+                await client.aclose()
+
+        current = sum(p["currentValue"] for p in positions)
+        initial = sum(p["initialValue"] for p in positions)
+        pnl = sum(p["cashPnl"] for p in positions)
+        return {
+            "address": address,
+            "count": len(positions),
+            "positions": positions,
+            "summary": {
+                "currentValue": round(current, 2),
+                "initialValue": round(initial, 2),
+                "cashPnl": round(pnl, 2),
+                "percentPnl": round((pnl / initial * 100) if initial else 0.0, 2),
+            },
+        }
 
     # ---- watchlist -------------------------------------------------------
 

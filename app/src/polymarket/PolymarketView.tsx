@@ -8,16 +8,19 @@ import {
   getMarketNews,
   getMarkets,
   getOrderBook,
+  getPortfolio,
   getPriceHistory,
   getWatchlistMarkets,
   setWatchlist,
   streamChat,
   streamIngest,
+  streamPrices,
   type Category,
   type ChatTurn,
   type MarketEvent,
   type OrderBook,
   type PolyMarket,
+  type PolyPortfolio,
   type PricePoint,
 } from "./polymarket";
 import { PriceChart } from "./PriceChart";
@@ -168,6 +171,8 @@ function DetailPanel({
   interval,
   onInterval,
   book,
+  livePrice,
+  streaming,
 }: {
   market: PolyMarket;
   history: PricePoint[];
@@ -176,6 +181,8 @@ function DetailPanel({
   interval: Interval;
   onInterval: (i: Interval) => void;
   book: OrderBook | null;
+  livePrice: number | null;
+  streaming: boolean;
 }) {
   const yesToken = market.outcomes.find((o) => o.name.toLowerCase() === "yes")?.tokenId ?? null;
 
@@ -235,7 +242,15 @@ function DetailPanel({
       </div>
 
       <div className="poly__chart-header">
-        <span className="poly__chart-title">YES Probability</span>
+        <span className="poly__chart-title">
+          YES Probability
+          {streaming && (
+            <span className="poly__live" title="Live CLOB price stream">
+              <span className="poly__live-dot" />
+              {livePrice != null ? ` ${(livePrice * 100).toFixed(1)}¢` : " LIVE"}
+            </span>
+          )}
+        </span>
         <div className="poly__intervals">
           {(["1d", "1w", "1m", "max"] as Interval[]).map((iv) => (
             <button
@@ -422,6 +437,98 @@ function ChatPanel() {
   );
 }
 
+// ── read-only portfolio panel (by wallet address) ─────────────────────────────
+const PORTFOLIO_ADDR_KEY = "max.polymarket.wallet";
+
+function PortfolioPanel() {
+  const [address, setAddress] = useState(() => localStorage.getItem(PORTFOLIO_ADDR_KEY) ?? "");
+  const [portfolio, setPortfolio] = useState<PolyPortfolio | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  const load = useCallback(async (addr: string) => {
+    const a = addr.trim();
+    if (!a) return;
+    setLoading(true);
+    setLoaded(true);
+    localStorage.setItem(PORTFOLIO_ADDR_KEY, a);
+    setPortfolio(await getPortfolio(a));
+    setLoading(false);
+  }, []);
+
+  // Auto-load a previously-saved address on mount.
+  useEffect(() => {
+    if (address.trim()) void load(address);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const usd = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const sum = portfolio?.summary;
+  const pnlDir = sum ? (sum.cashPnl > 0 ? "up" : sum.cashPnl < 0 ? "down" : "flat") : "flat";
+
+  return (
+    <div className="poly__portfolio">
+      <div className="poly__pf-bar">
+        <input
+          className="poly__pf-input"
+          placeholder="Wallet address (0x…)"
+          value={address}
+          spellCheck={false}
+          onChange={(e) => setAddress(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && void load(address)}
+        />
+        <button className="poly__pf-load" onClick={() => void load(address)} disabled={loading || !address.trim()}>
+          {loading ? "…" : "Load"}
+        </button>
+      </div>
+      <div className="poly__pf-hint">Read-only — open positions &amp; P&amp;L from Polymarket's public Data API.</div>
+
+      {sum && portfolio && portfolio.count > 0 && (
+        <div className="poly__pf-summary">
+          <div className="poly__pf-stat">
+            <span className="poly__pf-stat-lbl">Value</span>
+            <span className="poly__pf-stat-val">{usd(sum.currentValue)}</span>
+          </div>
+          <div className="poly__pf-stat">
+            <span className="poly__pf-stat-lbl">Cost</span>
+            <span className="poly__pf-stat-val">{usd(sum.initialValue)}</span>
+          </div>
+          <div className={`poly__pf-stat poly__pf-stat--${pnlDir}`}>
+            <span className="poly__pf-stat-lbl">P&amp;L</span>
+            <span className="poly__pf-stat-val">{usd(sum.cashPnl)} ({sum.percentPnl > 0 ? "+" : ""}{sum.percentPnl}%)</span>
+          </div>
+        </div>
+      )}
+
+      <div className="poly__pf-list">
+        {loading ? (
+          <div className="poly__loading">Loading positions…</div>
+        ) : !loaded ? (
+          <div className="poly__empty">Enter a wallet address to view its positions.</div>
+        ) : !portfolio || portfolio.count === 0 ? (
+          <div className="poly__empty">No open positions for this address.</div>
+        ) : (
+          portfolio.positions.map((p, i) => {
+            const dir = p.cashPnl > 0 ? "up" : p.cashPnl < 0 ? "down" : "flat";
+            return (
+              <div key={`${p.conditionId}-${i}`} className="poly__pf-pos">
+                <div className="poly__pf-pos-title">{p.title}</div>
+                <div className="poly__pf-pos-row">
+                  <span className={`poly__pf-outcome poly__pf-outcome--${probColor(p.outcome)}`}>{p.outcome}</span>
+                  <span className="poly__pf-pos-meta">{p.size.toLocaleString(undefined, { maximumFractionDigits: 0 })} sh @ {(p.avgPrice * 100).toFixed(0)}¢ → {(p.curPrice * 100).toFixed(0)}¢</span>
+                  <span className={`poly__pf-pnl poly__pf-pnl--${dir}`}>
+                    {usd(p.currentValue)} · {p.percentPnl > 0 ? "+" : ""}{p.percentPnl}%
+                  </span>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── main view ────────────────────────────────────────────────────────────────
 export function PolymarketView() {
   const [category, setCategory] = useState<Category>("All");
@@ -440,6 +547,13 @@ export function PolymarketView() {
 
   // AI panel
   const [aiTab, setAiTab] = useState<"ingest" | "chat">("ingest");
+
+  // Markets vs read-only portfolio view
+  const [view, setView] = useState<"markets" | "portfolio">("markets");
+
+  // Live CLOB price stream for the selected market
+  const [liveYes, setLiveYes] = useState<number | null>(null);
+  const [streaming, setStreaming] = useState(false);
 
   // load markets by category
   const loadMarkets = useCallback(async (cat: Category) => {
@@ -508,6 +622,39 @@ export function PolymarketView() {
     });
   }, [interval, selected]);
 
+  // Live CLOB price/order-book stream for the selected market. Reconnects on drop.
+  useEffect(() => {
+    setLiveYes(null);
+    setStreaming(false);
+    if (!selected) return;
+    const yesToken =
+      selected.outcomes.find((o) => o.name.toLowerCase() === "yes")?.tokenId ??
+      selected.outcomes[0]?.tokenId ?? null;
+    const tokenIds = selected.outcomes.map((o) => o.tokenId).filter((t): t is string => !!t);
+    if (tokenIds.length === 0) return;
+    const ctrl = new AbortController();
+    let alive = true;
+    void (async () => {
+      while (alive) {
+        try {
+          for await (const ev of streamPrices(tokenIds, ctrl.signal)) {
+            if (ev.type === "error" || ev.type === "empty") { setStreaming(false); break; }
+            setStreaming(true);
+            if (ev.type === "book" && ev.tokenId === yesToken) {
+              setBook({ bids: ev.bids, asks: ev.asks });
+            } else if (ev.type === "trade" && ev.tokenId === yesToken) {
+              setLiveYes(ev.price);
+            }
+          }
+        } catch { /* stream dropped */ }
+        if (!alive) break;
+        setStreaming(false);
+        await new Promise((r) => setTimeout(r, 3000)); // reconnect backoff
+      }
+    })();
+    return () => { alive = false; ctrl.abort(); };
+  }, [selected]);
+
   const togglePin = async (market: PolyMarket, e: React.MouseEvent) => {
     e.stopPropagation();
     const next = watchlist.includes(market.conditionId)
@@ -521,13 +668,23 @@ export function PolymarketView() {
     <div className="poly">
       <div className="poly__topbar">
         <span className="poly__title">Ψ POLYMARKET</span>
-        {updated && (
+        <div className="poly__view-toggle">
+          <button className={`poly__view-btn${view === "markets" ? " is-active" : ""}`}
+            onClick={() => setView("markets")}>Markets</button>
+          <button className={`poly__view-btn${view === "portfolio" ? " is-active" : ""}`}
+            onClick={() => setView("portfolio")}>💼 Portfolio</button>
+        </div>
+        {view === "markets" && updated && (
           <span className="poly__updated">
             Updated {new Date(updated).toLocaleTimeString()}
           </span>
         )}
       </div>
 
+      {view === "portfolio" ? (
+        <PortfolioPanel />
+      ) : (
+      <>
       <div className="poly__cats">
         {CATEGORIES.map((cat) => (
           <button
@@ -571,6 +728,8 @@ export function PolymarketView() {
             interval={interval}
             onInterval={setIntervalState}
             book={book}
+            livePrice={liveYes}
+            streaming={streaming}
           />
         ) : (
           <div className="poly__detail">
@@ -601,6 +760,8 @@ export function PolymarketView() {
           </div>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

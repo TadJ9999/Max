@@ -343,7 +343,7 @@ Parser rules:
 - [x] **Hub integration**: `"polymarket"` tab added to `HubTab` union + TABS array (glyph Ψ, label "Poly", gold accent in `Hub.css`); lazy-mount `<PolymarketView />`; Ψ launcher button in `HubButtons.tsx`; `#polymarket` hash route in `main.tsx`
 - [x] **Surface egress in settings/privacy guard** — amber egress warning + new Polymarket settings section added ✅
 - [x] *(stretch)* **Per-market news feed** from Gamma `events` field (`GET /polymarket/news/{condition_id}` + `MarketNewsFeed` component in detail column)
-- [ ] *(stretch)* Real-time price streaming via Polymarket WebSocket; portfolio tracking (read-only via wallet address)
+- [x] *(stretch)* **Real-time price streaming** via Polymarket CLOB WebSocket — `polymarket/stream.py` relays the public CLOB *market* channel to the browser as SSE (`GET /polymarket/stream?token_ids=`); selected-market detail panel live-updates the YES price + order book with a ● LIVE badge, reconnects on drop. **Read-only portfolio tracking** by wallet address — `fetch_positions` via the public Data API + `GET /polymarket/portfolio?address=`; 💼 Portfolio view with positions table + aggregate P&L, address remembered in localStorage
 
 ---
 

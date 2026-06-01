@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .models import Market, OrderBook, Outcome, PolymarketBoard, PricePoint
 from .service import PolymarketService
+from .stream import normalize, stream_prices
 
 __all__ = [
     "PolymarketService",
@@ -12,4 +13,6 @@ __all__ = [
     "PricePoint",
     "OrderBook",
     "PolymarketBoard",
+    "stream_prices",
+    "normalize",
 ]

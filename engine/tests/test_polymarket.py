@@ -406,3 +406,141 @@ def test_endpoint_order_book(test_app):
     data = r.json()
     assert len(data["bids"]) == 1
     assert data["bids"][0]["price"] == 0.71
+
+
+# ---- live price stream (CLOB WS → SSE) ----------------------------------
+
+
+def test_normalize_book_price_change_and_trade():
+    from max_engine.polymarket.stream import normalize
+
+    book = json.dumps([{
+        "event_type": "book", "asset_id": "tok",
+        "bids": [{"price": "0.51", "size": "100"}],
+        "asks": [{"price": "0.53", "size": "80"}],
+    }])
+    evs = normalize(book)
+    assert evs[0]["type"] == "book" and evs[0]["tokenId"] == "tok"
+    assert evs[0]["bids"] == [{"price": 0.51, "size": 100.0}]
+
+    pc = json.dumps({"event_type": "price_change", "asset_id": "tok",
+                     "changes": [{"price": "0.52", "size": "10", "side": "BUY"}]})
+    evs = normalize(pc)
+    assert evs[0]["type"] == "price_change" and evs[0]["changes"][0]["price"] == 0.52
+
+    trade = json.dumps({"event_type": "last_trade_price", "asset_id": "tok", "price": "0.55", "size": "5"})
+    evs = normalize(trade)
+    assert evs[0]["type"] == "trade" and evs[0]["price"] == 0.55
+
+    assert normalize("not json") == []
+    assert normalize(json.dumps({"event_type": "unknown"})) == []
+
+
+class _FakeCLOB:
+    """Async-context-manager + async-iterator stand-in for websockets.connect."""
+
+    def __init__(self, messages):
+        self._messages = list(messages)
+        self.sent: list[str] = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def send(self, data):
+        self.sent.append(data)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self._messages:
+            return self._messages.pop(0)
+        raise StopAsyncIteration
+
+
+def test_stream_prices_subscribes_and_yields():
+    from max_engine.polymarket.stream import stream_prices
+
+    msg = json.dumps([{"event_type": "last_trade_price", "asset_id": "tok_yes", "price": "0.6"}])
+    created: list[_FakeCLOB] = []
+
+    def fake_connect(url):
+        ws = _FakeCLOB([msg])
+        created.append(ws)
+        return ws
+
+    async def run():
+        out = []
+        async for ev in stream_prices(["tok_yes"], connect=fake_connect):
+            out.append(ev)
+        return out
+
+    evs = _run(run())
+    assert evs and evs[0]["type"] == "trade" and evs[0]["price"] == 0.6
+    assert '"assets_ids"' in created[0].sent[0] and "tok_yes" in created[0].sent[0]
+
+
+def test_stream_prices_empty_tokenids_is_noop():
+    from max_engine.polymarket.stream import stream_prices
+
+    async def run():
+        return [ev async for ev in stream_prices([])]
+
+    assert _run(run()) == []
+
+
+def test_endpoint_stream_empty(test_app):
+    r = test_app.get("/polymarket/stream")  # no token_ids
+    assert r.status_code == 200
+    assert "empty" in r.text
+
+
+# ---- read-only portfolio (Data API) -------------------------------------
+
+POSITIONS_RAW = [
+    {"conditionId": "0xabc", "title": "Will X happen?", "outcome": "Yes",
+     "size": 100, "avgPrice": 0.40, "curPrice": 0.55, "initialValue": 40.0,
+     "currentValue": 55.0, "cashPnl": 15.0, "percentPnl": 37.5},
+    {"conditionId": "0xdef", "title": "Will Y happen?", "outcome": "No",
+     "size": 0, "avgPrice": 0.0, "curPrice": 0.0},  # zero size → dropped
+]
+
+
+def test_fetch_positions_parses_and_drops_zero_size():
+    from max_engine.polymarket.client import fetch_positions
+
+    def handler(req):
+        assert "data-api.polymarket.com" in req.url.host
+        return httpx.Response(200, json=POSITIONS_RAW)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+            return await fetch_positions(c, "0xWALLET")
+
+    pos = _run(run())
+    assert len(pos) == 1
+    assert pos[0]["title"] == "Will X happen?" and pos[0]["cashPnl"] == 15.0
+
+
+def test_get_portfolio_aggregates_summary():
+    def handler(req):
+        return httpx.Response(200, json=POSITIONS_RAW)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+            svc = PolymarketService(client=c)
+            return await svc.get_portfolio("0xWALLET")
+
+    pf = _run(run())
+    assert pf["count"] == 1
+    assert pf["summary"]["currentValue"] == 55.0
+    assert pf["summary"]["cashPnl"] == 15.0
+
+
+def test_endpoint_portfolio_blank_address(test_app):
+    r = test_app.get("/polymarket/portfolio")
+    assert r.status_code == 200
+    assert r.json()["count"] == 0

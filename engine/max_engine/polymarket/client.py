@@ -14,6 +14,7 @@ from .models import Market, OrderBook, OrderBookLevel, Outcome, PricePoint
 
 GAMMA_BASE = "https://gamma-api.polymarket.com"
 CLOB_BASE = "https://clob.polymarket.com"
+DATA_BASE = "https://data-api.polymarket.com"
 
 _UA = "MaxEngine-Polymarket/0.1 (+local; prediction market board)"
 
@@ -170,6 +171,60 @@ async def fetch_order_book(
         bids=_levels(data.get("bids", [])),
         asks=_levels(data.get("asks", [])),
     )
+
+
+def _parse_position(p: dict) -> dict | None:
+    """Normalize one Data API position row. Returns None if it carries no size."""
+    if not isinstance(p, dict):
+        return None
+    size = float(p.get("size", 0) or 0)
+    if size == 0:
+        return None
+    cur_price = float(p.get("curPrice", 0) or 0)
+    return {
+        "conditionId": p.get("conditionId") or p.get("condition_id") or "",
+        "title": str(p.get("title") or p.get("question") or ""),
+        "slug": p.get("slug"),
+        "outcome": str(p.get("outcome") or ""),
+        "size": round(size, 4),
+        "avgPrice": round(float(p.get("avgPrice", 0) or 0), 4),
+        "curPrice": round(cur_price, 4),
+        "initialValue": round(float(p.get("initialValue", 0) or 0), 2),
+        "currentValue": round(float(p.get("currentValue", size * cur_price) or 0), 2),
+        "cashPnl": round(float(p.get("cashPnl", 0) or 0), 2),
+        "percentPnl": round(float(p.get("percentPnl", 0) or 0), 2),
+        "redeemable": bool(p.get("redeemable", False)),
+        "endDate": p.get("endDate") or p.get("end_date"),
+    }
+
+
+async def fetch_positions(client: httpx.AsyncClient, address: str) -> list[dict]:
+    """Read-only open positions for a wallet from the public Data API.
+
+    ``address`` is the user's proxy wallet (0x…). Returns ``[]`` on any failure or
+    for an address with no positions. No auth required."""
+    addr = (address or "").strip()
+    if not addr:
+        return []
+    try:
+        resp = await client.get(
+            f"{DATA_BASE}/positions",
+            params={"user": addr, "sizeThreshold": 1, "limit": 200, "sortBy": "CURRENT"},
+            headers={"user-agent": _UA},
+        )
+        if resp.status_code >= 400:
+            return []
+        data = resp.json()
+    except (httpx.HTTPError, ValueError):
+        return []
+
+    items = data if isinstance(data, list) else data.get("data", [])
+    out: list[dict] = []
+    for item in items:
+        pos = _parse_position(item)
+        if pos is not None:
+            out.append(pos)
+    return out
 
 
 async def fetch_market_events(

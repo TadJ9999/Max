@@ -53,7 +53,7 @@ from .delegate.session import TERMINAL_STATES
 from .dsl import ParseError, parse_command
 from .market import MarketService, TradeStream, board_digest
 from .osint import EventsService, NavalService, OsintService
-from .polymarket import PolymarketService
+from .polymarket import PolymarketService, stream_prices
 from .polymarket.embedder import embed_markets
 from .sentinel import SentinelService
 from .prompts import (
@@ -1586,6 +1586,42 @@ async def polymarket_order_book(token_id: str) -> dict:
     if book is None:
         return {"tokenId": token_id, "bids": [], "asks": []}
     return {"tokenId": token_id, **book.to_dict()}
+
+
+@app.get("/polymarket/stream")
+async def polymarket_stream(request: Request, token_ids: str = "") -> StreamingResponse:
+    """Live price / order-book updates for a market's outcome tokens, relayed from
+    the Polymarket CLOB WebSocket as SSE.
+
+    ``token_ids`` is a comma-separated list of outcome-token IDs (the YES/NO
+    ``tokenId``s from a market). Each event is JSON: ``{type:"book"|"price_change"
+    |"trade", tokenId, …}``."""
+    _check_network()
+    ids = [t.strip() for t in token_ids.split(",") if t.strip()]
+
+    async def _gen():
+        if not ids:
+            yield 'data: {"type":"empty"}\n\n'
+            return
+        yield ': connected\n\n'
+        try:
+            async for ev in stream_prices(ids):
+                if await request.is_disconnected():
+                    break
+                yield f"data: {json.dumps(ev)}\n\n"
+        except Exception as e:  # upstream drop / refused — surface and close
+            yield f'data: {{"type":"error","message":{json.dumps(str(e))}}}\n\n'
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+@app.get("/polymarket/portfolio")
+async def polymarket_portfolio(address: str = "") -> dict:
+    """Read-only open positions + P&L summary for a wallet address (Data API)."""
+    _check_network()
+    if not address.strip():
+        return {"address": "", "count": 0, "positions": [], "summary": {}}
+    return await polymarket_svc.get_portfolio(address.strip())
 
 
 @app.get("/polymarket/news/{condition_id}")

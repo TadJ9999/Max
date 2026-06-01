@@ -49,6 +49,81 @@ export type PolySources = {
 
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 
+// ── live price stream (CLOB WS → engine SSE) ──────────────────────────────────
+export type PolyPriceEvent =
+  | { type: "book"; tokenId: string; bids: OrderBookLevel[]; asks: OrderBookLevel[] }
+  | { type: "price_change"; tokenId: string; changes: { price: number; size: number; side: string }[] }
+  | { type: "trade"; tokenId: string; price: number; size: number | null; side: string | null }
+  | { type: "empty" }
+  | { type: "error"; message: string };
+
+export async function* streamPrices(
+  tokenIds: string[],
+  signal?: AbortSignal,
+): AsyncGenerator<PolyPriceEvent> {
+  const ids = tokenIds.filter(Boolean).join(",");
+  const r = await fetch(`${ENGINE_URL}/polymarket/stream?token_ids=${encodeURIComponent(ids)}`, { signal });
+  if (!r.ok || !r.body) throw new Error(`engine returned HTTP ${r.status}`);
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t.startsWith("data:")) continue;
+      const data = t.slice(5).trim();
+      if (!data) continue;
+      try {
+        yield JSON.parse(data) as PolyPriceEvent;
+      } catch { /* skip malformed frame */ }
+    }
+  }
+}
+
+// ── read-only portfolio (by wallet address, via Data API) ─────────────────────
+export type PolyPosition = {
+  conditionId: string;
+  title: string;
+  slug: string | null;
+  outcome: string;
+  size: number;
+  avgPrice: number;
+  curPrice: number;
+  initialValue: number;
+  currentValue: number;
+  cashPnl: number;
+  percentPnl: number;
+  redeemable: boolean;
+  endDate: string | null;
+};
+
+export type PolyPortfolio = {
+  address: string;
+  count: number;
+  positions: PolyPosition[];
+  summary: {
+    currentValue: number;
+    initialValue: number;
+    cashPnl: number;
+    percentPnl: number;
+  };
+};
+
+export async function getPortfolio(address: string): Promise<PolyPortfolio | null> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/polymarket/portfolio?address=${encodeURIComponent(address)}`);
+    if (!r.ok) return null;
+    return (await r.json()) as PolyPortfolio;
+  } catch {
+    return null;
+  }
+}
+
 export async function getBoard(): Promise<PolyBoard | null> {
   try {
     const r = await fetch(`${ENGINE_URL}/polymarket/board`);
