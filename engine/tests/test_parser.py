@@ -34,8 +34,17 @@ def test_local_sigil_summarize():
 
 
 def test_qwen_sigil():
-    cmd = parse_command("#. write a parser .")
+    # qwen moved from "#" to "q" when "#" became the subscription Claude sigil.
+    cmd = parse_command("q. write a parser .")
     assert cmd.provider == "qwen"
+    assert cmd.is_cloud is False
+
+
+def test_subscription_claude_sigil():
+    cmd = parse_command("#. write a parser .")
+    assert cmd.sigil == "#"
+    assert cmd.provider == "claude-cli"
+    assert cmd.is_cloud is True  # gated like cloud (egresses to Anthropic)
 
 
 def test_fix_operator():

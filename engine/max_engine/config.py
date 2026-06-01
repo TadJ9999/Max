@@ -269,7 +269,9 @@ class EngineConfig(BaseModel):
     # sigil -> provider name
     sigils: dict[str, str] = Field(
         default_factory=lambda: {
-            "@": "ollama", "#": "qwen", "!": "claude", "%": "openai", "^": "local",
+            # "#" → subscription Claude (spawns the logged-in CLI); qwen moved to "q".
+            "@": "ollama", "q": "qwen", "#": "claude-cli", "!": "claude",
+            "%": "openai", "^": "local",
         }
     )
     # task -> default model
@@ -287,10 +289,22 @@ class EngineConfig(BaseModel):
     provider_models: dict[str, dict[str, str]] = Field(
         default_factory=lambda: {
             "claude": {
-                "generate": "claude-sonnet-4-6",
-                "summarize": "claude-haiku-4-5-20251001",
-                "fix": "claude-sonnet-4-6",
-                "chat": "claude-sonnet-4-6",
+                # Top-end by default: the ! sigil routes to Opus 4.8 for the
+                # work where quality matters. Summarize stays on Sonnet — bulk
+                # doc-summarizing on Opus is wasted spend. Override per-task in
+                # the Model Manager UI.
+                "generate": "claude-opus-4-8",
+                "summarize": "claude-sonnet-4-6",
+                "fix": "claude-opus-4-8",
+                "chat": "claude-opus-4-8",
+            },
+            # Subscription Claude via the spawned CLI (# sigil). Same model IDs —
+            # mapped to CLI aliases in claude_agent.py. Billed to the Max plan.
+            "claude-cli": {
+                "generate": "claude-opus-4-8",
+                "summarize": "claude-sonnet-4-6",
+                "fix": "claude-opus-4-8",
+                "chat": "claude-opus-4-8",
             },
             "openai": {
                 "generate": "gpt-4o",
@@ -307,6 +321,8 @@ class EngineConfig(BaseModel):
             # OpenAI-compatible local server (llama.cpp / vLLM / LM Studio) — ^ sigil.
             ProviderConfig(name="local", kind="local", base_url="http://127.0.0.1:8080"),
             ProviderConfig(name="claude", kind="cloud"),
+            # Subscription Claude — spawns the logged-in `claude` CLI (no API key).
+            ProviderConfig(name="claude-cli", kind="agent"),
             ProviderConfig(name="openai", kind="cloud"),
         ]
     )
@@ -314,6 +330,9 @@ class EngineConfig(BaseModel):
     allow_cloud: bool = True
     force_offline: bool = False  # kill-switch: block ALL outbound network calls
     workspace_allowlist: list[str] = Field(default_factory=list)
+    # Explicit path to the `claude` CLI for the subscription (#) provider. Empty =
+    # auto-detect (PATH → ~/.local/bin → npm shim). See providers/claude_agent.py.
+    claude_cli_path: str = ""
     delegate: DelegateConfig = Field(default_factory=DelegateConfig)
     idle: IdleConfig = Field(default_factory=IdleConfig)
     tuning: TuningConfig = Field(default_factory=TuningConfig)
@@ -342,6 +361,8 @@ def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
         cfg.force_offline = bool(data["force_offline"])
     if "workspace_allowlist" in data:
         cfg.workspace_allowlist = list(data["workspace_allowlist"])
+    if isinstance(data.get("claude_cli_path"), str):
+        cfg.claude_cli_path = data["claude_cli_path"]
     if "task_models" in data and isinstance(data["task_models"], dict):
         for k, v in data["task_models"].items():
             if isinstance(v, str) and k in cfg.task_models:
@@ -541,6 +562,7 @@ def save_overrides(cfg: EngineConfig) -> None:
         "allow_cloud": cfg.allow_cloud,
         "force_offline": cfg.force_offline,
         "workspace_allowlist": cfg.workspace_allowlist,
+        "claude_cli_path": cfg.claude_cli_path,
         "task_models": cfg.task_models,
         "sigils": cfg.sigils,
         "providers": [{"name": p.name, "base_url": p.base_url} for p in cfg.providers],

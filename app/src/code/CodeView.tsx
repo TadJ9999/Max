@@ -253,11 +253,13 @@ export function CodeView() {
   useEffect(() => () => cmdAbortRef.current?.abort(), []);
 
   // ── in-editor inline command ──────────────────────────────────────────────
-  // Non-destructive: your request line stays put and the reply is inserted on
-  // the line(s) BELOW it (anchored after `anchorLine`). The whole reply is
-  // buffered and inserted in ONE edit — no streaming-into-the-document, which
-  // is what produced the scrambled/duplicated text before. A self-contained DSL
-  // command (`. … .`, `~ … ~`, …) runs via /command; anything else via /chat.
+  // Non-destructive: your request line stays put and the reply lands TWO lines
+  // below it — a blank gap then the answer (anchored after `anchorLine`). We
+  // hand the cursor straight back to where you were typing, so you can keep
+  // writing while the model thinks and the reply drops in below you. The whole
+  // reply is buffered and inserted in ONE edit — no streaming-into-the-document,
+  // which is what produced the scrambled/duplicated text before. A self-contained
+  // DSL command (`. … .`, `~ … ~`, …) runs via /command; anything else via /chat.
   const runInlineInEditor = async (prompt: string, anchorLine: number) => {
     const ed = editorRef.current;
     const model = ed?.getModel();
@@ -279,14 +281,18 @@ export function CodeView() {
       if (clean && !ac.signal.aborted) {
         const ln = Math.min(Math.max(anchorLine, 1), model.getLineCount());
         const pos = { lineNumber: ln, column: model.getLineMaxColumn(ln) };
+        // Remember where the user is typing so we can hand the cursor back —
+        // the reply drops in below without stealing focus or scrolling away.
+        const userSel = ed.getSelection();
         inlineApplyingRef.current = true;
         ed.executeEdits("max-inline", [
-          { range: monaco.Range.fromPositions(pos, pos), text: "\n" + clean, forceMoveMarkers: true },
+          // Blank line + reply → the answer starts TWO lines below the command,
+          // leaving a gap the user can keep typing into while it streams in.
+          { range: monaco.Range.fromPositions(pos, pos), text: "\n\n" + clean, forceMoveMarkers: false },
         ]);
         inlineApplyingRef.current = false;
-        const endLine = ln + clean.split("\n").length;
-        ed.setPosition({ lineNumber: Math.min(endLine, model.getLineCount()), column: 1 });
-        ed.revealLineInCenterIfOutsideViewport(ln + 1);
+        // Keep the user where they were (don't jump down to the reply end).
+        if (userSel) ed.setSelection(userSel);
       }
       setInlineStatus(null);
     } catch (e) {
@@ -773,7 +779,7 @@ export function CodeView() {
             <div className="code-view__empty-msg">
               <span className="code-view__empty-glyph">⌨</span>
               <span>Open a file to start editing</span>
-              <span className="code-view__empty-hint">Open Folder in the tree to load a workspace · ⊕ new file · Ctrl+` terminal · F1 palette · ✦ AI Plan to co-work · type <code>~ … ~</code> in the file + Ctrl+Enter (or ⚡ Auto-run)</span>
+              <span className="code-view__empty-hint">Open Folder in the tree to load a workspace · ⊕ new file · Ctrl+` terminal · F1 palette · ✦ AI Plan to co-work · type <code>~ … ~</code> in the file + Ctrl+Enter (or ⚡ Auto-run) · prefix <code>#</code> for Claude on your subscription, <code>!</code> for the Claude API</span>
             </div>
           </div>
         )}

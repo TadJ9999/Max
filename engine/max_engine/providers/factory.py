@@ -5,6 +5,7 @@ from __future__ import annotations
 from ..config import EngineConfig
 from .anthropic import AnthropicProvider
 from .base import Provider
+from .claude_agent import ClaudeAgentProvider
 from .ollama import OllamaProvider
 from .openai_compat import OpenAICompatProvider
 from .openai_provider import OpenAIProvider
@@ -19,6 +20,9 @@ def build_provider(name: str, config: EngineConfig, model: str = "") -> Provider
     pc = next((p for p in config.providers if p.name == name), None)
     if pc is None:
         raise KeyError(f"unknown provider: {name!r}")
+    # Subscription Claude (# sigil): spawns the logged-in `claude` CLI, no API key.
+    if pc.kind == "agent":
+        return ClaudeAgentProvider(name=pc.name, claude_path=config.claude_cli_path or None)
     if pc.kind == "cloud":
         if pc.name == "openai":
             return OpenAIProvider(name=pc.name)

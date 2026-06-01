@@ -79,11 +79,11 @@ async function* streamSSE(
 }
 
 // A DSL command starts with an operator (`.`/`..`/`~`), optionally after a
-// provider sigil (`@`/`#`/`!`/`%`). Anything else is treated as plain chat.
+// provider sigil (`@`/`q`/`#`/`!`/`%`). Anything else is treated as plain chat.
 export function isDslCommand(text: string): boolean {
   let s = text.trim();
   if (!s) return false;
-  if ("@#!%".includes(s[0])) s = s.slice(1);
+  if ("@#!%q".includes(s[0])) s = s.slice(1);
   return s.startsWith(".") || s.startsWith("~");
 }
 
@@ -112,7 +112,7 @@ export function streamChatVision(
 export function isDslCommandExtended(text: string): boolean {
   let s = text.trim();
   if (!s) return false;
-  if ("@#!%".includes(s[0])) s = s.slice(1);
+  if ("@#!%q".includes(s[0])) s = s.slice(1);
   return s.startsWith(".") || s.startsWith("~");
 }
 

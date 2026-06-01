@@ -27,7 +27,8 @@ def model_for(provider: str, action: str, config: EngineConfig) -> str:
 
 
 def is_cloud_provider(provider: str, config: EngineConfig) -> bool:
-    return any(p.name == provider and p.kind == "cloud" for p in config.providers)
+    # "agent" (subscription claude-cli) egresses to Anthropic, so it's gated like cloud.
+    return any(p.name == provider and p.kind in ("cloud", "agent") for p in config.providers)
 
 
 def resolve(command: Command, config: EngineConfig) -> Route:

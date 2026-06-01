@@ -264,9 +264,11 @@ def _on_usage(feature: str, provider: str, model: str, in_tok: int, out_tok: int
 
 
 from .providers.anthropic import set_usage_callback as _set_ant_cb
+from .providers.claude_agent import set_usage_callback as _set_cli_cb
 from .providers.ollama import set_usage_callback as _set_oll_cb
 from .providers.openai_compat import set_usage_callback as _set_oai_compat_cb
 _set_ant_cb(_on_usage)
+_set_cli_cb(_on_usage)
 _set_oll_cb(_on_usage)
 _set_oai_compat_cb(_on_usage)
 
@@ -1028,6 +1030,12 @@ async def command(req: CommandRequest):
         route = resolve(cmd, config)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e
+
+    # Off-machine routes (cloud API or the subscription CLI agent) honor the
+    # force_offline kill-switch — the agent spawns a subprocess that bypasses any
+    # httpx-level network guard, so enforce it here.
+    if route.is_cloud:
+        _check_network()
 
     provider = build_provider(route.provider, config, model=route.model)
     messages = messages_for(cmd.action, cmd.body, prompt_override=cmd.prompt_override)

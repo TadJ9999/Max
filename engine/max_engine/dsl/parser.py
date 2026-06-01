@@ -6,8 +6,9 @@ A command is::
 
 * **sigil** (optional) selects the provider/model. Defaults below; user-configurable.
     - ``@`` -> ollama (local)
-    - ``#`` -> qwen   (local)
-    - ``!`` -> claude (cloud, opt-in)
+    - ``q`` -> qwen   (local)
+    - ``#`` -> claude subscription via the spawned CLI (no API key; Max plan)
+    - ``!`` -> claude (cloud Messages API, billed per-token; opt-in)
     - ``%`` -> openai (cloud, opt-in)
     - (none) -> the per-task default provider
 * **operator** selects the action and delimits the body:
@@ -17,9 +18,10 @@ A command is::
 Examples::
 
     . add a function to do X and call Y .
-    !. add a function .                       -> generate via Claude (cloud)
+    #. add a function .                       -> generate via Claude (subscription)
+    !. add a function .                       -> generate via Claude (API key)
     @.. def foo(): pass ..                     -> document via Ollama (local)
-    #. refactor this loop .                    -> generate via Qwen (local)
+    q. refactor this loop .                    -> generate via Qwen (local)
     ~ tidy this messy block ~                  -> fix / refactor (default provider)
     ? explain this ?                           -> custom command (if configured)
 """
@@ -35,7 +37,8 @@ if TYPE_CHECKING:
 # Default sigil -> provider map (overridable via config).
 DEFAULT_SIGILS: dict[str, str] = {
     "@": "ollama",
-    "#": "qwen",
+    "q": "qwen",
+    "#": "claude-cli",  # subscription Claude — spawns the logged-in CLI (no API key)
     "!": "claude",
     "%": "openai",
     "^": "local",  # OpenAI-compatible local server (llama.cpp / vLLM)
@@ -77,7 +80,8 @@ def parse_command(
     command triggers (e.g. ``?``) are tried after built-in operators.
     """
     sigil_map = sigils if sigils is not None else DEFAULT_SIGILS
-    cloud_providers = {"claude", "openai"}
+    # claude-cli egresses to Anthropic too, so gate it like the cloud providers.
+    cloud_providers = {"claude", "claude-cli", "openai"}
 
     s = text.strip()
     if not s:
