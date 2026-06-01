@@ -156,6 +156,37 @@ class FileManager:
         except Exception:
             return False
 
+    def git_status(self) -> list[dict]:
+        """Return the working-tree status of the repo containing the first root.
+
+        Each item is ``{"path": <abs posix>, "status": <2-char porcelain code>}``.
+        Returns an empty list when git is unavailable or the roots aren't a repo.
+        """
+        import subprocess
+        repo = self._repo_root()
+        if repo is None:
+            return []
+        try:
+            r = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=str(repo), capture_output=True, text=True, timeout=10,
+            )
+        except Exception:
+            return []
+        out: list[dict] = []
+        for line in r.stdout.splitlines():
+            if len(line) < 4:
+                continue
+            code = line[:2]
+            rel = line[3:]
+            # Renames are reported as "old -> new"; key off the new path.
+            if " -> " in rel:
+                rel = rel.split(" -> ", 1)[1]
+            rel = rel.strip().strip('"')
+            abs_path = (Path(repo) / rel).resolve().as_posix()
+            out.append({"path": abs_path, "status": code})
+        return out
+
     # ------------------------------------------------------------------
     # File / directory CRUD
     # ------------------------------------------------------------------

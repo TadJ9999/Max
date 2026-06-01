@@ -2507,6 +2507,18 @@ def code_delete_entry(path: str, recursive: bool = False):
     return {"ok": True, "path": path}
 
 
+@app.get("/code/git/status")
+def code_git_status():
+    """Working-tree git status for the workspace, for file-tree badges."""
+    if not config.workspace_allowlist:
+        return {"files": []}
+    fm = _get_file_mgr()
+    try:
+        return {"files": fm.git_status()}
+    except Exception as e:  # never block the editor on a git hiccup
+        return {"files": [], "error": str(e)}
+
+
 @app.websocket("/code/ws/terminal")
 async def code_terminal(ws: WebSocket):
     """Spawn a shell and pipe I/O bidirectionally over the WebSocket."""

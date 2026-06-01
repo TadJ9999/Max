@@ -11,12 +11,15 @@
   --osint-muted: #7f95a3;
 }
 
-/* ---- action button row (below chat bar) ---- */
+/* ---- action button grid (below chat bar) ----
+   Fixed 6 columns so launchers wrap onto a second row (6 per row) as more
+   features are added, instead of stretching into one long line. */
 .widget-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(6, 44px);
   gap: 8px;
   margin-top: 8px;
-  justify-content: flex-start;
+  justify-content: start;
 }
 /* Square icon buttons — consistent size for any future tools */
 .widget-action-btn {

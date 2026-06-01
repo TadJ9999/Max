@@ -168,9 +168,9 @@ Parser rules:
 - [ ] Latency targets (completion < Xms, gen first-token < Yms — measurement tooling deferred)
 
 ### Phase 8 — Advanced / stretch  🎯 *agentic & multi-file*
-- [ ] Multi-file / repo-wide edits with plan + approval
-- [ ] User-defined custom commands & template library
-- [ ] More providers (OpenAI, local llama.cpp/vLLM) + more clients (CLI, Neovim, LAN)
+- [x] **Multi-file / repo-wide edits with plan + approval** — Code Hub tab: `POST /code/plan` streams a multi-file `EditPlan`, `POST /code/apply` writes patches behind a git snapshot, `POST /code/rollback` reverts; frontend `app/src/code/` (CodeView + FileTree + Terminal)
+- [x] **User-defined custom commands & template library** — `custom:<name>` triggers (any single delimiter char) in `dsl/parser.py`; add/edit/remove UI in Settings (`CustomCommandsSection`), persisted via config
+- [~] **More providers + more clients** — OpenAI provider built (`%` sigil, `providers/openai_provider.py`, cost catalog) + LAN browser client (Phase 17); **still open:** local llama.cpp/vLLM adapters, CLI client, Neovim client
 - [x] Vision models — image attach in chat bar, routes to Claude or OpenAI vision
 
 ### Phase 9 — Capability platform & general assistant (beyond coding)  ✅ *add skills, not rewrite the core* ([architecture](docs/architecture.md))

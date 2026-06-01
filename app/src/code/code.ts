@@ -24,9 +24,43 @@ export async function listFiles(path: string = ""): Promise<FileEntry[]> {
     ? `${ENGINE_URL}/code/files?path=${encodeURIComponent(path)}`
     : `${ENGINE_URL}/code/files`;
   const r = await fetch(url);
-  if (!r.ok) throw new Error(`list files failed: ${r.status}`);
+  if (!r.ok) {
+    const detail = ((await r.json().catch(() => ({}))) as { detail?: unknown }).detail;
+    throw new Error(detail ? String(detail) : `list files failed: ${r.status}`);
+  }
   const data = (await r.json()) as { entries: FileEntry[] };
   return data.entries;
+}
+
+// ── Git status (working-tree changes for file-tree badges) ──────────────────
+
+export interface GitStatusEntry {
+  path: string;
+  status: string; // 2-char porcelain code, e.g. " M", "??", "A "
+}
+
+export async function gitStatus(): Promise<GitStatusEntry[]> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/code/git/status`);
+    if (!r.ok) return [];
+    const data = (await r.json()) as { files?: GitStatusEntry[] };
+    return data.files ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// Collapse a 2-char porcelain code into a single badge letter + semantic kind.
+export function gitBadge(code: string): { letter: string; kind: string } | null {
+  const c = code.trim();
+  if (!c) return null;
+  if (c === "??") return { letter: "U", kind: "untracked" };
+  if (c.includes("D")) return { letter: "D", kind: "deleted" };
+  if (c.includes("A")) return { letter: "A", kind: "added" };
+  if (c.includes("R")) return { letter: "R", kind: "renamed" };
+  if (c.includes("M")) return { letter: "M", kind: "modified" };
+  if (c.includes("U")) return { letter: "!", kind: "conflict" };
+  return { letter: c[0], kind: "modified" };
 }
 
 export async function readFile(path: string): Promise<string> {

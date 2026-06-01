@@ -8,9 +8,11 @@ import Editor, { loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
 import { FileTree } from "./FileTree";
 import { Terminal } from "./Terminal";
+import { PatchDiff } from "./PatchDiff";
 import {
   applyPlan,
   findInFiles,
+  gitStatus,
   readFile,
   rollbackPlan,
   streamPlan,
@@ -18,6 +20,7 @@ import {
   type EditPlan,
   type SearchHit,
 } from "./code";
+import { getConfig, updateConfig } from "../config";
 import "./Code.css";
 
 loader.config({ monaco });
@@ -47,6 +50,7 @@ export function CodeView() {
   const [activeIdx, setActiveIdx] = useState<number>(-1);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [treeRefreshKey, setTreeRefreshKey] = useState(0);
+  const [gitMap, setGitMap] = useState<Map<string, string>>(new Map());
 
   // ── editor ref + cursor ──────────────────────────────────────────────────
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -75,6 +79,39 @@ export function CodeView() {
   const abortRef = useRef<AbortController | null>(null);
 
   const activeTab = tabs[activeIdx] ?? null;
+
+  // ── git status (file-tree badges) ───────────────────────────────────────────
+
+  const refreshGit = async () => {
+    const entries = await gitStatus();
+    setGitMap(new Map(entries.map((e) => [e.path, e.status])));
+  };
+
+  useEffect(() => { void refreshGit(); }, []);
+
+  // ── open a workspace folder (adds to the engine allowlist) ──────────────────
+
+  const openFolder = async () => {
+    const input = window.prompt(
+      "Open folder — enter an absolute path to add to the workspace:",
+      "C:/dev/Max",
+    );
+    const path = input?.trim();
+    if (!path) return;
+    const cfg = await getConfig();
+    const current = cfg?.workspace_allowlist ?? [];
+    if (current.includes(path)) {
+      setTreeRefreshKey((k) => k + 1);
+      return;
+    }
+    const next = await updateConfig({ workspace_allowlist: [...current, path] });
+    if (!next) {
+      alert("Could not update workspace — is the engine running?");
+      return;
+    }
+    setTreeRefreshKey((k) => k + 1);
+    void refreshGit();
+  };
 
   // ── file operations ───────────────────────────────────────────────────────
 
@@ -117,10 +154,33 @@ export function CodeView() {
       setTabs((prev) =>
         prev.map((t, i) => (i === activeIdx ? { ...t, dirty: false } : t)),
       );
+      void refreshGit();
     } catch (e) {
       alert(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
+
+  const saveAll = async () => {
+    const dirty = tabs.filter((t) => t.dirty);
+    if (dirty.length === 0) return;
+    try {
+      await Promise.all(dirty.map((t) => writeFile(t.path, t.content)));
+      setTabs((prev) => prev.map((t) => ({ ...t, dirty: false })));
+      void refreshGit();
+    } catch (e) {
+      alert(`Save all failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  // Run a built-in Monaco command (format, find/replace, go-to-line, palette).
+  const runEditorAction = (id: string) => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    ed.focus();
+    ed.getAction(id)?.run();
+  };
+
+  const anyDirty = tabs.some((t) => t.dirty);
 
   const closeTab = (idx: number) => {
     setTabs((prev) => {
@@ -140,7 +200,8 @@ export function CodeView() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const ctrl = e.ctrlKey || e.metaKey;
-      if (ctrl && e.key === "s") { e.preventDefault(); void saveActive(); }
+      if (ctrl && e.shiftKey && (e.key === "S" || e.key === "s")) { e.preventDefault(); void saveAll(); }
+      else if (ctrl && e.key === "s") { e.preventDefault(); void saveActive(); }
       if (ctrl && e.key === "`") { e.preventDefault(); setTermOpen((v) => !v); }
     };
     window.addEventListener("keydown", onKey);
@@ -239,6 +300,7 @@ export function CodeView() {
       }
       setPlan(null);
       setAiRequest("");
+      void refreshGit();
       if (result.errors.length > 0)
         setPlanError(`Applied with errors: ${result.errors.join(", ")}`);
     } catch (e) {
@@ -253,6 +315,7 @@ export function CodeView() {
       await rollbackPlan();
       setSnapshotRef(null);
       setPlanError(null);
+      void refreshGit();
     } catch (e) {
       setPlanError(e instanceof Error ? e.message : String(e));
     }
@@ -278,6 +341,9 @@ export function CodeView() {
         <FileTree
           selected={selectedPath}
           refreshKey={treeRefreshKey}
+          gitStatus={gitMap}
+          onRefresh={() => void refreshGit()}
+          onOpenFolder={() => void openFolder()}
           onSelect={(p) => {
             setSelectedPath(p);
             void openFile(p);
@@ -346,6 +412,55 @@ export function CodeView() {
           >
             Save
           </button>
+          <button
+            className={`code-view__toolbar-btn${anyDirty ? " is-dirty" : ""}`}
+            onClick={() => void saveAll()}
+            disabled={!anyDirty}
+            title="Save All (Ctrl+Shift+S)"
+          >
+            Save All
+          </button>
+          <div className="code-view__toolbar-sep" />
+          <button
+            className="code-view__toolbar-btn"
+            onClick={() => runEditorAction("actions.find")}
+            disabled={!activeTab}
+            title="Find (Ctrl+F)"
+          >
+            Find
+          </button>
+          <button
+            className="code-view__toolbar-btn"
+            onClick={() => runEditorAction("editor.action.startFindReplaceAction")}
+            disabled={!activeTab}
+            title="Replace (Ctrl+H)"
+          >
+            Replace
+          </button>
+          <button
+            className="code-view__toolbar-btn"
+            onClick={() => runEditorAction("editor.action.formatDocument")}
+            disabled={!activeTab}
+            title="Format Document (Shift+Alt+F)"
+          >
+            Format
+          </button>
+          <button
+            className="code-view__toolbar-btn"
+            onClick={() => runEditorAction("editor.action.gotoLine")}
+            disabled={!activeTab}
+            title="Go to Line (Ctrl+G)"
+          >
+            Go to Line
+          </button>
+          <button
+            className="code-view__toolbar-btn"
+            onClick={() => runEditorAction("editor.action.quickCommand")}
+            disabled={!activeTab}
+            title="Command Palette (F1)"
+          >
+            ⌘ Palette
+          </button>
           <div className="code-view__toolbar-sep" />
           <button
             className={`code-view__toolbar-btn${termOpen ? " is-active" : ""}`}
@@ -393,6 +508,18 @@ export function CodeView() {
           </div>
         )}
 
+        {/* Breadcrumb — full path of the active file */}
+        {activeTab && (
+          <div className="code-view__breadcrumb" title={activeTab.path}>
+            {activeTab.path.split(/[/\\]/).map((seg, i, arr) => (
+              <span key={i} className="code-view__crumb">
+                {seg}
+                {i < arr.length - 1 && <span className="code-view__crumb-sep">›</span>}
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* Monaco editor */}
         {activeTab ? (
           <Editor
@@ -426,7 +553,7 @@ export function CodeView() {
             <div className="code-view__empty-msg">
               <span className="code-view__empty-glyph">⌨</span>
               <span>Open a file to start editing</span>
-              <span className="code-view__empty-hint">Right-click the tree to create files · Ctrl+` for terminal · ✦ AI Plan for AI edits</span>
+              <span className="code-view__empty-hint">Open Folder in the tree to load a workspace · ⊕ new file · Ctrl+` terminal · F1 palette · ✦ AI Plan to co-work</span>
             </div>
           </div>
         )}
@@ -439,9 +566,12 @@ export function CodeView() {
               <span>{activeTab.language}</span>
               <span>Spaces: 2</span>
               <span>UTF-8</span>
+              {gitMap.size > 0 && <span title="files changed in git">⎇ {gitMap.size} changed</span>}
             </>
           ) : (
-            <span>No file open</span>
+            gitMap.size > 0
+              ? <span title="files changed in git">⎇ {gitMap.size} changed</span>
+              : <span>No file open</span>
           )}
         </div>
 
@@ -492,10 +622,7 @@ export function CodeView() {
               <div className="code-view__plan-summary">{plan.summary}</div>
               <div className="code-view__plan-files">
                 {plan.patches.map((p) => (
-                  <div key={p.path} className="code-view__patch">
-                    <div className="code-view__patch-path">{p.path}</div>
-                    <div className="code-view__patch-desc">{p.description}</div>
-                  </div>
+                  <PatchDiff key={p.path} patch={p} />
                 ))}
               </div>
               <div className="code-view__plan-actions">

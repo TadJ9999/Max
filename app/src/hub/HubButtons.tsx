@@ -1,5 +1,5 @@
-// The widget's feature launcher row. Three icon buttons (Apollo / OSINT /
-// Market) that open the unified Hub window on the matching tab. In Tauri a
+// The widget's feature launcher grid. Icon buttons (one per Hub tab) laid out
+// 6 per row that open the unified Hub window on the matching tab. In Tauri a
 // single "hub" window is reused (focus + emit a tab switch if already open);
 // in the browser preview it opens an in-page overlay.
 

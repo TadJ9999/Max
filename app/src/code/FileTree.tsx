@@ -1,10 +1,12 @@
-// File tree sidebar — lazy-loads children, supports right-click CRUD.
+// File tree sidebar — lazy-loads children, supports right-click CRUD, a header
+// toolbar (new file/folder, refresh, collapse-all), and git-status badges.
 
 import { useEffect, useRef, useState } from "react";
 import {
   createDir,
   createFile,
   deleteFile,
+  gitBadge,
   listFiles,
   renameFile,
   type FileEntry,
@@ -62,18 +64,31 @@ function ContextMenu({ pos, isDir, onClose, onNewFile, onNewFolder, onRename, on
   );
 }
 
+// ── Git badge ──────────────────────────────────────────────────────────────
+
+function GitBadge({ code }: { code: string }) {
+  const b = gitBadge(code);
+  if (!b) return null;
+  return (
+    <span className={`ftree__git ftree__git--${b.kind}`} title={`git: ${b.kind}`}>
+      {b.letter}
+    </span>
+  );
+}
+
 // ── Tree node ─────────────────────────────────────────────────────────────────
 
 interface NodeProps {
   entry: FileEntry;
   depth: number;
   selected: string | null;
+  gitStatus: Map<string, string>;
   onSelect: (path: string) => void;
   onRenameTab: (oldPath: string, newPath: string) => void;
   onDeleteTab: (path: string) => void;
 }
 
-function TreeNode({ entry, depth, selected, onSelect, onRenameTab, onDeleteTab }: NodeProps) {
+function TreeNode({ entry, depth, selected, gitStatus, onSelect, onRenameTab, onDeleteTab }: NodeProps) {
   const [open, setOpen] = useState(false);
   const [children, setChildren] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -166,6 +181,7 @@ function TreeNode({ entry, depth, selected, onSelect, onRenameTab, onDeleteTab }
   };
 
   const isSelected = !entry.is_dir && entry.path === selected;
+  const code = gitStatus.get(entry.path);
 
   return (
     <div className="ftree__node" style={{ paddingLeft: depth * 12 }}>
@@ -185,7 +201,7 @@ function TreeNode({ entry, depth, selected, onSelect, onRenameTab, onDeleteTab }
         />
       ) : (
         <button
-          className={`ftree__row${isSelected ? " is-selected" : ""}`}
+          className={`ftree__row${isSelected ? " is-selected" : ""}${code ? " is-changed" : ""}`}
           onClick={() => void toggle()}
           onContextMenu={(e) => {
             e.preventDefault();
@@ -198,6 +214,7 @@ function TreeNode({ entry, depth, selected, onSelect, onRenameTab, onDeleteTab }
           </span>
           <span className="ftree__name">{entry.name}</span>
           {loading && <span className="ftree__spin">…</span>}
+          {!entry.is_dir && code && <GitBadge code={code} />}
         </button>
       )}
 
@@ -239,6 +256,7 @@ function TreeNode({ entry, depth, selected, onSelect, onRenameTab, onDeleteTab }
               entry={c}
               depth={depth + 1}
               selected={selected}
+              gitStatus={gitStatus}
               onSelect={onSelect}
               onRenameTab={onRenameTab}
               onDeleteTab={onDeleteTab}
@@ -254,17 +272,34 @@ function TreeNode({ entry, depth, selected, onSelect, onRenameTab, onDeleteTab }
 
 interface FileTreeProps {
   selected: string | null;
+  gitStatus?: Map<string, string>;
   onSelect: (path: string) => void;
   onRename?: (oldPath: string, newPath: string) => void;
   onDelete?: (path: string) => void;
+  onRefresh?: () => void;
+  onOpenFolder?: () => void;
   refreshKey?: number;
 }
 
-export function FileTree({ selected, onSelect, onRename, onDelete, refreshKey }: FileTreeProps) {
+export function FileTree({
+  selected,
+  gitStatus,
+  onSelect,
+  onRename,
+  onDelete,
+  onRefresh,
+  onOpenFolder,
+  refreshKey,
+}: FileTreeProps) {
   const [roots, setRoots] = useState<FileEntry[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [nonce, setNonce] = useState(0); // bumped to remount nodes (collapse-all)
+  const [rootCreate, setRootCreate] = useState<"file" | "dir" | null>(null);
+  const [rootCreateName, setRootCreateName] = useState("");
+  const status = gitStatus ?? new Map<string, string>();
 
   const load = () => {
+    setErr(null);
     listFiles()
       .then(setRoots)
       .catch((e: unknown) =>
@@ -274,35 +309,121 @@ export function FileTree({ selected, onSelect, onRename, onDelete, refreshKey }:
 
   useEffect(load, [refreshKey]);
 
-  if (err) {
-    return (
-      <div className="ftree__err">
-        {err.includes("allow-listed") || err.includes("No workspace") ? (
-          <>No workspace paths set.<br />Add one in Settings → Workspace.</>
-        ) : (
-          err
-        )}
-      </div>
-    );
-  }
+  const refresh = () => {
+    load();
+    setNonce((n) => n + 1);
+    onRefresh?.();
+  };
 
-  if (roots.length === 0) {
-    return <div className="ftree__empty">No workspace paths allow-listed.</div>;
-  }
+  const collapseAll = () => setNonce((n) => n + 1);
+
+  const confirmRootCreate = async () => {
+    const name = rootCreateName.trim();
+    const base = roots[0]?.path;
+    if (!name || !base) { setRootCreate(null); return; }
+    try {
+      const full = `${base}/${name}`;
+      if (rootCreate === "file") { await createFile(full); onSelect(full); }
+      else await createDir(full);
+      refresh();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRootCreate(null);
+      setRootCreateName("");
+    }
+  };
+
+  const hasRoots = roots.length > 0 && !err;
 
   return (
-    <div className="ftree">
-      {roots.map((r) => (
-        <TreeNode
-          key={r.path}
-          entry={r}
-          depth={0}
-          selected={selected}
-          onSelect={onSelect}
-          onRenameTab={onRename ?? (() => {})}
-          onDeleteTab={onDelete ?? (() => {})}
-        />
-      ))}
+    <div className="ftree-wrap">
+      {/* Toolbar */}
+      <div className="ftree__toolbar">
+        <button
+          className="ftree__tool"
+          title="New File"
+          disabled={!hasRoots}
+          onClick={() => { setRootCreate("file"); setRootCreateName(""); }}
+        >
+          ⊕
+        </button>
+        <button
+          className="ftree__tool"
+          title="New Folder"
+          disabled={!hasRoots}
+          onClick={() => { setRootCreate("dir"); setRootCreateName(""); }}
+        >
+          ⊞
+        </button>
+        <button className="ftree__tool" title="Refresh" onClick={refresh}>
+          ⟳
+        </button>
+        <button
+          className="ftree__tool"
+          title="Collapse All"
+          disabled={!hasRoots}
+          onClick={collapseAll}
+        >
+          ⇥
+        </button>
+        <button className="ftree__tool" title="Open Folder…" onClick={() => onOpenFolder?.()}>
+          📂
+        </button>
+      </div>
+
+      {err ? (
+        <div className="ftree__err">
+          {err.includes("allow-listed") || err.includes("No workspace") ? (
+            <>
+              <div>No workspace folder open.</div>
+              <button className="ftree__open-btn" onClick={() => onOpenFolder?.()}>
+                📂 Open Folder
+              </button>
+            </>
+          ) : (
+            err
+          )}
+        </div>
+      ) : roots.length === 0 ? (
+        <div className="ftree__empty">
+          <div>No workspace folder open.</div>
+          <button className="ftree__open-btn" onClick={() => onOpenFolder?.()}>
+            📂 Open Folder
+          </button>
+        </div>
+      ) : (
+        <div className="ftree" key={nonce}>
+          {rootCreate && (
+            <div style={{ paddingLeft: 12 }}>
+              <input
+                className="ftree__rename-input"
+                value={rootCreateName}
+                autoFocus
+                placeholder={rootCreate === "file" ? "filename.ts" : "folder-name"}
+                onChange={(e) => setRootCreateName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void confirmRootCreate();
+                  if (e.key === "Escape") setRootCreate(null);
+                }}
+                onBlur={() => setRootCreate(null)}
+              />
+            </div>
+          )}
+          {roots.map((r) => (
+            <TreeNode
+              key={r.path}
+              entry={r}
+              depth={0}
+              selected={selected}
+              gitStatus={status}
+              onSelect={onSelect}
+              onRenameTab={onRename ?? (() => {})}
+              onDeleteTab={onDelete ?? (() => {})}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
