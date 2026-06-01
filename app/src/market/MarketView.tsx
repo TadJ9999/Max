@@ -90,13 +90,31 @@ function RangeBar({ quote }: { quote: Quote }) {
 // ── Ticker drill-down modal ───────────────────────────────────────────────
 function DrillDownModal({
   quote,
-  candles,
+  candles: initialCandles,
+  keySet,
   onClose,
 }: {
   quote: Quote;
   candles: Candle[];
+  keySet: boolean;
   onClose: () => void;
 }) {
+  const [candles, setCandles] = useState<Candle[]>(initialCandles);
+  const [loadingChart, setLoadingChart] = useState(initialCandles.length === 0 && keySet);
+
+  // Fetch candles on demand if not pre-loaded (e.g. modal opened before background load finished)
+  useEffect(() => {
+    if (initialCandles.length > 0 || !keySet) return;
+    let alive = true;
+    setLoadingChart(true);
+    getCandles(quote.symbol, "D", 30).then((c) => {
+      if (!alive) return;
+      setCandles(c);
+      setLoadingChart(false);
+    });
+    return () => { alive = false; };
+  }, [quote.symbol, keySet, initialCandles.length]);
+
   const dir = dirClass(quote.change);
   const sign = quote.change > 0 ? "+" : "";
 
@@ -136,13 +154,16 @@ function DrillDownModal({
           </span>
         </div>
 
-        {pts && (
+        {loadingChart ? (
+          <p className="mkt-modal__no-data" style={{ opacity: 0.55 }}>Loading chart…</p>
+        ) : pts ? (
           <svg className="mkt-modal__chart" width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
             <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" />
           </svg>
-        )}
-        {candles.length === 0 && (
-          <p className="mkt-modal__no-data">Set FINNHUB_API_KEY to load chart history.</p>
+        ) : (
+          <p className="mkt-modal__no-data">
+            {keySet ? "No chart data available." : "Set FINNHUB_API_KEY in Settings → API Keys to load chart history."}
+          </p>
         )}
 
         <div className="mkt-modal__stats">
@@ -576,6 +597,7 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
               <DrillDownModal
                 quote={drillDown}
                 candles={sparklines[drillDown.symbol] ?? []}
+                keySet={keySet}
                 onClose={() => setDrillDown(null)}
               />
             )}

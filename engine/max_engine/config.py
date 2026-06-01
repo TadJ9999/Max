@@ -41,6 +41,12 @@ class IdleConfig(BaseModel):
     ``"-1"`` keeps it loaded forever. Accepts Ollama duration strings (e.g. ``"10m"``)."""
 
     keep_alive: str = "10m"
+    # Two-model strategy: one tiny model stays resident in VRAM for FIM/completion,
+    # heavy models load on demand and evict after keep_alive.
+    resident_model: str = "qwen2.5-coder:3b"
+    resident_keep_alive: str = "-1"  # never evict the resident completer
+    # VRAM budget for auto-eviction before loading a heavy model (12 GB GPU, keep 1 GB headroom).
+    vram_budget_mb: int = 11_000
 
 
 class OsintConfig(BaseModel):
@@ -205,6 +211,7 @@ class EngineConfig(BaseModel):
         ]
     )
     allow_cloud: bool = True
+    force_offline: bool = False  # kill-switch: block ALL outbound network calls
     workspace_allowlist: list[str] = Field(default_factory=list)
     delegate: DelegateConfig = Field(default_factory=DelegateConfig)
     idle: IdleConfig = Field(default_factory=IdleConfig)
@@ -225,6 +232,8 @@ def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
     """Apply the UI-editable subset of settings onto a config in place."""
     if "allow_cloud" in data:
         cfg.allow_cloud = bool(data["allow_cloud"])
+    if "force_offline" in data:
+        cfg.force_offline = bool(data["force_offline"])
     if "workspace_allowlist" in data:
         cfg.workspace_allowlist = list(data["workspace_allowlist"])
     if "task_models" in data and isinstance(data["task_models"], dict):
@@ -245,6 +254,12 @@ def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
     idle = data.get("idle") or {}
     if "keep_alive" in idle:
         cfg.idle.keep_alive = str(idle["keep_alive"])
+    if "resident_model" in idle:
+        cfg.idle.resident_model = str(idle["resident_model"])
+    if "resident_keep_alive" in idle:
+        cfg.idle.resident_keep_alive = str(idle["resident_keep_alive"])
+    if "vram_budget_mb" in idle:
+        cfg.idle.vram_budget_mb = max(1_000, int(idle["vram_budget_mb"]))
     mk = data.get("market") or {}
     if "watchlist" in mk:
         cfg.market.watchlist = [str(s) for s in mk["watchlist"]]
@@ -348,6 +363,7 @@ def save_overrides(cfg: EngineConfig) -> None:
     """Persist the UI-editable subset of settings to CONFIG_FILE."""
     data = {
         "allow_cloud": cfg.allow_cloud,
+        "force_offline": cfg.force_offline,
         "workspace_allowlist": cfg.workspace_allowlist,
         "task_models": cfg.task_models,
         "sigils": cfg.sigils,
@@ -356,7 +372,12 @@ def save_overrides(cfg: EngineConfig) -> None:
             "max_parallel_local": cfg.delegate.max_parallel_local,
             "max_parallel_cloud": cfg.delegate.max_parallel_cloud,
         },
-        "idle": {"keep_alive": cfg.idle.keep_alive},
+        "idle": {
+            "keep_alive": cfg.idle.keep_alive,
+            "resident_model": cfg.idle.resident_model,
+            "resident_keep_alive": cfg.idle.resident_keep_alive,
+            "vram_budget_mb": cfg.idle.vram_budget_mb,
+        },
         "market": {
             "watchlist": cfg.market.watchlist,
             "ttl_seconds": cfg.market.ttl_seconds,

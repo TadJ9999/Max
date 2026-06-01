@@ -21,6 +21,7 @@ async def fim_complete(
     model: str,
     base_url: str = "http://127.0.0.1:11434",
     max_tokens: int = 96,
+    keep_alive: str | None = None,
     client: httpx.AsyncClient | None = None,
 ) -> str:
     """Infill the code between ``prefix`` and ``suffix``. Returns the middle text
@@ -29,16 +30,19 @@ async def fim_complete(
         return ""
     owns = client is None
     client = client or httpx.AsyncClient(timeout=30.0)
+    payload: dict = {
+        "model": model,
+        "prompt": prefix,
+        "suffix": suffix,
+        "stream": False,
+        "options": {"num_predict": max_tokens, "temperature": 0.1},
+    }
+    if keep_alive is not None:
+        payload["keep_alive"] = keep_alive
     try:
         resp = await client.post(
             f"{base_url.rstrip('/')}/api/generate",
-            json={
-                "model": model,
-                "prompt": prefix,
-                "suffix": suffix,
-                "stream": False,
-                "options": {"num_predict": max_tokens, "temperature": 0.1},
-            },
+            json=payload,
         )
         if resp.status_code >= 400:
             return ""

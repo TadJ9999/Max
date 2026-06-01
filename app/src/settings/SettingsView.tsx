@@ -261,6 +261,85 @@ function EgressHint({ sources }: { sources: string }) {
   );
 }
 
+// ── Egress log viewer ─────────────────────────────────────────────────────────
+
+type EgressEntry = {
+  ts: string;
+  provider: string;
+  model: string;
+  action: string;
+  in_tokens: number;
+  out_tokens: number;
+};
+
+function EgressLogSection() {
+  const [entries, setEntries] = useState<EgressEntry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const { ENGINE_URL } = await import("../engine");
+      const r = await fetch(`${ENGINE_URL}/egress/log?limit=50`);
+      if (!r.ok) return;
+      const d = await r.json() as { entries: EgressEntry[]; total_lines: number };
+      setEntries(d.entries);
+      setTotal(d.total_lines);
+    } catch { /* offline */ }
+  }, []);
+
+  const clear = async () => {
+    setBusy(true);
+    try {
+      const { ENGINE_URL } = await import("../engine");
+      await fetch(`${ENGINE_URL}/egress/log`, { method: "DELETE" });
+      setEntries([]);
+      setTotal(0);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, [load]);
+
+  return (
+    <div className="stg-egress-log">
+      <div className="stg-egress-log__header">
+        <span className="stg-hint">{total} total entries (showing last 50)</span>
+        <div className="stg-egress-log__btns">
+          <button className="stg-btn stg-btn--sm" onClick={() => void load()}>↻ refresh</button>
+          <button className="stg-btn stg-btn--sm stg-btn--danger" onClick={() => void clear()} disabled={busy}>
+            clear log
+          </button>
+        </div>
+      </div>
+      {entries.length === 0 ? (
+        <p className="stg-hint">No egress entries recorded.</p>
+      ) : (
+        <table className="stg-egress-log__table">
+          <thead>
+            <tr>
+              <th>Time</th><th>Provider</th><th>Model</th><th>Action</th><th>In</th><th>Out</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((e, i) => (
+              <tr key={i} className={e.action.endsWith("_done") ? "stg-egress-log__done" : ""}>
+                <td className="stg-egress-log__ts">{e.ts.replace("T", " ").replace("Z", "")}</td>
+                <td>{e.provider}</td>
+                <td className="stg-egress-log__model">{e.model}</td>
+                <td>{e.action}</td>
+                <td className="stg-egress-log__tok">{e.in_tokens}</td>
+                <td className="stg-egress-log__tok">{e.out_tokens}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 // ── User Profile section ──────────────────────────────────────────────────────
 
 const KIND_OPTIONS = ["fact", "preference", "interest", "style"] as const;
@@ -576,7 +655,7 @@ export function SettingsView() {
       <div className="stg__body">
 
         {/* ── Your AI ──────────────────────────────────────────────── */}
-        <Section title="Your AI" glyph="◈">
+        <Section title="Your AI" glyph="◈" defaultOpen={false}>
           <TextField
             label="What should Max call you?"
             value={cfg.personality.user_name}
@@ -676,12 +755,12 @@ export function SettingsView() {
         </Section>
 
         {/* ── Models ───────────────────────────────────────────────── */}
-        <Section title="Models" glyph="◈">
+        <Section title="Models" glyph="◈" defaultOpen={false}>
           <ModelManager />
         </Section>
 
         {/* ── API Keys ─────────────────────────────────────────────── */}
-        <Section title="API Keys" glyph="🔑">
+        <Section title="API Keys" glyph="🔑" defaultOpen={false}>
           <p className="stg-hint">
             Keys are written to <code>engine/.env</code> and never echoed back.
           </p>
@@ -700,7 +779,21 @@ export function SettingsView() {
         </Section>
 
         {/* ── Cloud & AI Routing ───────────────────────────────────── */}
-        <Section title="Cloud & AI Routing" glyph="☁">
+        <Section title="Cloud & AI Routing" glyph="☁" defaultOpen={false}>
+          {cfg.force_offline && (
+            <div className="stg-offline-banner">
+              ✦ Network kill-switch active — all outbound calls are blocked
+            </div>
+          )}
+
+          <div className="stg-row">
+            <span className="stg-row__label">
+              <strong>Network kill-switch</strong>
+              <span className="stg-hint stg-hint--inline">blocks ALL outbound calls (OSINT, Market, Cloud AI, Sentinel…)</span>
+            </span>
+            <Toggle on={cfg.force_offline} onChange={(v) => void patch({ force_offline: v })} />
+          </div>
+
           <div className="stg-row">
             <span className="stg-row__label">
               Allow cloud (Claude)
@@ -744,7 +837,7 @@ export function SettingsView() {
           </div>
 
           <div className="stg-row">
-            <span className="stg-row__label">Local model keep-alive</span>
+            <span className="stg-row__label">Heavy model keep-alive</span>
             <input
               className="stg-inline"
               value={cfg.idle.keep_alive}
@@ -752,6 +845,43 @@ export function SettingsView() {
               placeholder="10m"
             />
           </div>
+
+          <div className="stg-row">
+            <span className="stg-row__label">
+              Resident completer model
+              <span className="stg-hint stg-hint--inline">tiny model kept in VRAM permanently for FIM/completion</span>
+            </span>
+            <input
+              className="stg-inline"
+              value={cfg.idle?.resident_model ?? ""}
+              onChange={(e) => void patch({ idle: { resident_model: e.target.value } })}
+              placeholder="qwen2.5-coder:3b"
+            />
+          </div>
+
+          <div className="stg-row">
+            <span className="stg-row__label">Resident keep-alive</span>
+            <input
+              className="stg-inline"
+              value={cfg.idle?.resident_keep_alive ?? "-1"}
+              onChange={(e) => void patch({ idle: { resident_keep_alive: e.target.value } })}
+              placeholder="-1"
+            />
+          </div>
+
+          <NumField
+            label="VRAM budget (MB)"
+            value={cfg.idle?.vram_budget_mb ?? 11000}
+            min={1000}
+            max={24000}
+            onChange={(v) => void patch({ idle: { vram_budget_mb: v } })}
+          />
+        </Section>
+
+        {/* ── Egress audit log ─────────────────────────────────────── */}
+        <Section title="Egress Audit Log" glyph="↑" defaultOpen={false}>
+          <p className="stg-hint">Every outbound cloud-API call logged for privacy auditing. Local Ollama calls are never logged.</p>
+          <EgressLogSection />
         </Section>
 
         {/* ── Providers ────────────────────────────────────────────── */}

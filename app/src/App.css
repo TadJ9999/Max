@@ -628,7 +628,7 @@ body {
   position: relative;
   display: flex;
   align-items: center;
-  overflow: hidden;
+  overflow: visible; /* was: hidden — allow poodle feet to render below the bar */
 }
 .chat__input {
   flex: 1;

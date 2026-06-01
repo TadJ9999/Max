@@ -17,15 +17,16 @@ from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
 from .aegis import AegisCapture, AegisService, AegisStore, ScanService
 from .darknet import TorService
+from .darknet.client import make_tor_client as _make_tor_client
 from .darknet.fetcher import fetch_url as tor_fetch_url
 from .apollo import ApolloService, VectorStore
 from .apollo.predictions import PredictionHistory
@@ -43,6 +44,7 @@ from .sentinel import SentinelService
 from .prompts import apply_persona, market_chat_messages, messages_for, polymarket_chat_messages, rag_messages, sentinel_chat_messages
 from .providers.base import Provider
 from .providers.factory import build_provider
+from .providers.vram import VramManager
 from .rag import RagService, RagStore, SessionMemory
 from .router import model_for, resolve
 from .models import BenchmarkStore, CLOUD_MODELS, list_ollama_models, pull_ollama_model, run_benchmark, vram_mb
@@ -118,6 +120,7 @@ def _make_store(path: str) -> VectorStore | None:
 
 _ollama_pc = next((p for p in config.providers if p.name == "ollama"), None)
 _ollama_base = _ollama_pc.base_url if _ollama_pc else "http://127.0.0.1:11434"
+_vram_mgr = VramManager(base_url=_ollama_base)
 rag = RagService(
     RagStore(config.rag.db_path),
     embed_model=config.rag.embed_model,
@@ -190,13 +193,35 @@ async def _startup() -> None:
             except Exception:
                 pass
 
+    async def _warmup_resident() -> None:
+        """Ping the resident completer model so Ollama pre-loads it into VRAM."""
+        if not config.idle.resident_model:
+            return
+        try:
+            provider = build_provider("ollama", config, model=config.idle.resident_model)
+            async for _ in provider.chat(  # type: ignore[attr-defined]
+                config.idle.resident_model,
+                [{"role": "user", "content": "hi"}],
+                num_predict=1,
+            ):
+                break
+        except Exception:
+            pass
+
     asyncio.create_task(_scan_scheduler())
     asyncio.create_task(_config_hot_reload())
+    asyncio.create_task(_warmup_resident())
 
 
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "version": __version__}
+
+
+def _check_network() -> None:
+    """Raise 503 when force_offline is active — all outbound calls are blocked."""
+    if config.force_offline:
+        raise HTTPException(status_code=503, detail="force_offline: all network calls are blocked")
 
 
 # ---- Settings (UI-editable config) -------------------------------------
@@ -206,6 +231,7 @@ def _config_view() -> dict:
     """The UI-facing settings. Never exposes API key values — only whether they are set."""
     return {
         "allow_cloud": config.allow_cloud,
+        "force_offline": config.force_offline,
         "cloud_key_set": bool(os.environ.get("ANTHROPIC_API_KEY")),
         "finnhub_key_set": bool(os.environ.get("FINNHUB_API_KEY")),
         "delegate": {
@@ -213,7 +239,12 @@ def _config_view() -> dict:
             "max_parallel_local": config.delegate.max_parallel_local,
             "max_parallel_cloud": config.delegate.max_parallel_cloud,
         },
-        "idle": {"keep_alive": config.idle.keep_alive},
+        "idle": {
+            "keep_alive": config.idle.keep_alive,
+            "resident_model": config.idle.resident_model,
+            "resident_keep_alive": config.idle.resident_keep_alive,
+            "vram_budget_mb": config.idle.vram_budget_mb,
+        },
         "workspace_allowlist": config.workspace_allowlist,
         "osint": {
             "gdelt_query": config.osint.gdelt_query,
@@ -289,6 +320,9 @@ class DelegatePatch(BaseModel):
 
 class IdlePatch(BaseModel):
     keep_alive: str | None = None
+    resident_model: str | None = None
+    resident_keep_alive: str | None = None
+    vram_budget_mb: int | None = None
 
 
 class OsintPatch(BaseModel):
@@ -350,6 +384,7 @@ class AegisPatch(BaseModel):
 
 class ConfigPatch(BaseModel):
     allow_cloud: bool | None = None
+    force_offline: bool | None = None
     workspace_allowlist: list[str] | None = None
     delegate: DelegatePatch | None = None
     idle: IdlePatch | None = None
@@ -369,6 +404,8 @@ def update_config(patch: ConfigPatch) -> dict:
     """Apply UI settings to the live config and persist them."""
     if patch.allow_cloud is not None:
         config.allow_cloud = patch.allow_cloud
+    if patch.force_offline is not None:
+        config.force_offline = patch.force_offline
     if patch.workspace_allowlist is not None:
         config.workspace_allowlist = patch.workspace_allowlist
     if patch.delegate is not None:
@@ -381,8 +418,16 @@ def update_config(patch: ConfigPatch) -> dict:
             config.delegate.max_parallel_local = max(1, d.max_parallel_local)
         if d.max_parallel_cloud is not None:
             config.delegate.max_parallel_cloud = max(1, d.max_parallel_cloud)
-    if patch.idle is not None and patch.idle.keep_alive is not None:
-        config.idle.keep_alive = patch.idle.keep_alive
+    if patch.idle is not None:
+        idle = patch.idle
+        if idle.keep_alive is not None:
+            config.idle.keep_alive = idle.keep_alive
+        if idle.resident_model is not None:
+            config.idle.resident_model = idle.resident_model
+        if idle.resident_keep_alive is not None:
+            config.idle.resident_keep_alive = idle.resident_keep_alive
+        if idle.vram_budget_mb is not None:
+            config.idle.vram_budget_mb = max(1_000, idle.vram_budget_mb)
     if patch.osint is not None:
         o = patch.osint
         if o.gdelt_query is not None:
@@ -528,8 +573,11 @@ async def list_models() -> dict:
     ollama_url = next(
         (p.base_url for p in config.providers if p.name == "ollama"),
         "http://127.0.0.1:11434",
-    )
-    raw = await list_ollama_models(base_url=ollama_url)
+    ) or "http://127.0.0.1:11434"
+    try:
+        raw = await list_ollama_models(base_url=ollama_url)
+    except Exception:
+        raw = []
     benchmarks = {r["model"]: r for r in _benchmark_store.all()}
 
     local: list[dict] = []
@@ -736,7 +784,7 @@ async def command(req: CommandRequest):
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e
 
-    provider = build_provider(route.provider, config)
+    provider = build_provider(route.provider, config, model=route.model)
     messages = messages_for(cmd.action, cmd.body)
     return _sse_stream(provider, route.model, messages)
 
@@ -751,14 +799,17 @@ class CompleteRequest(BaseModel):
 @app.post("/complete")
 async def complete(req: CompleteRequest) -> dict:
     """Fill-in-the-middle code completion (ghost text for the VS Code extension).
-    Uses the fast local completion model unless ``model`` is given."""
-    model = req.model or config.task_models.get("completion", "qwen2.5-coder:3b")
+    Uses the fast resident completion model unless ``model`` is given."""
+    model = req.model or config.idle.resident_model or config.task_models.get("completion", "qwen2.5-coder:3b")
+    is_resident = model == config.idle.resident_model
+    ka = config.idle.resident_keep_alive if is_resident else config.idle.keep_alive
     text = await fim_complete(
         req.prefix,
         req.suffix,
         model=model,
         base_url=_ollama_base,
         max_tokens=req.max_tokens,
+        keep_alive=ka,
     )
     return {"completion": text, "model": model}
 
@@ -1007,6 +1058,7 @@ async def osint_heatmap() -> dict:
     Outbound egress to public news services; aggregated in the engine so the
     client stays thin. Returns empty ``countries`` if every source is unreachable.
     """
+    _check_network()
     heatmap = await osint.get_heatmap()
     return heatmap.to_dict()
 
@@ -1015,6 +1067,7 @@ async def osint_heatmap() -> dict:
 async def osint_articles(country: str | None = None, limit: int = 50) -> dict:
     """Ranked articles, newest first. Pass ``country`` (ISO-A3) to scope to one;
     omit it for the global top."""
+    _check_network()
     articles = await osint.get_articles(iso=country, limit=limit)
     return {
         "country": country.upper() if country else None,
@@ -1032,6 +1085,7 @@ def osint_sources() -> dict:
 async def osint_events() -> dict:
     """Geospatial event markers (earthquakes ≥ M4.5, GDACS disaster alerts).
     Free, key-less sources; cached 5 min. Overlay-ready lat/lon + severity."""
+    _check_network()
     return await events.get()
 
 
@@ -1039,6 +1093,7 @@ async def osint_events() -> dict:
 async def osint_naval_endpoint() -> dict:
     """US carrier / big-deck amphib position *estimates* from public OSINT
     trackers (USNI + TWZ). Region-level and dated — not real-time GPS."""
+    _check_network()
     return await naval.get()
 
 
@@ -1092,7 +1147,7 @@ def _ai_route() -> tuple[str, str]:
     """Pick (provider, model) for an AI analysis stream: cloud Claude when
     allowed, else the local default. Mirrors the resolve() cloud gate without the
     DSL. Used by Market and Apollo."""
-    if config.allow_cloud:
+    if config.allow_cloud and not config.force_offline:
         model = config.provider_models.get("claude", {}).get("chat", "claude-sonnet-4-6")
         return "claude", model
     return "ollama", config.task_models.get("chat", "qwen2.5-coder:14b")
@@ -1117,6 +1172,7 @@ def _stream_ai(action: str, payload: dict) -> StreamingResponse:
 async def market_quotes() -> dict:
     """Live quotes for the watchlist (Finnhub), cached for a short TTL. Returns an
     empty board if ``FINNHUB_API_KEY`` is unset or every fetch fails."""
+    _check_network()
     board = await market.get_board()
     return board.to_dict()
 
@@ -1202,6 +1258,7 @@ async def polymarket_board() -> dict:
     """Top active prediction markets by 24h volume, cached for a short TTL.
 
     No API key required — Polymarket's public APIs are open read access."""
+    _check_network()
     board = await polymarket_svc.get_board()
     return board.to_dict()
 
@@ -1351,7 +1408,7 @@ async def polymarket_chat(req: PolymarketChatRequest) -> StreamingResponse:
     return _sse_stream(provider, model, messages)
 
 
-# ---- Local model lifecycle ---------------------------------------------
+# ---- Local model lifecycle + VRAM management ---------------------------
 
 
 @app.post("/engine/unload")
@@ -1363,6 +1420,68 @@ async def engine_unload() -> dict:
     provider = build_provider("ollama", config)
     unloaded = await provider.unload(model)  # type: ignore[attr-defined]
     return {"unloaded": unloaded, "model": model, "keep_alive": config.idle.keep_alive}
+
+
+@app.get("/models/loaded")
+async def models_loaded() -> dict:
+    """Models currently resident in Ollama's RAM/VRAM (via /api/ps).
+
+    Returns name, size_vram_mb, and whether it is the configured resident model."""
+    loaded = await _vram_mgr.get_loaded()
+    budget_mb = config.idle.vram_budget_mb
+    used_mb = sum(m.size_vram for m in loaded) // (1024 * 1024)
+    return {
+        "models": [
+            {
+                "name": m.name,
+                "size_vram_mb": m.size_vram // (1024 * 1024),
+                "is_resident": m.name == config.idle.resident_model,
+            }
+            for m in loaded
+        ],
+        "used_mb": used_mb,
+        "budget_mb": budget_mb,
+        "resident_model": config.idle.resident_model,
+    }
+
+
+# ---- Egress audit log (privacy) ----------------------------------------
+
+_EGRESS_LOG_PATH = Path(__file__).resolve().parent.parent / ".egress.log"
+
+
+@app.get("/egress/log")
+def egress_log(limit: int = 200) -> dict:
+    """Recent outbound cloud-API calls from the egress audit log."""
+    if not _EGRESS_LOG_PATH.exists():
+        return {"entries": [], "total_lines": 0}
+    lines = _EGRESS_LOG_PATH.read_text(encoding="utf-8", errors="replace").splitlines()
+    tail = lines[-limit:] if len(lines) > limit else lines
+    entries = []
+    for line in reversed(tail):
+        parts = {}
+        for token in line.split():
+            if "=" in token:
+                k, _, v = token.partition("=")
+                parts[k] = v
+        if parts:
+            entries.append({
+                "ts": line.split()[0] if line else "",
+                "provider": parts.get("provider", ""),
+                "model": parts.get("model", ""),
+                "action": parts.get("action", ""),
+                "in_tokens": int(parts.get("in", 0)),
+                "out_tokens": int(parts.get("out", 0)),
+            })
+    return {"entries": entries, "total_lines": len(lines)}
+
+
+@app.delete("/egress/log")
+def egress_log_clear() -> dict:
+    """Truncate the egress audit log."""
+    if _EGRESS_LOG_PATH.exists():
+        _EGRESS_LOG_PATH.write_text("", encoding="utf-8")
+    return {"cleared": True}
 
 
 # ---- Aegis: self-repair console ----------------------------------------
@@ -1558,36 +1677,42 @@ def sentinel_groups() -> dict:
 @app.get("/sentinel/tle")
 async def sentinel_tle(group: str = "stations"):
     """Raw TLEs for a group (parsed by the client's satellite.js worker)."""
+    _check_network()
     return await sentinel_svc.get_tle(group)
 
 
 @app.get("/sentinel/neo")
 async def sentinel_neo():
     """Today's near-Earth objects (NASA NeoWs) + SBDB orbital elements."""
+    _check_network()
     return await sentinel_svc.get_neo()
 
 
 @app.get("/sentinel/space-weather")
 async def sentinel_space_weather():
     """NOAA SWPC planetary Kp index + solar wind + storm scale."""
+    _check_network()
     return await sentinel_svc.get_space_weather()
 
 
 @app.get("/sentinel/fireballs")
 async def sentinel_fireballs():
     """Recent atmospheric impact events (NASA CNEOS)."""
+    _check_network()
     return await sentinel_svc.get_fireballs()
 
 
 @app.get("/sentinel/launches")
 async def sentinel_launches():
     """Upcoming rocket launches (TheSpaceDevs Launch Library 2)."""
+    _check_network()
     return await sentinel_svc.get_launches()
 
 
 @app.get("/sentinel/iss")
 async def sentinel_iss():
     """Live ISS position + crew."""
+    _check_network()
     return await sentinel_svc.get_iss()
 
 
@@ -1877,22 +2002,35 @@ async def dark_new_circuit() -> dict:
 
 
 @app.get("/dark/fetch")
-async def dark_fetch_page(url: str):
+async def dark_fetch_page(url: str, request: Request):
     """SSE stream: proxy-fetch *url* through Tor and return sanitised HTML.
 
     Events: ``{"type":"start"}`` → ``{"type":"html", ...FetchResult}``
             or ``{"type":"error","message":"..."}``
     """
+    engine_base = f"{request.url.scheme}://{request.url.netloc}"
 
     async def _stream() -> AsyncIterator[str]:
         yield f"data: {json.dumps({'type': 'start', 'url': url})}\n\n"
         try:
-            result = await tor_fetch_url(url, config.darknet.socks_port)
+            result = await tor_fetch_url(url, config.darknet.socks_port, engine_base=engine_base)
             yield f"data: {json.dumps({'type': 'html', **result.model_dump()})}\n\n"
         except Exception as exc:
             yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
 
     return StreamingResponse(_stream(), media_type="text/event-stream")
+
+
+@app.get("/dark/resource")
+async def dark_resource(url: str):
+    """Proxy an image/CSS/binary resource through Tor for the shadow browser iframe."""
+    try:
+        async with _make_tor_client(config.darknet.socks_port, timeout=20.0) as client:
+            resp = await client.get(url)
+        content_type = resp.headers.get("content-type", "application/octet-stream")
+        return Response(content=resp.content, media_type=content_type)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"resource fetch failed: {exc}") from exc
 
 
 @app.get("/dark/search")

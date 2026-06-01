@@ -731,3 +731,80 @@
   border: 1px solid rgba(255, 77, 109, 0.25);
   color: var(--stg-red);
 }
+
+/* ── Network kill-switch banner ─────────────────────────────────────────── */
+.stg-offline-banner {
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(255, 77, 109, 0.12);
+  border: 1px solid rgba(255, 77, 109, 0.35);
+  color: var(--stg-red);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.stg-hint--inline {
+  display: block;
+  font-size: 11px;
+  color: var(--stg-muted);
+  margin-top: 2px;
+}
+
+/* ── Egress audit log ───────────────────────────────────────────────────── */
+.stg-egress-log__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.stg-egress-log__btns {
+  display: flex;
+  gap: 6px;
+}
+
+.stg-btn {
+  background: rgba(34, 211, 238, 0.08);
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  color: var(--stg-accent);
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  transition: background 0.15s;
+}
+.stg-btn:hover { background: rgba(34, 211, 238, 0.16); }
+.stg-btn--sm { padding: 3px 8px; font-size: 11px; }
+.stg-btn--danger {
+  border-color: rgba(255, 77, 109, 0.3);
+  color: var(--stg-red);
+  background: rgba(255, 77, 109, 0.07);
+}
+.stg-btn--danger:hover { background: rgba(255, 77, 109, 0.14); }
+.stg-btn:disabled { opacity: 0.4; cursor: default; }
+
+.stg-egress-log__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+.stg-egress-log__table th {
+  text-align: left;
+  color: var(--stg-muted);
+  font-weight: 400;
+  padding: 4px 6px 6px;
+  border-bottom: 1px solid var(--stg-border);
+}
+.stg-egress-log__table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid rgba(120, 160, 185, 0.07);
+  color: var(--stg-text);
+  white-space: nowrap;
+}
+.stg-egress-log__table tr:hover td { background: rgba(34, 211, 238, 0.04); }
+.stg-egress-log__done td { color: var(--stg-green); }
+.stg-egress-log__ts { color: var(--stg-muted) !important; font-size: 10.5px; }
+.stg-egress-log__model { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.stg-egress-log__tok { text-align: right; color: var(--stg-muted) !important; }

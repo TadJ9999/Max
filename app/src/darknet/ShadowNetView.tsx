@@ -264,16 +264,22 @@ export function ShadowNetView() {
   // ---- search -------------------------------------------------------------
   const runSearch = async (engine: typeof SEARCH_ENGINES[0]) => {
     if (!searchQuery.trim()) return;
-    setSearching(true);
-    updateTab(activeId, { searchResults: [], loadState: "idle" });
     const url = `${engine.url}${encodeURIComponent(searchQuery)}`;
-    const results = await searchDark(searchQuery);
-    setSearching(false);
-    if (results.length > 0) {
-      updateTab(activeId, { searchResults: results, addrInput: url, title: `Search: ${searchQuery}` });
-    } else {
-      navigate(url);
+
+    if (engine.label === "Ahmia") {
+      // Ahmia has a JSON search API we can parse into result cards
+      setSearching(true);
+      updateTab(activeId, { searchResults: [], loadState: "idle" });
+      const results = await searchDark(searchQuery);
+      setSearching(false);
+      if (results.length > 0) {
+        updateTab(activeId, { searchResults: results, addrInput: url, title: `Search: ${searchQuery}` });
+        return;
+      }
     }
+
+    // For all other engines, or Ahmia with zero API results, navigate directly
+    navigate(url);
   };
 
   // ---- Tor features -------------------------------------------------------

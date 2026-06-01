@@ -102,7 +102,7 @@ async def list_ollama_models(
             return []
         data = resp.json()
         return data.get("models", [])
-    except httpx.HTTPError:
+    except Exception:
         return []
     finally:
         if owns:

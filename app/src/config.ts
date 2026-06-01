@@ -5,10 +5,11 @@ import { ENGINE_URL } from "./engine";
 
 export type EngineConfigView = {
   allow_cloud: boolean;
+  force_offline: boolean;
   cloud_key_set: boolean;
   finnhub_key_set: boolean;
   delegate: { mode: string; max_parallel_local: number; max_parallel_cloud: number };
-  idle: { keep_alive: string };
+  idle: { keep_alive: string; resident_model: string; resident_keep_alive: string; vram_budget_mb: number };
   workspace_allowlist: string[];
   osint: {
     gdelt_query: string;
@@ -69,9 +70,10 @@ export type EngineConfigView = {
 
 export type ConfigPatch = {
   allow_cloud?: boolean;
+  force_offline?: boolean;
   workspace_allowlist?: string[];
   delegate?: { mode?: string; max_parallel_local?: number; max_parallel_cloud?: number };
-  idle?: { keep_alive?: string };
+  idle?: { keep_alive?: string; resident_model?: string; resident_keep_alive?: string; vram_budget_mb?: number };
   osint?: {
     gdelt_query?: string;
     gdelt_timespan?: string;

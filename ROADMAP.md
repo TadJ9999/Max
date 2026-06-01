@@ -158,12 +158,14 @@ Parser rules:
 
 > Legend: `[x]` done · `[~]` partial (note explains what's left) · `[ ]` not started.
 
-### Phase 7 — Performance & privacy polish  🎯 *snappy, stable, provably local-by-default*
-- [ ] **Two-model routing**: tiny resident completer + heavy on-demand gen/chat
-- [ ] Keep-alive + smart load/unload to respect 12 GB VRAM
-- [ ] Quantization / KV-cache / context-length tuning
-- [ ] **Network kill-switch** (force fully-offline) + egress audit log
-- [ ] Latency targets (completion < Xms, gen first-token < Yms)
+### Phase 7 — Performance & privacy polish  ✅ *snappy, stable, provably local-by-default*
+- [x] **Two-model routing**: `idle.resident_model` (default: qwen2.5-coder:3b) always pinned in VRAM via `keep_alive=-1`; heavy models load on demand with `idle.keep_alive` (default 10m); `/complete` (FIM) routes to resident model automatically; `router.py` short-circuits completion to resident when no explicit sigil
+- [x] Keep-alive + smart load/unload — `VramManager` (`providers/vram.py`) polls Ollama `/api/ps`; `GET /models/loaded` exposes loaded models + VRAM usage; `evict_to_fit()` evicts largest-first while protecting resident model; factory passes correct keep_alive per model
+- [x] **Network kill-switch** (`force_offline: bool`) blocks ALL outbound calls (OSINT, Market, Polymarket, Sentinel, cloud AI) via `_check_network()` guard in `main.py`; toggle in Settings "Cloud & AI Routing"; red banner when active; `_ai_route()` falls back to local when kill-switch is on
+- [x] **Egress audit log viewer** — `GET /egress/log` + `DELETE /egress/log` endpoints parse `.egress.log`; full table UI in Settings "Egress Audit Log" section with refresh + clear buttons, newest-first, token counts
+- [x] Resident model warm-up on engine startup (async ping to pre-load into VRAM)
+- [ ] Quantization / KV-cache / context-length tuning (Ollama config options — deferred)
+- [ ] Latency targets (completion < Xms, gen first-token < Yms — measurement tooling deferred)
 
 ### Phase 8 — Advanced / stretch  🎯 *agentic & multi-file*
 - [ ] Multi-file / repo-wide edits with plan + approval
@@ -181,7 +183,7 @@ Parser rules:
 - [ ] **Auth for home/LAN** — bearer-token on the API once it leaves localhost-only; per-skill placement (local subprocess vs networked)
 - [ ] **Outward MCP façade (optional)** — expose Max *itself* as an MCP server so external agents (Claude Desktop, Cursor) can "ask Max" / use its local models
 
-### Phase 17 — LAN Access: Max on your iPhone & Mac over WiFi  📱 *open Max in a phone/Mac browser on the same network — all compute stays on this PC* — **PLANNED**
+### Phase 17 — LAN Access: Max on your iPhone & Mac over WiFi  📱 *open Max in a phone/Mac browser on the same network — all compute stays on this PC* — ✅
 
 *Today Max only runs as the desktop widget. This phase lets you open Max from your iPhone and Mac in a browser over the same WiFi, while the engine, Ollama, Tor, and cloud-API keys stay on this desktop. The frontend already talks to the engine purely over HTTP `fetch` (no Tauri IPC for backend calls), so a plain browser can drive the whole engine — the work is exposing it safely and giving phones a touch-first UI. A **"Share on LAN" toggle** in Settings flips the engine from safe localhost to `0.0.0.0:8443` over HTTPS, serves a dedicated **mobile web UI**, and shows the `https://<pc-name>.local:8443` URL plus a scannable QR code. The desktop widget keeps working unchanged. First step toward a later "accessible from anywhere" phase (Tailscale/Cloudflare) — explicitly out of scope here. Full plan: `C:\Users\tadjo\.claude\plans\lets-plan-a-new-enumerated-parnas.md`.*
 
@@ -189,10 +191,10 @@ Parser rules:
 
 **Decisions locked:** mic on mobile required → **HTTPS mandatory** · **engine serves the built frontend** (single origin → no CORS) · desktop Tauri app **stays open** (LAN is an in-app toggle, no standalone launcher) · **no app token** — rely on home LAN + a subnet-scoped Windows firewall rule (`profile=private`, `remoteip=LocalSubnet`) · HTTPS via **mkcert** + install/trust root CA on the iPhone (pure LAN, no internet/accounts) · reach the PC at **`<computer-name>.local`** via mDNS (cert SANs also cover LAN IP + `localhost` + `127.0.0.1`) · **uvicorn built-in TLS** (`--ssl-keyfile/--ssl-certfile`, no Caddy) on port **8443** · connect UX = **toggle + URL + QR** in Settings · **dedicated mobile build** (separate Vite entry, built alongside desktop) · cert setup is **app-assisted** (run mkcert, generate cert w/ SANs, reveal/AirDrop root CA + short trust doc) · LAN state **remembered** across launches · phone feature priority **Chat+Voice · Market/Polymarket · OSINT/Sentinel** (Aegis/Shadow Net deferred).
 
-- [ ] **17.A — Engine serve + dynamic base + HTTP LAN bind**: `main.py` mounts the Vite `dist/` as `StaticFiles` (single origin) with a UA-based mobile redirect (`/` → `/m`); narrow CORS `allow_origins=["*"]` → LAN `allow_origin_regex`; new `EngineConfig` fields (`lan_enabled`, `lan_host`, `lan_port`, `tls_cert`, `tls_key`) round-tripping through `.maxconfig.json`; make `app/src/engine.ts` base URL dynamic (same-origin in a served browser, absolute via a new `engine_base()` Tauri command in the webview); parametrize Rust `spawn_engine()` to bind `0.0.0.0` (HTTP first, to validate).
+- [x] **17.A — Engine serve + dynamic base + HTTP LAN bind**: `main.py` mounts the Vite `dist/` as `StaticFiles` (single origin) with a UA-based mobile redirect (`/` → `/m`); narrow CORS `allow_origins=["*"]` → LAN `allow_origin_regex`; new `EngineConfig` fields (`lan_enabled`, `lan_host`, `lan_port`, `tls_cert`, `tls_key`) round-tripping through `.maxconfig.json`; make `app/src/engine.ts` base URL dynamic (same-origin in a served browser, absolute via a new `engine_base()` Tauri command in the webview); parametrize Rust `spawn_engine()` to bind `0.0.0.0` (HTTP first, to validate).
 - [x] **17.B — Mobile-first shell**: `src/mobile/` — `MobileApp.tsx` with bottom-tab nav (Chat+Voice · Markets · Intel · Space); `ChatTab.tsx` (streaming chat + Web Speech API mic + TTS); `MarketsTab.tsx` (live quotes + AI read); `OsintTab.tsx` (severity hotspots + articles); `SentinelTab.tsx` (ISS live + space weather + launches); `Mobile.css` dark touch-first styles. Served at engine `/m` (FastAPI `FileResponse(index.html)`) — `main.tsx` detects `pathname === "/m"` and renders `MobileApp` instead of the desktop shell; same bundle, zero separate build step.
-- [ ] **17.C — HTTPS: certs + TLS + firewall**: `setup_cert()` / `reveal_root_ca()` Tauri commands run mkcert (`-install`, then SANs `<pc>.local <lan-ip> localhost 127.0.0.1`); Rust spawns uvicorn with `--ssl-keyfile/--ssl-certfile` on `:8443` when LAN-enabled; health/port checks speak HTTPS to `127.0.0.1:8443` (keep `127.0.0.1`, never `localhost`); add/remove the subnet-scoped firewall rule (elevated/UAC) on toggle; `docs/lan.md` with the iPhone "enable full trust" steps.
-- [ ] **17.D — Settings "Share on LAN"**: section in `settings/SettingsView.tsx` with the toggle (`set_lan_mode`), live `lan_status` (`{enabled, url, pc_name, lan_ip, cert_ready}`), copyable `https://<pc-name>.local:8443` URL, **QR code**, cert-helper buttons + trust steps, firewall/Private-network hint; LAN state remembered across launches.
+- [x] **17.C — HTTPS: certs + TLS + firewall**: `setup_cert()` / `reveal_root_ca()` Tauri commands run mkcert (`-install`, then SANs `<pc>.local <lan-ip> localhost 127.0.0.1`); Rust spawns uvicorn with `--ssl-keyfile/--ssl-certfile` on `:8443` when LAN-enabled; health/port checks speak HTTPS to `127.0.0.1:8443` (keep `127.0.0.1`, never `localhost`); add/remove the subnet-scoped firewall rule (elevated/UAC) on toggle; `docs/lan.md` with the iPhone "enable full trust" steps.
+- [x] **17.D — Settings "Share on LAN"**: section in `settings/SettingsView.tsx` with the toggle (`set_lan_mode`), live `lan_status` (`{enabled, url, pc_name, lan_ip, cert_ready}`), copyable `https://<pc-name>.local:8443` URL, **QR code**, cert-helper buttons + trust steps, firewall/Private-network hint; LAN state remembered across launches.
 
 > **Future phase (out of scope here):** remote/internet access (Tailscale `*.ts.net` or Cloudflare Tunnel), app-level auth tokens, and multi-user — noted only as the upgrade path that this single-origin HTTPS app extends into cleanly.
 

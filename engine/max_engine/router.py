@@ -35,8 +35,15 @@ def resolve(command: Command, config: EngineConfig) -> Route:
     # Sigil wins for provider selection; otherwise the per-task default provider.
     provider = command.provider
     if provider == "default":
-        # TODO(Phase 2): allow a per-task default provider, not just default model.
         provider = "ollama"
+
+    # FIM/completion: use the resident tiny model when configured and no explicit sigil.
+    if (
+        command.action == "completion"
+        and command.provider == "default"
+        and config.idle.resident_model
+    ):
+        return Route(provider="ollama", model=config.idle.resident_model, is_cloud=False)
 
     # Per-provider model override wins; otherwise the per-task default.
     model = model_for(provider, command.action, config)

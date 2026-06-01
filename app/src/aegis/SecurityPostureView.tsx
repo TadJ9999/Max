@@ -225,6 +225,7 @@ export function SecurityPostureView() {
   });
   const [catFilter, setCatFilter] = useState<SecurityFindingCategory | "all">("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [scanMsg, setScanMsg] = useState<string | null>(null);
 
   // Fix stream state
   const [fixText, setFixText] = useState("");
@@ -257,23 +258,29 @@ export function SecurityPostureView() {
     setFindings(f);
   }, [catFilter]);
 
-  // Poll scan status while running
+  // Poll scan status while running — polls immediately on start to catch fast scans
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
+    if (!scanStatus.running) return;
+
+    let alive = true;
     const poll = async () => {
+      if (!alive) return;
       const s = await getScanStatus();
+      if (!alive) return;
       setScanStatus(s);
-      if (!s.running && interval !== null) {
-        clearInterval(interval);
-        interval = null;
-        void load(); // refresh findings when scan finishes
+      if (!s.running) {
+        setScanMsg(`Scan complete — ${new Date().toLocaleTimeString()}`);
+        window.setTimeout(() => setScanMsg(null), 5000);
+        void load();
       }
     };
-    if (scanStatus.running) {
-      interval = setInterval(poll, 2000);
-    }
+
+    const firstTimer = window.setTimeout(() => void poll(), 600);
+    const id = window.setInterval(() => void poll(), 2000);
     return () => {
-      if (interval !== null) clearInterval(interval);
+      alive = false;
+      clearTimeout(firstTimer);
+      clearInterval(id);
     };
   }, [scanStatus.running, load]);
 
@@ -450,6 +457,9 @@ export function SecurityPostureView() {
             )}
           </div>
         </div>
+      )}
+      {scanMsg && !scanStatus.running && (
+        <div className="posture__scan-done">{scanMsg}</div>
       )}
 
       {/* ── Category filter ── */}

@@ -4,7 +4,7 @@ so every click stays inside the proxy renderer instead of leaking outside."""
 from __future__ import annotations
 
 import time
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote as _url_quote, urljoin, urlparse
 
 from .client import make_tor_client
 from .models import FetchResult
@@ -22,7 +22,7 @@ _DARK_STYLE = (
 )
 
 
-async def fetch_url(url: str, socks_port: int = 9050) -> FetchResult:
+async def fetch_url(url: str, socks_port: int = 9050, engine_base: str = "http://127.0.0.1:8001") -> FetchResult:
     """Fetch *url* through the Tor SOCKS5 proxy and return sanitised HTML."""
     is_onion = ".onion" in url
     t0 = time.time()
@@ -60,6 +60,20 @@ async def fetch_url(url: str, socks_port: int = 9050) -> FetchResult:
         absolute = urljoin(url, href)
         tag["href"] = f"?url={absolute}"
         tag["target"] = "_self"
+
+    # Proxy images and stylesheets through the engine so the browser can load them
+    _res_base = f"{engine_base}/dark/resource?url="
+    for tag in soup.find_all("img"):
+        src = tag.get("src", "")
+        if src and not src.startswith("data:"):
+            tag["src"] = _res_base + _url_quote(urljoin(url, src), safe="")
+        # Handle srcset too
+        if tag.get("srcset"):
+            tag["srcset"] = ""
+    for tag in soup.find_all("link"):
+        rel = tag.get("rel") or []
+        if "stylesheet" in rel and tag.get("href"):
+            tag["href"] = _res_base + _url_quote(urljoin(url, tag["href"]), safe="")
 
     # Remove scripts (security) and inline style conflicts
     for script in soup.find_all("script"):
