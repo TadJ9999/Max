@@ -19,12 +19,16 @@ html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+/* The dark fill + mobile fonts apply ONLY to the mobile shell (/m route);
+   otherwise this leaks into the transparent desktop widget and paints it black. */
+body:has(.mob) {
   background: var(--mob-bg);
   color: var(--mob-text);
   font-family: ui-monospace, "Cascadia Code", "SF Mono", monospace;
   font-size: 14px;
-  -webkit-font-smoothing: antialiased;
-  overscroll-behavior: none;
 }
 
 /* ── Shell ────────────────────────────────────────────────────────────────── */
