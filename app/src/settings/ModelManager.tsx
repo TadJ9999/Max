@@ -11,6 +11,7 @@ import {
   streamPullModel,
   type CloudModel,
   type LocalModel,
+  type LocalServer,
   type ModelsResponse,
 } from "./models";
 
@@ -226,6 +227,91 @@ function LocalCard({
   );
 }
 
+// ── Local OpenAI-compatible server card (^ sigil) ────────────────────────────
+
+function LocalServerLogo() {
+  return (
+    <svg className="mm-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="4" width="18" height="6" rx="1.5" />
+      <rect x="3" y="14" width="18" height="6" rx="1.5" />
+      <circle cx="7" cy="7" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="7" cy="17" r="0.9" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function LocalServerCard({
+  server,
+  onSave,
+}: {
+  server: LocalServer;
+  onSave: (baseUrl: string) => Promise<void>;
+}) {
+  const [url, setUrl] = useState(server.base_url ?? "http://127.0.0.1:8080");
+  const [saving, setSaving] = useState(false);
+  const dirty = url.trim() !== (server.base_url ?? "");
+
+  const save = async () => {
+    setSaving(true);
+    await onSave(url.trim());
+    setSaving(false);
+  };
+
+  return (
+    <div className="mm-card mm-card--local mm-card--server">
+      <div className="mm-card__top">
+        <LocalServerLogo />
+        <div className="mm-card__titles">
+          <span className="mm-card__name">Local server</span>
+          <span className="mm-card__sub">
+            OpenAI-compatible · <code>^</code> sigil · llama.cpp / vLLM / LM Studio
+          </span>
+        </div>
+        <span
+          className={`mm-server-dot${server.reachable ? " mm-server-dot--on" : ""}`}
+          title={server.reachable ? "Reachable" : "Unreachable"}
+        />
+      </div>
+
+      <label className="mm-server-field">
+        <span className="mm-server-field__label">Base URL</span>
+        <input
+          className="mm-server-field__input"
+          value={url}
+          spellCheck={false}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="http://127.0.0.1:8080"
+        />
+      </label>
+
+      <div className="mm-server-status">
+        {server.reachable ? (
+          server.models.length > 0 ? (
+            <span className="mm-server-served">
+              Serving: {server.models.map((m) => <span key={m} className="mm-tag">{m}</span>)}
+            </span>
+          ) : (
+            <span className="mm-server-served mm-card__metric-val--dim">Reachable · no models reported</span>
+          )
+        ) : (
+          <span className="mm-card__metric-val--dim">
+            Not reachable — start <code>llama-server</code> / vLLM at this URL.
+          </span>
+        )}
+      </div>
+
+      <button
+        className="mm-bench-btn"
+        onClick={(e) => { e.stopPropagation(); void save(); }}
+        disabled={saving || !dirty}
+        title="Save the local server URL"
+      >
+        {saving ? "Saving…" : dirty ? "Save URL" : "Saved"}
+      </button>
+    </div>
+  );
+}
+
 // ── Download card (suggest-to-install) ───────────────────────────────────────
 
 const SUGGESTED_MODELS = [
@@ -276,10 +362,12 @@ function SuggestedCard({
 function RoutingMatrix({
   taskModels,
   allModelIds,
+  localServerModels,
   onChange,
 }: {
   taskModels: Record<string, string>;
   allModelIds: string[];
+  localServerModels: string[];
   onChange: (task: string, model: string) => void;
 }) {
   return (
@@ -311,6 +399,13 @@ function RoutingMatrix({
                         <option key={id} value={id}>{id}</option>
                       ))}
                   </optgroup>
+                  {localServerModels.length > 0 && (
+                    <optgroup label="Local server (^ OpenAI-compatible)">
+                      {localServerModels.map((id) => (
+                        <option key={id} value={id}>{id}</option>
+                      ))}
+                    </optgroup>
+                  )}
                   <optgroup label="Cloud (Claude)">
                     {["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-8"].map((id) => (
                       <option key={id} value={id}>{id}</option>
@@ -380,6 +475,11 @@ export function ModelManager() {
     setPullStatus("");
   };
 
+  const handleSaveLocalServer = async (baseUrl: string) => {
+    await updateConfig({ providers: [{ name: "local", base_url: baseUrl }] });
+    await load();
+  };
+
   const handleRoutingChange = async (task: string, model: string) => {
     if (!data) return;
     const next = { ...data.task_models, [task]: model };
@@ -428,6 +528,15 @@ export function ModelManager() {
       {/* Local tab */}
       {tab === "local" && (
         <div className="mm__panel">
+          <p className="mm-section-label">Local server</p>
+          <div className="mm-grid">
+            <LocalServerCard
+              server={data.local_server ?? { base_url: null, reachable: false, models: [] }}
+              onSave={handleSaveLocalServer}
+            />
+          </div>
+
+          <p className="mm-section-label">Ollama models</p>
           {data.local.length === 0 ? (
             <p className="mm-hint">No Ollama models installed. Use the suggestions below or run <code>ollama pull &lt;model&gt;</code>.</p>
           ) : (
@@ -511,6 +620,7 @@ export function ModelManager() {
           <RoutingMatrix
             taskModels={data.task_models}
             allModelIds={allModelIds}
+            localServerModels={data.local_server?.models ?? []}
             onChange={(task, model) => void handleRoutingChange(task, model)}
           />
         </div>

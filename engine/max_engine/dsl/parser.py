@@ -38,6 +38,7 @@ DEFAULT_SIGILS: dict[str, str] = {
     "#": "qwen",
     "!": "claude",
     "%": "openai",
+    "^": "local",  # OpenAI-compatible local server (llama.cpp / vLLM)
 }
 
 # Operator token -> action name. Longest token is matched first, so ".." is

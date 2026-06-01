@@ -24,6 +24,23 @@ if not exist "%~dp0logs" mkdir "%~dp0logs"
 if not exist "%MAXEXE%" goto :build
 
 :launch
+rem  Always refresh the web UI (app\dist) before launching so the engine — and
+rem  any LAN phone hitting https://<pc>.local:8443/ — serves the CURRENT code.
+rem  Mobile and desktop are the same bundle (main.tsx renders MobileApp on /m),
+rem  so one `npm run build` covers both. This is just tsc + vite (no Rust
+rem  recompile), and frontendDist=../dist means the desktop app picks it up too.
+rem  If the rebuild fails we keep the existing dist and still launch.
+echo [Max] Refreshing web UI (mobile + desktop)...
+cd /d "%~dp0app"
+call npm run build
+if errorlevel 1 (
+    echo.
+    echo   [Max] Web UI rebuild failed - launching with the existing dist.
+    echo         Fix the build errors above so mobile/LAN serves current code.
+    echo.
+)
+cd /d "%~dp0"
+
 rem  Kill any stale Max.exe (crash survivor) so single-instance doesn't block.
 taskkill /F /IM Max.exe >nul 2>&1
 echo [Max] Launching desktop app - the engine starts automatically...

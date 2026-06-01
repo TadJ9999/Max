@@ -33,9 +33,16 @@ export type CloudModel = {
   key_set: boolean;
 };
 
+export type LocalServer = {
+  base_url: string | null;
+  reachable: boolean;
+  models: string[];
+};
+
 export type ModelsResponse = {
   local: LocalModel[];
   cloud: CloudModel[];
+  local_server: LocalServer;
   task_models: Record<string, string>;
   sigils: Record<string, string>;
 };

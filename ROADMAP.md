@@ -1,11 +1,13 @@
 # Max — Local-First AI Engine · Roadmap & Brainstorm
 
-> Status: **living document** — Phases 0–17 core + all stretch items **built & working**.
+> Status: **living document** — Phases 0–18 core + all stretch items **built & working**.
 > Includes: DSL + routing, Ollama/Claude streaming, delegate system, Tauri widget, OSINT map
 > (with per-source toggles + GDELT tone signal), market tape (sparklines + drill-down),
 > Apollo prediction engine, Polymarket intelligence (market news feed), Sentinel 3D space view,
 > Aegis self-repair + Leo + Security Posture SAST/SCA (with auto-fix mode + Apollo fix memory),
 > Voice I/O + Jarvis personality + user memory, Shadow Net Tor browser, LAN access (HTTPS/QR),
+> token/cost Analytics dashboard, and a **Vision Pro / iOS frosted-glass UI** redesign
+> (native Tauri window effects — mica/acrylic — carry the frost, not CSS backdrop-filter).
 > **Phase 0**: local model benchmark engine + rich Model Manager UI + GitHub Actions CI.
 > **268+ engine tests pass; tsc clean; GitHub Actions CI gates all pushes.**
 
@@ -170,7 +172,7 @@ Parser rules:
 ### Phase 8 — Advanced / stretch  🎯 *agentic & multi-file*
 - [x] **Multi-file / repo-wide edits with plan + approval** — Code Hub tab: `POST /code/plan` streams a multi-file `EditPlan`, `POST /code/apply` writes patches behind a git snapshot, `POST /code/rollback` reverts; frontend `app/src/code/` (CodeView + FileTree + Terminal)
 - [x] **User-defined custom commands & template library** — `custom:<name>` triggers (any single delimiter char) in `dsl/parser.py`; add/edit/remove UI in Settings (`CustomCommandsSection`), persisted via config
-- [~] **More providers + more clients** — OpenAI provider built (`%` sigil, `providers/openai_provider.py`, cost catalog) + LAN browser client (Phase 17); **still open:** local llama.cpp/vLLM adapters, CLI client, Neovim client
+- [~] **More providers + more clients** — OpenAI provider built (`%` sigil, `providers/openai_provider.py`, cost catalog) + LAN browser client (Phase 17) + **OpenAI-compatible local adapter** (`^` sigil, `providers/openai_compat.py`): one `local`-kind provider for any local server speaking `/v1/chat/completions` (llama.cpp `llama-server`, vLLM, LM Studio); connect-only (no spawning), no API key, no egress, usage recorded at $0 like Ollama; configurable `base_url` (default `:8080`) round-tripped through `/config`; Model Manager "Local server" card (reachability dot + served models from `GET /v1/models`) + Task Routing optgroup; 6 tests. **Still open:** CLI client, Neovim client
 - [x] Vision models — image attach in chat bar, routes to Claude or OpenAI vision
 
 ### Phase 9 — Capability platform & general assistant (beyond coding)  ✅ *add skills, not rewrite the core* ([architecture](docs/architecture.md))
@@ -195,7 +197,7 @@ Parser rules:
 
 - [x] **17.A — Engine serve + dynamic base + HTTP LAN bind**: `main.py` mounts the Vite `dist/` as `StaticFiles` (single origin) with a UA-based mobile redirect (`/` → `/m`); narrow CORS `allow_origins=["*"]` → LAN `allow_origin_regex`; new `EngineConfig` fields (`lan_enabled`, `lan_host`, `lan_port`, `tls_cert`, `tls_key`) round-tripping through `.maxconfig.json`; make `app/src/engine.ts` base URL dynamic (same-origin in a served browser, absolute via a new `engine_base()` Tauri command in the webview); parametrize Rust `spawn_engine()` to bind `0.0.0.0` (HTTP first, to validate).
 - [x] **17.B — Mobile-first shell**: `src/mobile/` — `MobileApp.tsx` with bottom-tab nav (Chat+Voice · Markets · Intel · Space); `ChatTab.tsx` (streaming chat + Web Speech API mic + TTS); `MarketsTab.tsx` (live quotes + AI read); `OsintTab.tsx` (severity hotspots + articles); `SentinelTab.tsx` (ISS live + space weather + launches); `Mobile.css` dark touch-first styles. Served at engine `/m` (FastAPI `FileResponse(index.html)`) — `main.tsx` detects `pathname === "/m"` and renders `MobileApp` instead of the desktop shell; same bundle, zero separate build step.
-- [x] **17.C — HTTPS: certs + TLS + firewall**: `setup_cert()` / `reveal_root_ca()` Tauri commands run mkcert (`-install`, then SANs `<pc>.local <lan-ip> localhost 127.0.0.1`); Rust spawns uvicorn with `--ssl-keyfile/--ssl-certfile` on `:8443` when LAN-enabled; health/port checks speak HTTPS to `127.0.0.1:8443` (keep `127.0.0.1`, never `localhost`); add/remove the subnet-scoped firewall rule (elevated/UAC) on toggle; `docs/lan.md` with the iPhone "enable full trust" steps.
+- [x] **17.C — HTTPS: certs + TLS + firewall**: `setup_cert()` / `reveal_root_ca()` Tauri commands run mkcert (`-install`, then SANs `<pc>.local <lan-ip> localhost 127.0.0.1`); Rust spawns uvicorn with `--ssl-keyfile/--ssl-certfile` on `:8443` when LAN-enabled; health/port checks speak HTTPS to `127.0.0.1:8443` (keep `127.0.0.1`, never `localhost`); add/remove the subnet-scoped firewall rule (elevated/UAC) on toggle; `docs/lan.md` with the iPhone "enable full trust" steps. **`find_mkcert()` hardened** (`lib.rs`) — resolves the binary across `where`/PATH, WinGet Links shim, Chocolatey, Scoop, `go install`, plus a bounded recursive scan of `WinGet/Packages` for the versioned `mkcert*.exe`, so cert setup works even when the GUI inherited a stale pre-install PATH.
 - [x] **17.D — Settings "Share on LAN"**: section in `settings/SettingsView.tsx` with the toggle (`set_lan_mode`), live `lan_status` (`{enabled, url, pc_name, lan_ip, cert_ready}`), copyable `https://<pc-name>.local:8443` URL, **QR code**, cert-helper buttons + trust steps, firewall/Private-network hint; LAN state remembered across launches.
 
 > **Future phase (out of scope here):** remote/internet access (Tailscale `*.ts.net` or Cloudflare Tunnel), app-level auth tokens, and multi-user — noted only as the upgrade path that this single-origin HTTPS app extends into cleanly.

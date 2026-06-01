@@ -74,6 +74,7 @@ from .prompts import (
 )
 from .providers.base import Provider
 from .providers.factory import build_provider
+from .providers.openai_compat import list_local_models
 from .providers.vram import VramManager
 from .rag import RagService, RagStore, SessionMemory
 from .router import model_for, resolve
@@ -263,8 +264,10 @@ def _on_usage(feature: str, provider: str, model: str, in_tok: int, out_tok: int
 
 from .providers.anthropic import set_usage_callback as _set_ant_cb
 from .providers.ollama import set_usage_callback as _set_oll_cb
+from .providers.openai_compat import set_usage_callback as _set_oai_compat_cb
 _set_ant_cb(_on_usage)
 _set_oll_cb(_on_usage)
+_set_oai_compat_cb(_on_usage)
 
 # Register Aegis as the global FastAPI exception handler so unhandled errors
 # are captured into the event store before the 500 response is returned.
@@ -521,6 +524,11 @@ class GcalPatch(BaseModel):
     calendar_id: str | None = None
 
 
+class ProviderPatch(BaseModel):
+    name: str
+    base_url: str | None = None
+
+
 class ConfigPatch(BaseModel):
     allow_cloud: bool | None = None
     force_offline: bool | None = None
@@ -536,6 +544,7 @@ class ConfigPatch(BaseModel):
     aegis: AegisPatch | None = None
     task_models: dict[str, str] | None = None
     sigils: dict[str, str] | None = None
+    providers: list[ProviderPatch] | None = None
     skills: SkillsPatch | None = None
     spotify: SpotifyPatch | None = None
     gcal: GcalPatch | None = None
@@ -674,6 +683,12 @@ def update_config(patch: ConfigPatch) -> dict:
     if patch.sigils is not None:
         for sigil, provider in patch.sigils.items():
             config.sigils[sigil] = provider
+    if patch.providers is not None:
+        by_name = {p.name: p for p in config.providers}
+        for item in patch.providers:
+            p = by_name.get(item.name)
+            if p is not None and item.base_url:
+                p.base_url = item.base_url
     if patch.skills is not None:
         sk = patch.skills
         if sk.intent_router_enabled is not None:
@@ -774,9 +789,20 @@ async def list_models() -> dict:
         key_set = bool(os.environ.get(env_key)) if env_key else False
         cloud.append({**cm, "key_set": key_set})
 
+    # Probe the OpenAI-compatible local server (llama.cpp / vLLM), if configured.
+    local_url = next((p.base_url for p in config.providers if p.name == "local"), None)
+    local_server = {"base_url": local_url, "reachable": False, "models": []}
+    if local_url:
+        try:
+            served = await list_local_models(base_url=local_url)
+            local_server = {"base_url": local_url, "reachable": True, "models": served}
+        except Exception:
+            pass
+
     return {
         "local": local,
         "cloud": cloud,
+        "local_server": local_server,
         "task_models": config.task_models,
         "sigils": config.sigils,
     }

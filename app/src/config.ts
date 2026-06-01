@@ -114,6 +114,7 @@ export type ConfigPatch = {
   };
   task_models?: Record<string, string>;
   sigils?: Record<string, string>;
+  providers?: { name: string; base_url?: string }[];
   skills?: { intent_router_enabled?: boolean; intent_router_model?: string };
   spotify?: { client_id?: string };
   gcal?: { client_id?: string; calendar_id?: string };

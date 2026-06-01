@@ -238,7 +238,9 @@ class RagConfig(BaseModel):
 class EngineConfig(BaseModel):
     # sigil -> provider name
     sigils: dict[str, str] = Field(
-        default_factory=lambda: {"@": "ollama", "#": "qwen", "!": "claude", "%": "openai"}
+        default_factory=lambda: {
+            "@": "ollama", "#": "qwen", "!": "claude", "%": "openai", "^": "local",
+        }
     )
     # task -> default model
     task_models: dict[str, str] = Field(
@@ -272,6 +274,8 @@ class EngineConfig(BaseModel):
         default_factory=lambda: [
             ProviderConfig(name="ollama", kind="local", base_url="http://127.0.0.1:11434"),
             ProviderConfig(name="qwen", kind="local", base_url="http://127.0.0.1:11434"),
+            # OpenAI-compatible local server (llama.cpp / vLLM / LM Studio) — ^ sigil.
+            ProviderConfig(name="local", kind="local", base_url="http://127.0.0.1:8080"),
             ProviderConfig(name="claude", kind="cloud"),
             ProviderConfig(name="openai", kind="cloud"),
         ]
@@ -315,6 +319,14 @@ def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
         for k, v in data["sigils"].items():
             if isinstance(v, str):
                 cfg.sigils[k] = v
+    # Provider endpoint overrides (only base_url is UI-editable; matched by name).
+    if isinstance(data.get("providers"), list):
+        by_name = {p.name: p for p in cfg.providers}
+        for item in data["providers"]:
+            if isinstance(item, dict):
+                p = by_name.get(item.get("name"))
+                if p is not None and isinstance(item.get("base_url"), str) and item["base_url"]:
+                    p.base_url = item["base_url"]
     d = data.get("delegate") or {}
     if "mode" in d:
         cfg.delegate.mode = d["mode"]
@@ -489,6 +501,7 @@ def save_overrides(cfg: EngineConfig) -> None:
         "workspace_allowlist": cfg.workspace_allowlist,
         "task_models": cfg.task_models,
         "sigils": cfg.sigils,
+        "providers": [{"name": p.name, "base_url": p.base_url} for p in cfg.providers],
         "delegate": {
             "mode": cfg.delegate.mode,
             "max_parallel_local": cfg.delegate.max_parallel_local,

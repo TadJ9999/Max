@@ -6,6 +6,7 @@ from ..config import EngineConfig
 from .anthropic import AnthropicProvider
 from .base import Provider
 from .ollama import OllamaProvider
+from .openai_compat import OpenAICompatProvider
 from .openai_provider import OpenAIProvider
 
 
@@ -22,6 +23,12 @@ def build_provider(name: str, config: EngineConfig, model: str = "") -> Provider
         if pc.name == "openai":
             return OpenAIProvider(name=pc.name)
         return AnthropicProvider(name=pc.name)
+    # Local OpenAI-compatible servers (llama.cpp / vLLM / LM Studio) — ^ sigil.
+    if pc.name not in ("ollama", "qwen"):
+        return OpenAICompatProvider(
+            name=pc.name,
+            base_url=pc.base_url or "http://127.0.0.1:8080",
+        )
     is_resident = bool(model and model == config.idle.resident_model)
     ka = config.idle.resident_keep_alive if is_resident else config.idle.keep_alive
     return OllamaProvider(

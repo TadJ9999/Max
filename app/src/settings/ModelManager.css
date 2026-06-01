@@ -327,6 +327,66 @@
   margin: 4px 0 0;
 }
 
+/* Local OpenAI-compatible server card */
+.mm-card--server { gap: 8px; }
+.mm-card--server .mm-card__sub code {
+  background: #0f1a2a;
+  border-radius: 3px;
+  padding: 0 3px;
+  color: #22d3ee;
+}
+.mm-server-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #44546a;
+  box-shadow: 0 0 0 2px #0b1420;
+  flex-shrink: 0;
+}
+.mm-server-dot--on {
+  background: #22c55e;
+  box-shadow: 0 0 6px #22c55e, 0 0 0 2px #0b1420;
+}
+.mm-server-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mm-server-field__label {
+  font-size: 9px;
+  color: #5a7090;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.mm-server-field__input {
+  font-size: 11px;
+  font-family: var(--mono, monospace);
+  background: #0b1420;
+  border: 1px solid #1e3050;
+  color: #b8d0e8;
+  border-radius: 4px;
+  padding: 4px 6px;
+  outline: none;
+}
+.mm-server-field__input:focus { border-color: #22d3ee; }
+.mm-server-status {
+  font-size: 10px;
+  color: #6a8aa8;
+  line-height: 1.5;
+}
+.mm-server-served {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.mm-server-status code {
+  background: #0f1a2a;
+  border-radius: 3px;
+  padding: 0 3px;
+  color: #22d3ee;
+}
+
 /* Task routing matrix */
 .mm-routing {
   display: flex;
