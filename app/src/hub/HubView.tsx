@@ -6,7 +6,8 @@
 // In Tauri, clicking a widget launcher button while the hub is open emits a
 // "hub:set-tab" event that switches the active tab here.
 
-import { useEffect, useState } from "react";
+import { Component, useEffect, useState } from "react";
+import type { ReactNode, ErrorInfo } from "react";
 import { ApolloView } from "../apollo/ApolloView";
 import { OsintView } from "../osint/OsintView";
 import { MarketView } from "../market/MarketView";
@@ -18,6 +19,39 @@ import { ShadowNetView } from "../darknet/ShadowNetView";
 import { CodeView } from "../code/CodeView";
 import { SkillsView } from "../skills/SkillsView";
 import "./Hub.css";
+
+// ── Error boundary — catches settings crashes without killing the whole Hub ──
+
+interface EBState { error: Error | null }
+
+class ViewErrorBoundary extends Component<{ children: ReactNode }, EBState> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("[HubView] tab render error:", error, info.componentStack);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 32, color: "#ff6b6b", fontFamily: "monospace", fontSize: 12 }}>
+          <div style={{ marginBottom: 8, fontWeight: 700 }}>Settings failed to render</div>
+          <pre style={{ whiteSpace: "pre-wrap", opacity: 0.8 }}>{this.state.error.message}</pre>
+          <pre style={{ whiteSpace: "pre-wrap", opacity: 0.5, marginTop: 8 }}>{this.state.error.stack}</pre>
+          <button
+            style={{ marginTop: 12, padding: "4px 12px", cursor: "pointer" }}
+            onClick={() => this.setState({ error: null })}
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export type HubTab = "apollo" | "osint" | "market" | "polymarket" | "aegis" | "shadow" | "sentinel" | "code" | "skills" | "settings";
 
@@ -146,7 +180,9 @@ export function HubView({
         )}
         {visited.has("settings") && (
           <div className="hub__view" hidden={tab !== "settings"}>
-            <SettingsView />
+            <ViewErrorBoundary>
+              <SettingsView />
+            </ViewErrorBoundary>
           </div>
         )}
       </div>
