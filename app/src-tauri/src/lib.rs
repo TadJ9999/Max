@@ -216,10 +216,36 @@ fn update_maxconfig_lan_fields(
 }
 
 /// Find the mkcert binary: check PATH, then WinGet links dir.
+/// Recursively look for an `mkcert*.exe` under `dir`, bounded by `depth` so we
+/// don't walk huge trees. Used to locate WinGet's versioned binary.
+#[cfg(windows)]
+fn scan_for_mkcert(dir: &Path, depth: u8) -> Option<PathBuf> {
+    let mut subdirs = Vec::new();
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                let lower = name.to_ascii_lowercase();
+                if lower.starts_with("mkcert") && lower.ends_with(".exe") {
+                    return Some(path);
+                }
+            }
+        } else if depth > 0 && path.is_dir() {
+            subdirs.push(path);
+        }
+    }
+    for sd in subdirs {
+        if let Some(found) = scan_for_mkcert(&sd, depth - 1) {
+            return Some(found);
+        }
+    }
+    None
+}
+
 fn find_mkcert() -> Option<PathBuf> {
     #[cfg(windows)]
     {
-        // Try where.exe first
+        // 1. On PATH (covers most installs once the app is restarted after install).
         if let Ok(out) = Command::new("where")
             .arg("mkcert")
             .creation_flags(CREATE_NO_WINDOW)
@@ -233,12 +259,34 @@ fn find_mkcert() -> Option<PathBuf> {
                 }
             }
         }
-        // WinGet links dir
-        if let Ok(local) = std::env::var("LOCALAPPDATA") {
-            let candidate = PathBuf::from(&local)
-                .join("Microsoft/WinGet/Links/mkcert.exe");
-            if candidate.exists() {
-                return Some(candidate);
+
+        // 2. Known install locations by package manager. `where` misses these when
+        //    the running GUI inherited a PATH from before the install, or when the
+        //    manager (e.g. Chocolatey) isn't on the GUI's PATH at all.
+        let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
+        let userprofile = std::env::var("USERPROFILE").unwrap_or_default();
+        let candidates = [
+            // WinGet shim
+            PathBuf::from(&local).join("Microsoft/WinGet/Links/mkcert.exe"),
+            // Chocolatey
+            PathBuf::from("C:/ProgramData/chocolatey/bin/mkcert.exe"),
+            // Scoop
+            PathBuf::from(&userprofile).join("scoop/shims/mkcert.exe"),
+            // go install
+            PathBuf::from(&userprofile).join("go/bin/mkcert.exe"),
+        ];
+        for c in candidates {
+            if c.exists() {
+                return Some(c);
+            }
+        }
+
+        // 3. WinGet installs the (sometimes versioned) exe under Packages without
+        //    always creating a clean Links shim — scan for mkcert*.exe there.
+        if !local.is_empty() {
+            let pkgs = PathBuf::from(&local).join("Microsoft/WinGet/Packages");
+            if let Some(p) = scan_for_mkcert(&pkgs, 2) {
+                return Some(p);
             }
         }
     }
