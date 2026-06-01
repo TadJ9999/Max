@@ -99,6 +99,8 @@
   overflow: hidden;
   background: var(--stg-glass);
   backdrop-filter: blur(12px);
+  flex-shrink: 0; /* keep natural height so the body overflows & scrolls
+                     instead of compressing the cards into a clipped stack */
 }
 .stg-section__head {
   width: 100%;
