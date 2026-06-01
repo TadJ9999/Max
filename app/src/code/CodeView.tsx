@@ -252,47 +252,49 @@ export function CodeView() {
 
   useEffect(() => () => cmdAbortRef.current?.abort(), []);
 
-  // ── in-editor inline command: stream the reply directly over `range` ───────
-  // A self-contained DSL command (`. … .`, `~ … ~`, …) runs via /command; any
-  // other line is treated as a generation instruction via /chat. The command
-  // text is replaced live as the answer streams in.
-  const runInlineInEditor = async (range: monaco.IRange, commandText: string) => {
+  // ── in-editor inline command ──────────────────────────────────────────────
+  // Non-destructive: your request line stays put and the reply is inserted on
+  // the line(s) BELOW it (anchored after `anchorLine`). The whole reply is
+  // buffered and inserted in ONE edit — no streaming-into-the-document, which
+  // is what produced the scrambled/duplicated text before. A self-contained DSL
+  // command (`. … .`, `~ … ~`, …) runs via /command; anything else via /chat.
+  const runInlineInEditor = async (prompt: string, anchorLine: number) => {
     const ed = editorRef.current;
     const model = ed?.getModel();
-    const q = commandText.trim();
+    const q = prompt.trim();
     if (!ed || !model || !q || inlineBusyRef.current) return;
     inlineBusyRef.current = true;
     setInlineStatus("running…");
-
-    const startOffset = model.getOffsetAt({ lineNumber: range.startLineNumber, column: range.startColumn });
-    let written = 0;
-    const apply = (full: string) => {
-      const from = model.getPositionAt(startOffset);
-      const to = model.getPositionAt(startOffset + written);
-      inlineApplyingRef.current = true;
-      ed.executeEdits("max-inline", [
-        { range: monaco.Range.fromPositions(from, to), text: full, forceMoveMarkers: true },
-      ]);
-      inlineApplyingRef.current = false;
-      written = full.length;
-    };
-    apply(""); // clear the command text; stream the reply into its place
 
     const ac = new AbortController();
     cmdAbortRef.current = ac;
     let acc = "";
     try {
       const iter = isDslCommand(q) ? streamCommand(q, ac.signal) : streamChat(q, ac.signal);
-      for await (const delta of iter) { acc += delta; apply(acc); }
-      apply(stripFences(acc));
+      for await (const delta of iter) {
+        acc += delta;
+        setInlineStatus(`receiving… ${acc.length} chars`);
+      }
+      const clean = stripFences(acc).trim();
+      if (clean && !ac.signal.aborted) {
+        const ln = Math.min(Math.max(anchorLine, 1), model.getLineCount());
+        const pos = { lineNumber: ln, column: model.getLineMaxColumn(ln) };
+        inlineApplyingRef.current = true;
+        ed.executeEdits("max-inline", [
+          { range: monaco.Range.fromPositions(pos, pos), text: "\n" + clean, forceMoveMarkers: true },
+        ]);
+        inlineApplyingRef.current = false;
+        const endLine = ln + clean.split("\n").length;
+        ed.setPosition({ lineNumber: Math.min(endLine, model.getLineCount()), column: 1 });
+        ed.revealLineInCenterIfOutsideViewport(ln + 1);
+      }
       setInlineStatus(null);
     } catch (e) {
-      if ((e as Error).name !== "AbortError") {
-        apply(commandText); // restore the original command on failure
-        setInlineStatus(`inline error: ${e instanceof Error ? e.message : String(e)}`);
-      } else {
-        setInlineStatus(null);
-      }
+      setInlineStatus(
+        (e as Error).name === "AbortError"
+          ? null
+          : `inline error: ${e instanceof Error ? e.message : String(e)}`,
+      );
     } finally {
       inlineBusyRef.current = false;
       cmdAbortRef.current = null;
@@ -300,22 +302,21 @@ export function CodeView() {
     }
   };
 
-  // Run the selection, or the whole current line, as an inline command (Ctrl+Enter).
+  // Run the selection, or the current line, as an inline command (Ctrl+Enter).
+  // The reply is inserted below the end of the selection / the current line.
   const runInlineAtCursor = () => {
     const ed = editorRef.current;
     const model = ed?.getModel();
     if (!ed || !model) return;
     const sel = ed.getSelection();
     if (sel && !sel.isEmpty()) {
-      void runInlineInEditor(sel, model.getValueInRange(sel));
+      void runInlineInEditor(model.getValueInRange(sel), sel.endLineNumber);
       return;
     }
     const ln = ed.getPosition()?.lineNumber ?? 1;
     const line = model.getLineContent(ln);
     if (!line.trim()) { setInlineStatus("empty line — type a command first"); return; }
-    const startCol = line.length - line.trimStart().length + 1; // keep indentation
-    const range = new monaco.Range(ln, startCol, ln, model.getLineMaxColumn(ln));
-    void runInlineInEditor(range, line.trim());
+    void runInlineInEditor(line.trim(), ln);
   };
 
   const anyDirty = tabs.some((t) => t.dirty);
@@ -371,9 +372,7 @@ export function CodeView() {
         const ln = ed.getPosition()?.lineNumber ?? 1;
         const line = model.getLineContent(ln);
         if (!lineIsCommand(line)) return;
-        const startCol = line.length - line.trimStart().length + 1;
-        const range = new monaco.Range(ln, startCol, ln, model.getLineMaxColumn(ln));
-        void runInlineInEditor(range, line.trim());
+        void runInlineInEditor(line.trim(), ln);
       }, 600);
     });
 
