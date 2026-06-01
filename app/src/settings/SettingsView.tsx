@@ -15,7 +15,7 @@ import {
   type ProfileItem,
 } from "../config";
 import { ModelManager } from "./ModelManager";
-import { ENGINE_URL } from "../engine";
+import { ENGINE_URL, getHealth, initEngineBase } from "../engine";
 import {
   addMcpServer,
   callMcpTool,
@@ -291,7 +291,6 @@ function EgressLogSection() {
 
   const load = useCallback(async () => {
     try {
-      const { ENGINE_URL } = await import("../engine");
       const r = await fetch(`${ENGINE_URL}/egress/log?limit=50`);
       if (!r.ok) return;
       const d = await r.json() as { entries: EgressEntry[]; total_lines: number };
@@ -303,7 +302,6 @@ function EgressLogSection() {
   const clear = async () => {
     setBusy(true);
     try {
-      const { ENGINE_URL } = await import("../engine");
       await fetch(`${ENGINE_URL}/egress/log`, { method: "DELETE" });
       setEntries([]);
       setTotal(0);
@@ -539,7 +537,6 @@ function AnalyticsSection() {
   const load = useCallback(async (d: number) => {
     setBusy(true);
     try {
-      const { ENGINE_URL } = await import("../engine");
       const [sum, day, brk] = await Promise.all([
         fetch(`${ENGINE_URL}/analytics/summary?days=${d}`).then((r) => r.ok ? r.json() as Promise<AnalyticsSummary> : null),
         fetch(`${ENGINE_URL}/analytics/daily?days=${d}`).then((r) => r.ok ? r.json() as Promise<{ series: DailyPoint[] }> : null),
@@ -558,7 +555,6 @@ function AnalyticsSection() {
     if (!confirm("Clear all token usage history? This cannot be undone.")) return;
     setClearing(true);
     try {
-      const { ENGINE_URL } = await import("../engine");
       await fetch(`${ENGINE_URL}/analytics/reset`, { method: "DELETE" });
       setSummary(null);
       setDaily([]);
@@ -961,7 +957,6 @@ function LanSection() {
     setBusy(true);
     try {
       await tauriInvoke("restart_engine_for_lan", { enabled: next });
-      const { initEngineBase, getHealth } = await import("../engine");
       await initEngineBase();
       for (let i = 0; i < 20; i++) {
         await new Promise((r) => setTimeout(r, 800));

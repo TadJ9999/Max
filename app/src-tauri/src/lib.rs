@@ -32,15 +32,6 @@ struct EngineProcess(Mutex<Option<Child>>);
 /// `None` when Tor is not running (user-initiated, unlike the engine which auto-starts).
 struct TorProcess(Mutex<Option<Child>>);
 
-/// True if something is already listening on the engine port.
-fn port_in_use() -> bool {
-    let addr = format!("127.0.0.1:{ENGINE_PORT}");
-    addr.parse()
-        .ok()
-        .and_then(|a| TcpStream::connect_timeout(&a, Duration::from_millis(300)).ok())
-        .is_some()
-}
-
 /// True only when the engine port is open AND /health returns HTTP 200.
 fn engine_healthy() -> bool {
     use std::io::{Read, Write};
@@ -59,46 +50,6 @@ fn engine_healthy() -> bool {
     let mut buf = [0u8; 256];
     let n = stream.read(&mut buf).unwrap_or(0);
     String::from_utf8_lossy(&buf[..n]).contains("200")
-}
-
-/// Kill whatever process is holding ENGINE_PORT (best-effort).
-/// On Windows, netstat gives us the PID; we then taskkill the whole tree.
-fn kill_port_owner() {
-    #[cfg(windows)]
-    {
-        let pattern = format!(":{ENGINE_PORT}");
-        let Ok(out) = std::process::Command::new("cmd")
-            .args(["/C", &format!("netstat -ano | findstr {pattern}")])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output()
-        else {
-            return;
-        };
-        let text = String::from_utf8_lossy(&out.stdout);
-        let pids: Vec<String> = text
-            .lines()
-            .filter_map(|line| line.trim().split_whitespace().last().map(|s| s.to_owned()))
-            .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()) && s != "0")
-            .collect();
-        let mut seen = std::collections::HashSet::new();
-        for pid in pids {
-            if seen.insert(pid.clone()) {
-                let mut kill = std::process::Command::new("taskkill");
-                kill.args(["/T", "/F", "/PID", &pid])
-                    .creation_flags(CREATE_NO_WINDOW);
-                let _ = kill.status();
-                println!("[engine] killed zombie process (pid {pid}) on :{ENGINE_PORT}");
-            }
-        }
-        std::thread::sleep(Duration::from_millis(400));
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = std::process::Command::new("sh")
-            .args(["-c", &format!("fuser -k {ENGINE_PORT}/tcp 2>/dev/null || true")])
-            .status();
-        std::thread::sleep(Duration::from_millis(400));
-    }
 }
 
 /// Kill whatever process is holding a specific port (best-effort).
