@@ -948,6 +948,48 @@ fn spawn_click_through_guard(app: &tauri::AppHandle) {
     });
 }
 
+/// Round the borderless main widget with a large iOS-style radius. The native
+/// mica material (tauri.conf.json `windowEffects`) fills the whole HWND
+/// rectangle, so without this the frosted glass reads as a hard square. DWM's
+/// corner preference only gives a small (~8px) radius; to get the big iOS curve
+/// we clip the window with a rounded-rect region (`SetWindowRgn`). Tradeoff:
+/// the region edge isn't antialiased, so the 0.5px CSS border is what softens
+/// it visually. The widget is fixed-size, so this is applied once at setup.
+/// Keep the radius in sync with the CSS `.widget` border-radius.
+#[cfg(windows)]
+fn round_widget_corners(window: &tauri::WebviewWindow) {
+    let Ok(hwnd) = window.hwnd() else {
+        return;
+    };
+    // Physical pixels + DPI-scaled radius so the curve matches CSS on HiDPI.
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
+    let (w, h) = (size.width as i32, size.height as i32);
+    if w <= 0 || h <= 0 {
+        return;
+    }
+    let radius = (24.0 * scale).round() as i32;
+
+    #[link(name = "gdi32")]
+    extern "system" {
+        fn CreateRoundRectRgn(x1: i32, y1: i32, x2: i32, y2: i32, ew: i32, eh: i32) -> isize;
+    }
+    #[link(name = "user32")]
+    extern "system" {
+        fn SetWindowRgn(hwnd: isize, hrgn: isize, b_redraw: i32) -> i32;
+    }
+    unsafe {
+        // right/bottom are exclusive (hence +1); ellipse axes are 2 * radius.
+        let hrgn = CreateRoundRectRgn(0, 0, w + 1, h + 1, radius * 2, radius * 2);
+        if hrgn != 0 {
+            // The window takes ownership of the region — must NOT delete it here.
+            SetWindowRgn(hwnd.0 as isize, hrgn, 1);
+        }
+    }
+}
+
 /// Quit the whole app (the widget's red shutdown button). Exits the process so
 /// every window — main, OSINT, Market — closes together.
 #[tauri::command]
@@ -1027,6 +1069,12 @@ pub fn run() {
                 }
 
                 spawn_click_through_guard(app.handle());
+
+                // Round the frosted (mica) widget so it doesn't read as a square.
+                #[cfg(windows)]
+                if let Some(window) = app.get_webview_window("main") {
+                    round_widget_corners(&window);
+                }
             }
             Ok(())
         })

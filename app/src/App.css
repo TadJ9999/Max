@@ -14,9 +14,11 @@
      Tuned toward iOS "liquid glass": low fill opacity, the blur carries
      legibility. --glass-sheen is the top specular highlight gradient. */
   --glass-bg: rgba(16, 18, 22, 0.18);
-  /* the unified widget/hub slab — a touch stronger than card fill for legibility */
-  --slab-bg: rgba(16, 18, 22, 0.3);
-  --glass-border: rgba(255, 255, 255, 0.18);
+  /* The unified slab tint. Kept light so the native mica frost (Windows) reads
+     through it — the material provides the blur, this only deepens it slightly. */
+  --slab-bg: rgba(16, 18, 22, 0.22);
+  /* Liquid-glass edge: a 0.5px white hairline at 20% opacity. */
+  --glass-border: rgba(255, 255, 255, 0.2);
   --glass-sheen: linear-gradient(
     180deg,
     rgba(255, 255, 255, 0.07),
@@ -56,15 +58,26 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* Translucent material — the native mica effect blurs the desktop behind the
+     transparent window; this sheen + tint sit on top. Radius matches the DWM
+     rounded-corner clip applied in Rust (round_widget_corners). */
   background: var(--glass-sheen), var(--slab-bg);
-  border: 1px solid var(--glass-border);
-  border-radius: 26px;
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 0.5px solid var(--glass-border);
+  border-radius: 24px;
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
   box-shadow:
-    0 20px 60px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    inset 0 0 0 0.5px rgba(255, 255, 255, 0.05);
+    0 20px 60px rgba(0, 0, 0, 0.4),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.28);
+}
+
+/* Adaptive tinting: in a light environment the material lightens and the edge
+   brightens, so the glass stays legible against bright underlying content. */
+@media (prefers-color-scheme: light) {
+  .widget {
+    background: var(--glass-sheen), rgba(245, 247, 250, 0.22);
+    border-color: rgba(255, 255, 255, 0.45);
+  }
 }
 
 /* Inner surfaces sit ON the slab, so they're deliberately subtle — a faint
