@@ -13,6 +13,7 @@ function inTauri(): boolean {
 
 export async function openHubWindow(tab: HubTab): Promise<void> {
   const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+  const { Effect } = await import("@tauri-apps/api/window");
   const existing = await WebviewWindow.getByLabel("hub");
   if (existing) {
     try {
@@ -31,8 +32,11 @@ export async function openHubWindow(tab: HubTab): Promise<void> {
     minWidth: 900,
     minHeight: 600,
     resizable: true,
+    // Keep the native frame (drag/resize/close) but make the window transparent
+    // and apply Windows acrylic so the hub reads as frosted glass.
     decorations: true,
-    transparent: false,
+    transparent: true,
+    windowEffects: { effects: [Effect.Acrylic], radius: 16 },
     center: true,
     skipTaskbar: false,
   });
