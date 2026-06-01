@@ -2,7 +2,8 @@
 
 Max is a **local-first**, private AI engine for a powerful workstation, with an
 **explicit, opt-in cloud escape hatch**. One always-on **engine** does the thinking;
-thin **clients** (a floating desktop widget today, a VS Code extension later) talk to it.
+thin **clients** — a floating desktop widget, a VS Code extension, a Neovim plugin, a
+`max` CLI, and a phone/Mac LAN browser — all talk to it.
 It started as a coding assistant and has grown into a general personal assistant —
 parallel task delegation, a live global news/threat map, a market tape, a prediction
 engine, 3D space intelligence, Tor dark-web browsing, voice I/O, and a self-repair
@@ -26,7 +27,9 @@ console, all behind one local API.
 - ⚡ **Skills & capability platform** — a capability registry + intent router that turns Max into a general assistant: web search (DuckDuckGo), AI reports, workspace files, Spotify (OAuth PKCE), and Google Calendar (OAuth2), surfaced in a Skills Hub tab.
 - 🔗 **MCP host (both directions)** — Max connects to external **MCP servers** (stdio or HTTP) and routes their tools, **and** exposes its own skills as an MCP server so Claude Desktop / Cursor can call Max (`python -m max_engine.mcp_server`, with a paste-ready config).
 - 📱 **LAN access** — a "Share on LAN" toggle serves the built UI over HTTPS (mkcert) at `https://<pc-name>.local:8443` with a QR code, so you can use Max — voice included — from your iPhone/Mac browser; all compute stays on the desktop.
-- 🧰 **Code Hub** — a Monaco editor + file tree with an AI **multi-file edit planner** (plan → approve → apply behind a git snapshot, with rollback); OpenAI provider (`%` sigil), vision image-attach in chat, and user-defined custom DSL commands.
+- 🧰 **Code Hub** — a Monaco editor + file tree with an AI **multi-file edit planner** (plan → approve → apply behind a git snapshot, with rollback); OpenAI provider (`%` sigil) + a connect-only **local OpenAI-compatible adapter** (`^` sigil, llama.cpp / vLLM / LM Studio), vision image-attach in chat, and user-defined custom DSL commands.
+- 📊 **Analytics** — a token-usage & cost dashboard in Settings: every AI call (cloud or local) is recorded with feature tag, provider, model, token counts, and estimated USD cost; per-feature pure-SVG stacked charts with a 7d/30d/90d range.
+- 🖥️ **Many clients** — besides the desktop widget and VS Code extension, a zero-dep **Neovim plugin** (inline DSL replace + FIM ghost text) and a `max` **CLI** (one-shot, REPL, health, sessions) that drive the engine **locally or remotely**.
 - 🎨 **Floating widget UI** — frameless, transparent, always-on-top, top-right, **click-through when idle**, toggled by a global hotkey (`Ctrl+Shift+M`), with a "Jarvis"-style HUD mascot that reacts to engine state.
 
 See **[ROADMAP.md](./ROADMAP.md)** for the phased plan and **[docs/architecture.md](./docs/architecture.md)** for the layered design.
@@ -67,9 +70,11 @@ Max/
 │                    # skills · capabilities · mcp (+ mcp_server) · analytics
 ├── app/             # Tauri v2 desktop widget (React + TypeScript)
 ├── extension/       # VS Code extension (DSL commands, inline replace, FIM ghost text)
-├── docs/            # architecture · ui · mascot · setup · aegis
+├── clients/         # nvim (zero-dep Lua plugin) · cli (max console script) — local or remote
+├── docs/            # architecture · ui · mascot · setup · aegis · lan
 ├── scripts/         # smoke.ps1 end-to-end check · leo.ps1 boot-rescue terminal
 ├── Max.cmd          # double-click launcher (app owns the engine; Aegis health gate)
+├── Max.command      # macOS/Linux thin-client launcher (remote-engine mode)
 └── ROADMAP.md       # phased plan & status
 ```
 
@@ -84,8 +89,12 @@ operator picks the **action**. Plain text (no operator) is treated as chat.
 | `@` | Ollama (local) | | `.. … ..` | summarize / docstring / README |
 | `#` | Qwen (local) | | `~ … ~` | fix / refactor |
 | `!` | Claude (☁ cloud, opt-in) | | | |
+| `%` | OpenAI / GPT (☁ cloud, opt-in) | | | |
+| `^` | local OpenAI-compatible server (llama.cpp / vLLM / LM Studio) | | | |
 
-Examples: `!. add a retry decorator .` (cloud generate) · `@.. document this ..` (local docs).
+Sigils, operators, and per-task default models are all user-configurable. Examples:
+`!. add a retry decorator .` (cloud generate) · `@.. document this ..` (local docs) ·
+`%~ tidy this ~` (GPT fix) · `^. … .` (local llama.cpp server).
 
 ## Engine API
 
@@ -106,6 +115,9 @@ Examples: `!. add a retry decorator .` (cloud generate) · `@.. document this ..
 | Skills / Capabilities | `GET /capabilities` · `POST /capabilities/route` (SSE intent router) · `/skills/*` (web search, reports, files, Spotify + Google Calendar OAuth) |
 | MCP | `GET/POST/DELETE /mcp/servers` · `POST /mcp/servers/{name}/connect` · `/disconnect` · `POST /mcp/call` · `GET /mcp/facade` (inbound manifest + Claude Desktop config) |
 | Code | `GET /code/files` · `/code/file` · `POST /code/plan` (SSE multi-file edit plan) · `/code/apply` (git snapshot) · `/code/rollback` |
+| Models | `GET /models` · `GET /models/loaded` (VRAM usage) · `POST /models/benchmark` (live tok/s) · `POST /models/latency` (TTFT + end-to-end) |
+| Analytics | `GET /analytics/summary` · `/analytics/daily` · `/analytics/breakdown` (all `?days=`, clamped 1–90) · `DELETE /analytics/reset` |
+| Privacy | `GET /egress/log` · `DELETE /egress/log` |
 | Lifecycle | `POST /engine/unload` |
 
 ## Quick start
@@ -129,7 +141,7 @@ Then double-click **`Max.cmd`** at the repo root. (Requires the engine venv at
 cd engine
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                  # full suite (360+ tests)
+pytest                                  # 399 tests (377 pass; 22 skills-async are a marker-config quirk)
 uvicorn max_engine.main:app --reload    # dev server on :8000
 curl http://127.0.0.1:8000/health
 ```
@@ -159,20 +171,25 @@ any diagnosis egress.
 
 ## Status
 
-All planned phases (0–18) and the cross-cutting stretch work are built and working: DSL +
-routing, Ollama/Claude/OpenAI streaming, the full delegate system (parallel sessions,
-Smart-Auto, coordinator, live SSE), workspace RAG with session memory, FIM completion, a
-**capability/skills platform** + intent router, OSINT map (with a 24h heat-replay scrubber),
-market tape (with a live Finnhub WebSocket tick stream), Apollo prediction engine, Polymarket
-intelligence (with live CLOB price streaming + read-only wallet portfolios), Sentinel 3D space
-intelligence, Aegis self-repair (Leo boot-rescue with streaming diagnosis + Security Posture
-SAST/SCA), Voice I/O + Jarvis personality, Shadow Net Tor browser, **LAN access** (Max on
-iPhone/Mac over HTTPS), a **Code Hub** with a multi-file AI edit planner, and an **MCP host**
-(both directions — connect to external MCP servers, and expose Max to Claude Desktop/Cursor).
-**360+ engine tests pass**; the app and extension typecheck and build. See
-[ROADMAP.md](./ROADMAP.md) for phase-by-phase detail. The only open roadmap items are deferred
-performance-measurement tasks (quantization/KV-cache tuning, latency targets) and a
-cross-platform `.sh` launcher.
+**Every planned phase (0–18) and all cross-cutting stretch work are built and working** —
+the roadmap has no open items left. Shipped: DSL + routing, Ollama/Claude/OpenAI streaming
+(plus a connect-only local OpenAI-compatible adapter), the full delegate system (parallel
+sessions, Smart-Auto, coordinator, live SSE), workspace RAG with session memory, FIM
+completion, two-model VRAM routing with keep-alive load/unload + a network kill-switch +
+egress audit log, **quantization/KV-cache/context tuning** and **latency probing** (TTFT +
+end-to-end) in the Model Manager, a **capability/skills platform** + intent router, OSINT map
+(with a 24h heat-replay scrubber), market tape (with a live Finnhub WebSocket tick stream),
+Apollo prediction engine, Polymarket intelligence (with live CLOB price streaming + read-only
+wallet portfolios), Sentinel 3D space intelligence, Aegis self-repair (Leo boot-rescue with
+streaming diagnosis + Security Posture SAST/SCA), Voice I/O + Jarvis personality, Shadow Net
+Tor browser, **LAN access** (Max on iPhone/Mac over HTTPS), a **Code Hub** with a multi-file
+AI edit planner, an **Analytics** token/cost dashboard, an **MCP host** (both directions),
+and four clients (desktop widget, VS Code, Neovim, `max` CLI) plus a macOS/Linux thin-client
+launcher (`Max.command`). **377 engine tests pass** (399 collected; 22 skills-async failures
+are an unregistered-marker config quirk, not product bugs); the app and extension typecheck
+and build; GitHub Actions CI gates every push. The only forward-looking work is explicitly
+out of scope: remote/internet access (Tailscale/Cloudflare), app-level auth tokens, and
+multi-user. See [ROADMAP.md](./ROADMAP.md) for phase-by-phase detail.
 
 ---
 

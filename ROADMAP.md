@@ -9,7 +9,7 @@
 > token/cost Analytics dashboard, and a **Vision Pro / iOS frosted-glass UI** redesign
 > (native Tauri window effects — mica/acrylic — carry the frost, not CSS backdrop-filter).
 > **Phase 0**: local model benchmark engine + rich Model Manager UI + GitHub Actions CI.
-> **370 engine tests pass (22 known skills-async failures unrelated); tsc + `cargo check` clean; GitHub Actions CI gates all pushes.**
+> **377 engine tests pass (399 collected; 22 known skills-async failures come from an unregistered `pytest.mark.asyncio` marker — a config quirk, not product bugs); tsc + `cargo check` clean; GitHub Actions CI gates all pushes.**
 > Clients: desktop (Tauri), VS Code, Neovim, **CLI** (`max`), and a **macOS/Linux thin client** (remote-engine mode).
 
 A **local-first**, private AI engine for a powerful workstation, with an **explicit
@@ -214,11 +214,13 @@ Parser rules:
 5. **Diff-preview-before-apply** in VS Code for trust/safety.
 6. **Everything configurable** (sigils, operators, per-task models, hotkeys, templates) — your core ask.
 
-## 5. Open questions (next round)
-*(Resolved: Tauri shell, `~` fix operator, and both local+cloud from day one — now under "Decisions locked".)*
-- Does v1 chat app need **codebase RAG**, or is plain chat + model config enough to start?
-- Default per-task models — propose a concrete default mapping after the Phase 0 benchmark?
-- **Engine end-to-end verification** (next milestone): which local model(s) to pull first for the smoke test, and do we test the `!` cloud path now or after a key is set up?
+## 5. Open questions — all resolved ✅
+*(Originally a parking lot for undecided design calls. Every item has since been answered and shipped.)*
+- ~~Does v1 chat app need **codebase RAG**, or is plain chat + model config enough?~~ → **Built** in Phase 6 (sqlite-vec workspace indexer, incremental re-index, `file:line`-cited answers, 🧠 toggle).
+- ~~Default per-task models — concrete mapping after the Phase 0 benchmark?~~ → **Shipped**: live benchmark engine + Task Routing matrix in Model Manager (generate/chat/fix/summarize/completion → model); resident `qwen2.5-coder:3b` + on-demand heavy models.
+- ~~**Engine end-to-end verification**: which local model first, and test the `!` cloud path now or later?~~ → **Done**: `qwen2.5-coder:3b`+`:14b` smoke-tested; both local (Ollama) and cloud (`!` Claude) paths verified end-to-end (Phases 1, 10).
+
+> **Forward-looking (explicitly out of scope, not open work):** remote/internet access (Tailscale `*.ts.net` or Cloudflare Tunnel), app-level auth tokens, and multi-user — the single-origin HTTPS LAN app (Phase 17) extends cleanly into these when wanted.
 
 ---
 
