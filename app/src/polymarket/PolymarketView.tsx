@@ -10,6 +10,7 @@ import {
   getOrderBook,
   getPortfolio,
   getPriceHistory,
+  getScores,
   getWatchlistMarkets,
   setWatchlist,
   streamChat,
@@ -21,6 +22,7 @@ import {
   type OrderBook,
   type PolyMarket,
   type PolyPortfolio,
+  type PolyScore,
   type PricePoint,
 } from "./polymarket";
 import { PriceChart } from "./PriceChart";
@@ -50,54 +52,79 @@ function probColor(name: string): string {
   return "other";
 }
 
-// ── mini market card ──────────────────────────────────────────────────────────
-function MarketCard({
+// ── Polymarket-style trending card (grid) ─────────────────────────────────────
+function TrendingCard({
   market,
-  selected,
+  score,
   pinned,
   onSelect,
   onTogglePin,
 }: {
   market: PolyMarket;
-  selected: boolean;
+  score?: PolyScore;
   pinned: boolean;
   onSelect: () => void;
   onTogglePin: (e: React.MouseEvent) => void;
 }) {
-  const yesPct = (market.yesPrice * 100).toFixed(0);
+  // Tradeable rows: for a binary (Yes/No) market we show the single YES line; for
+  // a categorical market we show its top outcomes. Each row carries Yes/No
+  // buttons (informational — opens the market detail; we don't place trades).
+  const binary = market.outcomes.length <= 2;
+  const rows = binary
+    ? [{ name: "Yes", price: market.yesPrice }]
+    : [...market.outcomes].sort((a, b) => b.price - a.price).slice(0, 4);
 
   return (
-    <div
-      className={`poly__card${selected ? " is-selected" : ""}`}
-      onClick={onSelect}
-    >
-      <button
-        className={`poly__star${pinned ? " is-pinned" : ""}`}
-        onClick={onTogglePin}
-        title={pinned ? "Unpin" : "Pin to watchlist"}
-      >
-        {pinned ? "★" : "☆"}
-      </button>
-      {market.category && <div className="poly__card-cat">{market.category}</div>}
-      <div className="poly__card-question">{market.question}</div>
-      <div className="poly__card-gauge-row">
-        <span className="poly__gauge-label poly__gauge-label--yes">{yesPct}%</span>
-        <div className="poly__gauge-track">
-          <div
-            className="poly__gauge-fill"
-            style={{ width: `${yesPct}%` }}
-          />
+    <div className="poly__tcard" onClick={onSelect}>
+      <div className="poly__tcard-head">
+        {market.image
+          ? <img className="poly__tcard-img" src={market.image} alt="" loading="lazy" />
+          : <div className="poly__tcard-img poly__tcard-img--ph">{(market.category || "?").charAt(0)}</div>}
+        <div className="poly__tcard-q">{market.question}</div>
+        <button
+          className={`poly__star${pinned ? " is-pinned" : ""}`}
+          onClick={onTogglePin}
+          title={pinned ? "Unpin" : "Pin to watchlist"}
+        >
+          {pinned ? "★" : "☆"}
+        </button>
+      </div>
+
+      <div className="poly__tcard-rows">
+        {rows.map((o) => {
+          const pct = Math.round(o.price * 100);
+          return (
+            <div className="poly__orow" key={o.name}>
+              <span className="poly__orow-name" title={o.name}>{o.name}</span>
+              <span className="poly__orow-pct">{pct}%</span>
+              <span className="poly__orow-btns">
+                <button className="poly__ybtn" onClick={(e) => { e.stopPropagation(); onSelect(); }}>Yes</button>
+                <button className="poly__nbtn" onClick={(e) => { e.stopPropagation(); onSelect(); }}>No</button>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="poly__tcard-foot">
+        <div className="poly__tcard-foot-l">
+          {score && <span className={`poly__ai-badge poly__ai-badge--${score.score >= 66 ? "hi" : score.score >= 33 ? "mid" : "lo"}`}>AI {score.score}</span>}
+          {score?.trending && <span className="poly__trend">🔥 Trending</span>}
         </div>
-        <span className="poly__gauge-label poly__gauge-label--no">{(100 - Number(yesPct))}%</span>
+        <div className="poly__tcard-foot-r">
+          {market.volume24hr > 0 && <span className="poly__tcard-vol">{fmtVol(market.volume24hr)} Vol</span>}
+          {market.endDate && <span className="poly__tcard-end">{fmtDate(market.endDate)}</span>}
+        </div>
       </div>
-      <div className="poly__card-meta">
-        {market.volume24hr > 0 && (
-          <span className="poly__card-vol">Vol {fmtVol(market.volume24hr)}</span>
-        )}
-        {market.endDate && (
-          <span className="poly__card-end">Ends {fmtDate(market.endDate)}</span>
-        )}
-      </div>
+
+      {score && (
+        <div className="poly__tcard-ai" title={score.note || "Apollo estimate"}>
+          <span className="poly__tcard-prob">Apollo {Math.round(score.prob * 100)}%</span>
+          <span className={`poly__edge poly__edge--${score.edge > 0 ? "pos" : score.edge < 0 ? "neg" : "flat"}`}>
+            {score.edge > 0 ? "+" : ""}{score.edge}% edge
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -533,6 +560,7 @@ function PortfolioPanel() {
 export function PolymarketView() {
   const [category, setCategory] = useState<Category>("All");
   const [markets, setMarkets] = useState<PolyMarket[]>([]);
+  const [scores, setScores] = useState<Record<string, PolyScore>>({});
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<PolyMarket | null>(null);
   const [watchlist, setWatchlistState] = useState<string[]>([]);
@@ -587,6 +615,13 @@ export function PolymarketView() {
     const id = setInterval(() => void loadMarkets(category), 120_000);
     return () => clearInterval(id);
   }, [category, loadMarkets]);
+
+  // Apollo board scores (cached engine-side ~10 min). Fetch on mount + every 5 min.
+  useEffect(() => {
+    void getScores().then(setScores);
+    const id = setInterval(() => void getScores().then(setScores), 300_000);
+    return () => clearInterval(id);
+  }, []);
 
   // load chart + order book when selection changes
   useEffect(() => {
@@ -698,48 +733,29 @@ export function PolymarketView() {
       </div>
 
       <div className="poly__body">
-        {/* market list */}
-        <div className="poly__list">
+        {/* trending grid */}
+        <div className="poly__main">
           {loading ? (
             <div className="poly__loading">Loading markets…</div>
           ) : markets.length === 0 ? (
             <div className="poly__empty">No markets found</div>
           ) : (
-            markets.map((m) => (
-              <MarketCard
-                key={m.conditionId}
-                market={m}
-                selected={selected?.conditionId === m.conditionId}
-                pinned={watchlist.includes(m.conditionId)}
-                onSelect={() => setSelected(m)}
-                onTogglePin={(e) => void togglePin(m, e)}
-              />
-            ))
+            <div className="poly__grid">
+              {markets.map((m) => (
+                <TrendingCard
+                  key={m.conditionId}
+                  market={m}
+                  score={scores[m.conditionId]}
+                  pinned={watchlist.includes(m.conditionId)}
+                  onSelect={() => setSelected(m)}
+                  onTogglePin={(e) => void togglePin(m, e)}
+                />
+              ))}
+            </div>
           )}
         </div>
 
-        {/* detail panel */}
-        {selected ? (
-          <DetailPanel
-            market={selected}
-            history={history}
-            chartLoading={chartLoading}
-            bookLoading={bookLoading}
-            interval={interval}
-            onInterval={setIntervalState}
-            book={book}
-            livePrice={liveYes}
-            streaming={streaming}
-          />
-        ) : (
-          <div className="poly__detail">
-            <div className="poly__detail-placeholder">
-              Select a market to see details
-            </div>
-          </div>
-        )}
-
-        {/* AI panel */}
+        {/* AI panel (board-level Ingest + Chat) */}
         <div className="poly__ai">
           <div className="poly__ai-tabs">
             <button
@@ -760,6 +776,26 @@ export function PolymarketView() {
           </div>
         </div>
       </div>
+
+      {/* market detail modal */}
+      {selected && (
+        <div className="poly__modal-overlay" onClick={() => setSelected(null)}>
+          <div className="poly__modal" onClick={(e) => e.stopPropagation()}>
+            <button className="poly__modal-close" onClick={() => setSelected(null)} title="Close">×</button>
+            <DetailPanel
+              market={selected}
+              history={history}
+              chartLoading={chartLoading}
+              bookLoading={bookLoading}
+              interval={interval}
+              onInterval={setIntervalState}
+              book={book}
+              livePrice={liveYes}
+              streaming={streaming}
+            />
+          </div>
+        </div>
+      )}
       </>
       )}
     </div>

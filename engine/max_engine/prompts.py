@@ -304,6 +304,26 @@ def polymarket_chat_messages(board_json: str, history: list[dict]) -> list[dict]
     return [{"role": "system", "content": system}, *history]
 
 
+def polymarket_score_messages(markets_json: str) -> list[dict]:
+    """Ask Apollo to score every market on the board in one batched call. The
+    model must return a strict JSON array (parsed back in main.py) — no prose."""
+    system = (
+        "You are Apollo, MAX's prediction engine. For EACH prediction market below, "
+        "independently estimate the probability (0.0–1.0) that its YES outcome resolves "
+        "true, using your knowledge of current events — this is YOUR estimate, not the "
+        "market's price. Then rate your conviction 0–100 (how confident you are given the "
+        "information available).\n\n"
+        "Return ONLY a compact JSON array — no prose, no markdown, no code fences. "
+        "Each element must be exactly:\n"
+        '{"id":"<conditionId>","prob":<0..1>,"score":<0..100>,"note":"<max 12 words>"}\n'
+        "Include every market id exactly once."
+    )
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": "Markets (JSON):\n" + markets_json},
+    ]
+
+
 def market_chat_messages(board_json: str, history: list[dict]) -> list[dict]:
     """System prompt (with the live board snapshot folded in) + prior turns."""
     system = (

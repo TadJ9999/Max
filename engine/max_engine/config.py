@@ -248,8 +248,9 @@ class ApolloConfig(BaseModel):
 
     db_path: str = str(Path(__file__).resolve().parent.parent / ".apollo.db")
     embed_model: str = "nomic-embed-text"
-    ttl_seconds: int = 86_400  # 24h auto-purge
+    ttl_seconds: int = 2_592_000  # 30d auto-purge — the app-level knowledge base window
     retrieve_k: int = 6
+    ingest_interval_seconds: int = 1_800  # background KB refresh cadence (news + market)
 
 
 class RagConfig(BaseModel):
@@ -424,6 +425,8 @@ def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
         cfg.apollo.ttl_seconds = max(3600, int(ap["ttl_seconds"]))
     if "retrieve_k" in ap:
         cfg.apollo.retrieve_k = max(1, int(ap["retrieve_k"]))
+    if "ingest_interval_seconds" in ap:
+        cfg.apollo.ingest_interval_seconds = max(300, int(ap["ingest_interval_seconds"]))
     pers = data.get("personality") or {}
     if "persona" in pers:
         cfg.personality.persona = str(pers["persona"])
@@ -584,6 +587,7 @@ def save_overrides(cfg: EngineConfig) -> None:
             "embed_model": cfg.apollo.embed_model,
             "ttl_seconds": cfg.apollo.ttl_seconds,
             "retrieve_k": cfg.apollo.retrieve_k,
+            "ingest_interval_seconds": cfg.apollo.ingest_interval_seconds,
         },
         "personality": {
             "persona": cfg.personality.persona,

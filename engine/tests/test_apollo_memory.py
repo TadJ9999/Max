@@ -131,3 +131,42 @@ def test_retrieve_for_prediction_recalls(svc):
     mem = asyncio.run(svc.retrieve_for_prediction(combined))
     assert len(mem) == 1
     assert "ageHours" in mem[0] and "distance" in mem[0]
+
+
+def test_ingest_all_articles_indexes_every_article(svc):
+    # ingest_all_articles embeds *all* articles (not just severity>=2 criticals).
+    n = asyncio.run(svc.ingest_all_articles())
+    assert n == 1
+    assert svc.memory_stats()["byKind"].get("osint") == 1
+
+
+def test_recall_is_question_driven(svc):
+    asyncio.run(svc.ingest_all_articles())
+    hits = asyncio.run(svc.recall("what is happening in Ukraine?"))
+    assert hits and hits[0]["title"] == "War escalates"
+    assert "ageHours" in hits[0] and "kind" in hits[0]
+
+
+def test_recall_kind_filter(svc):
+    asyncio.run(svc.ingest_all_articles())
+    # No market memories yet → filtering to market returns nothing.
+    assert asyncio.run(svc.recall("anything", kinds=["market"])) == []
+    assert asyncio.run(svc.recall("anything", kinds=["osint"]))
+
+
+def test_ingest_report_and_recall(svc):
+    n = asyncio.run(svc.ingest_report("report", "apollo:predict:2026-06-01", "Daily brief", "Body text"))
+    assert n == 1
+    hits = asyncio.run(svc.recall("daily brief"))
+    assert any(h["kind"] == "report" for h in hits)
+
+
+def test_recall_block_formats_and_empty():
+    from max_engine.apollo.service import format_memories
+
+    assert format_memories([]) == ""
+    block = format_memories([
+        {"kind": "osint", "title": "Pence remarks", "body": "details", "ageHours": 3.0},
+    ])
+    assert "RELEVANT INDEXED KNOWLEDGE" in block
+    assert "[NEWS" in block and "Pence remarks" in block

@@ -14,8 +14,69 @@ const PLANET_SIZE: Record<string, number> = {
   Jupiter: 0.11, Saturn: 0.095, Uranus: 0.07, Neptune: 0.07,
 };
 const SPEEDS = [0, 1, 7, 30, 120]; // days per second
+const _UP = new THREE.Vector3(0, 1, 0); // comet local axis the tail extends along
 
 interface Sel { kind: "planet" | "neo"; name: string; data?: Neo; }
+
+// Derive a display type from orbital eccentricity — comets ride highly
+// eccentric orbits (e≳0.8); everything else we render as a rocky asteroid.
+type NeoKind = "comet" | "asteroid";
+function neoKind(n: Neo): NeoKind {
+  return (n.orbit?.e ?? 0) > 0.8 ? "comet" : "asteroid";
+}
+
+// Scene size from physical diameter (log-scaled so a 20 km comet doesn't dwarf a
+// 50 m rock), nudged up for hazardous objects so they read at a glance.
+function neoRadius(n: Neo): number {
+  const d = n.diameter_max_m ?? 150;
+  const r = 0.02 + Math.log10(Math.max(10, d)) * 0.009;
+  return Math.min(0.075, r) * (n.hazardous ? 1.25 : 1);
+}
+
+// A real 3D body per type: an irregular faceted rock for asteroids; an icy
+// nucleus + additive coma + tail for comets (the tail is oriented away from the
+// Sun each frame by the caller). `comet` groups carry userData.tail = true.
+function makeNeoMesh(n: Neo, glow: THREE.Texture): THREE.Object3D {
+  const r = neoRadius(n);
+  const hazard = n.hazardous;
+  if (neoKind(n) === "comet") {
+    const col = hazard ? 0xff6b8a : 0x9fe8ff;
+    const grp = new THREE.Group();
+    const nucleus = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(r * 0.7, 0),
+      new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.5, flatShading: true, roughness: 0.7 }),
+    );
+    grp.add(nucleus);
+    const coma = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: col, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
+    coma.scale.setScalar(r * 5);
+    grp.add(coma);
+    // Tail built along +Y from the nucleus; group is rotated so +Y faces away
+    // from the Sun. Cone (wide end out) gives the classic flared dust tail.
+    const len = r * 14;
+    const tail = new THREE.Mesh(
+      new THREE.ConeGeometry(r * 2.2, len, 14, 1, true),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }),
+    );
+    tail.position.y = len / 2;          // base at nucleus, apex pointing +Y outward
+    tail.rotation.x = Math.PI;          // flare the wide end away from the Sun
+    grp.add(tail);
+    grp.userData = { tail: true };
+    return grp;
+  }
+  // asteroid — jitter an icosahedron's vertices for an irregular rocky silhouette
+  const col = hazard ? 0xff4d6d : 0xc9a06a;
+  const geo = new THREE.IcosahedronGeometry(r, 1);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const f = 0.78 + Math.random() * 0.44;
+    pos.setXYZ(i, pos.getX(i) * f, pos.getY(i) * f, pos.getZ(i) * f);
+  }
+  geo.computeVertexNormals();
+  return new THREE.Mesh(
+    geo,
+    new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.22, flatShading: true, roughness: 0.95, metalness: 0.1 }),
+  );
+}
 
 export function SolarView({ neos }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -23,7 +84,7 @@ export function SolarView({ neos }: Props) {
 
   const handles2 = useRef<ThreeHandles | null>(null);
   const planetMeshes = useRef<{ mesh: THREE.Mesh; idx: number }[]>([]);
-  const neoMarkers = useRef<{ mesh: THREE.Mesh; orbit: Neo }[]>([]);
+  const neoMarkers = useRef<{ obj: THREE.Object3D; orbit: Neo; comet: boolean }[]>([]);
   const neoGroupRef = useRef<THREE.Group | null>(null);
 
   const simDateRef = useRef(Date.now());
@@ -50,6 +111,13 @@ export function SolarView({ neos }: Props) {
       const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xffd166, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
       sunGlow.scale.setScalar(0.9);
       h.scene.add(sunGlow);
+
+      // Lighting for the shaded NEO meshes (planets use unlit MeshBasic, so they
+      // are unaffected). Sunlight radiates from the origin with no falloff so
+      // distant objects stay lit; ambient keeps the dark side from going black.
+      h.scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+      const sunLight = new THREE.PointLight(0xfff2d6, 2.4, 0, 0);
+      h.scene.add(sunLight);
 
       // stars
       const starPos: number[] = [];
@@ -97,10 +165,14 @@ export function SolarView({ neos }: Props) {
       if (playingRef.current) simDateRef.current += dt * speedRef.current * 86400000;
       const jd = dateToJD(new Date(simDateRef.current));
       planetMeshes.current.forEach(({ mesh, idx }) => mesh.position.set(...toScene(planetPosition(PLANETS[idx], jd))));
-      neoMarkers.current.forEach(({ mesh, orbit }) => {
+      neoMarkers.current.forEach(({ obj, orbit, comet }) => {
         if (!orbit.orbit) return;
         const v = neoPosition(orbit.orbit, jd);
-        if (v) mesh.position.set(...toScene(v));
+        if (!v) return;
+        obj.position.set(...toScene(v));
+        // Comet tail always points radially away from the Sun (origin): rotate the
+        // group's local +Y axis to the outward direction.
+        if (comet) obj.quaternion.setFromUnitVectors(_UP, obj.position.clone().normalize());
       });
     });
     return un;
@@ -126,12 +198,16 @@ export function SolarView({ neos }: Props) {
         const og = new THREE.BufferGeometry().setFromPoints(pts.map((v) => new THREE.Vector3(...toScene(v))));
         grp.add(new THREE.Line(og, new THREE.LineBasicMaterial({ color: n.hazardous ? 0xff4d6d : 0x6fe3c8, transparent: true, opacity: n.hazardous ? 0.7 : 0.4 })));
       }
-      const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(n.hazardous ? 0.05 : 0.035, 0), new THREE.MeshBasicMaterial({ color: n.hazardous ? 0xff4d6d : 0xffd166 }));
+      const comet = neoKind(n) === "comet";
+      const obj = makeNeoMesh(n, glow);
       const v = neoPosition(n.orbit!, jd);
-      if (v) mesh.position.set(...toScene(v));
-      mesh.userData = { kind: "neo", name: n.name };
-      grp.add(mesh);
-      neoMarkers.current.push({ mesh, orbit: n });
+      if (v) {
+        obj.position.set(...toScene(v));
+        if (comet) obj.quaternion.setFromUnitVectors(_UP, obj.position.clone().normalize());
+      }
+      obj.userData = { ...obj.userData, kind: "neo", name: n.name };
+      grp.add(obj);
+      neoMarkers.current.push({ obj, orbit: n, comet });
     });
   }, [neos]);
 
@@ -146,12 +222,18 @@ export function SolarView({ neos }: Props) {
       const ndc = new THREE.Vector2(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1);
       const ray = new THREE.Raycaster();
       ray.setFromCamera(ndc, h.camera);
-      const targets = [...planetMeshes.current.map((p) => p.mesh), ...neoMarkers.current.map((n) => n.mesh)];
-      const hits = ray.intersectObjects(targets);
+      const targets = [...planetMeshes.current.map((p) => p.mesh), ...neoMarkers.current.map((n) => n.obj)];
+      const hits = ray.intersectObjects(targets, true); // recursive: comets are groups
       if (hits.length) {
-        const ud = hits[0].object.userData as { kind: "planet" | "neo"; name: string };
-        const neo = ud.kind === "neo" ? neos.find((n) => n.name === ud.name) : undefined;
-        setSelected({ kind: ud.kind, name: ud.name, data: neo });
+        // Walk up to the marker that carries the {kind,name} userData (a comet
+        // group's nucleus/tail children have none of their own).
+        let o: THREE.Object3D | null = hits[0].object;
+        while (o && !(o.userData && o.userData.kind)) o = o.parent;
+        const ud = (o?.userData ?? {}) as { kind?: "planet" | "neo"; name?: string };
+        if (ud.kind) {
+          const neo = ud.kind === "neo" ? neos.find((n) => n.name === ud.name) : undefined;
+          setSelected({ kind: ud.kind, name: ud.name!, data: neo });
+        } else setSelected(null);
       } else setSelected(null);
     };
     el.addEventListener("click", onClick);
@@ -169,7 +251,7 @@ export function SolarView({ neos }: Props) {
 
       <div className="sen-controls">
         <div className="sen-legend">☀ Heliocentric · {neos.filter((n) => n.orbit).length} NEO orbits</div>
-        <div className="sen-legend-row"><span className="sen-dot hazard" /> hazardous <span className="sen-dot neo" /> near-Earth</div>
+        <div className="sen-legend-row"><span className="sen-dot hazard" /> hazardous <span className="sen-dot neo" /> asteroid · comet (tail)</div>
       </div>
 
       <div className="sen-time">
@@ -196,7 +278,7 @@ export function SolarView({ neos }: Props) {
             </>
           ) : selected.data ? (
             <>
-              <div className={`sen-detail-kind ${selected.data.hazardous ? "hazard" : ""}`}>{selected.data.hazardous ? "⚠ HAZARDOUS NEO" : "NEAR-EARTH OBJECT"}</div>
+              <div className={`sen-detail-kind ${selected.data.hazardous ? "hazard" : ""}`}>{(selected.data.hazardous ? "⚠ HAZARDOUS " : "NEAR-EARTH ") + neoKind(selected.data).toUpperCase()}</div>
               <h3>{selected.data.name}</h3>
               <div className="sen-drow"><span>Diameter</span><span>{selected.data.diameter_min_m}–{selected.data.diameter_max_m} m</span></div>
               <div className="sen-drow"><span>Miss distance</span><span>{selected.data.miss_lunar} LD</span></div>

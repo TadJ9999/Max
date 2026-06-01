@@ -1,9 +1,10 @@
-"""Apollo vector memory — a local sqlite-vec store with a 24h TTL.
+"""Apollo vector memory — a local sqlite-vec store, the app-level knowledge base.
 
-A single ``vec0`` virtual table holds embedded high-signal news + market snapshots.
-Everything is local (one ``.apollo.db`` file); nothing leaves the machine. The
-store is the engine's short-term memory: Ingest writes to it, predictions read
-from it, and anything older than the TTL is purged each cycle.
+A single ``vec0`` virtual table holds embedded news, market snapshots, and prior
+reports. Everything is local (one ``.apollo.db`` file); nothing leaves the
+machine. The store is the engine's memory: ingest writes to it, every AI chat
+recalls from it by question, and anything older than the TTL (default 30 days) is
+purged each cycle.
 
 Synchronous SQLite under a lock (the connection is shared with
 ``check_same_thread=False``); callers run these from a thread via

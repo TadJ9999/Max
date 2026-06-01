@@ -25,6 +25,44 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_KIND_LABEL = {
+    "osint": "NEWS",
+    "market": "MARKET",
+    "report": "PRIOR REPORT",
+    "prediction": "PRIOR PREDICTION",
+}
+
+
+def _age_label(hours: float | None) -> str:
+    if hours is None:
+        return ""
+    if hours < 1:
+        return " (just now)"
+    if hours < 48:
+        return f" ({round(hours)}h ago)"
+    return f" ({round(hours / 24)}d ago)"
+
+
+def format_memories(hits: list[dict]) -> str:
+    """Render recalled memories as a prompt-ready context block. Empty when no
+    hits, so callers can simply skip the section."""
+    if not hits:
+        return ""
+    lines = [
+        "RELEVANT INDEXED KNOWLEDGE (semantic recall across the last 30 days of "
+        "news, market data, and prior reports — most relevant first):",
+    ]
+    for h in hits:
+        tag = _KIND_LABEL.get(h.get("kind", ""), (h.get("kind") or "").upper() or "ITEM")
+        title = (h.get("title") or "").strip()
+        body = (h.get("body") or "").strip()
+        line = f"• [{tag}{_age_label(h.get('ageHours'))}] {title}"
+        if body and body.lower() != title.lower():
+            line += f" — {body}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 class ApolloService:
     def __init__(
         self,
@@ -134,6 +172,65 @@ class ApolloService:
         await self._purge()
         return written
 
+    async def ingest_all_articles(self, *, limit: int = 250) -> int:
+        """Embed **every** indexed article (not just criticals) into the knowledge
+        base, deduped by URL. This is what makes the AI actually *know* the news it
+        has seen — a low-severity political story is just as recallable as a war
+        headline. Cheap to re-run: same-URL rows are replaced, not duplicated."""
+        if not self._store:
+            return 0
+        articles = await self._osint.get_articles(limit=limit)
+        rows = [a for a in articles if getattr(a, "url", None)]
+        docs = [
+            f"{a.title} — {a.country or 'global'}. {a.summary or ''}".strip()
+            for a in rows
+        ]
+        embs = await self._embed(docs)
+        if not embs:
+            await self._purge()
+            return 0
+        now = int(time.time())
+        items = [
+            {
+                "kind": "osint",
+                "ref": a.url,
+                "ts": int(a.published.timestamp()) if getattr(a, "published", None) else now,
+                "title": a.title,
+                "body": doc,
+                "meta": {"country": a.country, "severity": a.severity, "domain": a.domain},
+                "embedding": emb,
+            }
+            for a, doc, emb in zip(rows, docs, embs, strict=False)
+        ]
+        written = await asyncio.to_thread(self._store.upsert, items)
+        await self._purge()
+        return written
+
+    async def ingest_report(self, kind: str, ref: str, title: str, text: str) -> int:
+        """Embed a generated report/prediction so the AI can recall its own prior
+        analysis later. ``kind`` is e.g. 'report' or 'prediction'; ``ref`` dedupes
+        (a stable id like 'apollo:predict:2026-06-01')."""
+        if not self._store or not (text and text.strip()):
+            return 0
+        # Embed title + a leading slice; the body we store is longer for context.
+        doc = f"{title}\n\n{text}".strip()
+        embs = await self._embed([doc[:2000]])
+        if not embs:
+            await self._purge()
+            return 0
+        items = [{
+            "kind": kind,
+            "ref": ref,
+            "ts": int(time.time()),
+            "title": title,
+            "body": text[:4000],
+            "meta": {},
+            "embedding": embs[0],
+        }]
+        written = await asyncio.to_thread(self._store.upsert, items)
+        await self._purge()
+        return written
+
     async def ingest_market(self, payload: dict) -> int:
         """Embed a market-snapshot summary + headlines and write them to memory."""
         if not self._store:
@@ -200,6 +297,54 @@ class ApolloService:
             }
             for r in rows
         ]
+
+    async def recall(
+        self, query: str, *, k: int | None = None, kinds: list[str] | None = None
+    ) -> list[dict]:
+        """Question-driven semantic recall over the whole knowledge base.
+
+        Embeds the user's *actual question* and returns the nearest memories
+        (news, market snapshots, prior reports) within the retention window. This
+        is the path that lets any AI chat answer "did X say Y?" from indexed news
+        rather than guessing. Best-effort: returns ``[]`` if embeddings/store are
+        unavailable. When ``kinds`` is given, results are unioned across those
+        kinds (the store filters one kind per query)."""
+        if not self._store or not (query and query.strip()):
+            return []
+        embs = await self._embed([query])
+        if not embs:
+            return []
+        k = k or self._k
+        qv = embs[0]
+        if kinds:
+            rows: list[dict] = []
+            for kind in kinds:
+                rows.extend(
+                    await asyncio.to_thread(self._store.search, qv, k=k, kind=kind)
+                )
+            rows.sort(key=lambda r: r["distance"])
+            rows = rows[:k]
+        else:
+            rows = await asyncio.to_thread(self._store.search, qv, k=k)
+        out: list[dict] = []
+        for r in rows:
+            out.append({
+                "kind": r["kind"],
+                "title": r["title"],
+                "body": (r["body"] or "")[:400],
+                "ref": r.get("ref"),
+                "ageHours": round((time.time() - r["ts"]) / 3600, 1) if r.get("ts") else None,
+                "distance": r["distance"],
+            })
+        return out
+
+    async def recall_block(
+        self, query: str, *, k: int | None = None, kinds: list[str] | None = None
+    ) -> str:
+        """Recall + format as a prompt-ready context block. Empty string when
+        nothing relevant is in the knowledge base."""
+        hits = await self.recall(query, k=k, kinds=kinds)
+        return format_memories(hits)
 
     def memory_stats(self) -> dict:
         if not self._store:

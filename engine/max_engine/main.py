@@ -69,6 +69,7 @@ from .prompts import (
     market_chat_messages,
     messages_for,
     polymarket_chat_messages,
+    polymarket_score_messages,
     rag_messages,
     sentinel_chat_messages,
 )
@@ -317,9 +318,25 @@ async def _startup() -> None:
         except Exception:
             pass
 
+    async def _knowledge_ingest() -> None:
+        """Keep the app-level knowledge base populated so any AI chat is "knowing"
+        without a manual report run. Periodically embeds all indexed news + the
+        market snapshot into the 30-day store. Best-effort: a failed cycle (Ollama
+        down, no network) is swallowed and retried next interval."""
+        # Small initial delay so the first feed pull / Ollama warmup can settle.
+        await asyncio.sleep(20)
+        while True:
+            try:
+                await apollo.ingest_all_articles()
+                await apollo.ingest_market(await apollo.market_payload())
+            except Exception:
+                pass
+            await asyncio.sleep(max(300, config.apollo.ingest_interval_seconds))
+
     asyncio.create_task(_scan_scheduler())
     asyncio.create_task(_config_hot_reload())
     asyncio.create_task(_warmup_resident())
+    asyncio.create_task(_knowledge_ingest())
 
 
 @app.get("/health")
@@ -1402,6 +1419,18 @@ async def osint_naval_endpoint() -> dict:
     return await naval.get()
 
 
+def _last_user_text(messages: list) -> str:
+    """The most recent user turn's text — what we embed to recall relevant
+    knowledge for this question. Accepts ChatMessage or plain dicts."""
+    for m in reversed(messages):
+        is_dict = isinstance(m, dict)
+        role = getattr(m, "role", None) or (m.get("role") if is_dict else None)
+        content = getattr(m, "content", None) or (m.get("content") if is_dict else None)
+        if role == "user" and content:
+            return str(content)
+    return ""
+
+
 class OsintChatRequest(BaseModel):
     messages: list[ChatMessage]
     country: str | None = None  # ISO-A3 to focus context; None = global
@@ -1420,12 +1449,16 @@ async def osint_chat(req: OsintChatRequest):
         for a in articles[:15]
     )
     country_ctx = f"Focused on: {req.country.upper()}" if req.country else "Global view — all regions"
+    # Semantic recall across the full 30-day knowledge base, keyed on the actual
+    # question — surfaces relevant stories the recent-by-severity list above misses.
+    recall = await apollo.recall_block(_last_user_text(req.messages), kinds=["osint"])
     system = (
         "You are an elite OSINT intelligence analyst embedded in the Max platform. "
         f"{country_ctx}.\n\n"
-        "INDEXED INTELLIGENCE (last 24 h, ranked by severity):\n"
+        "INDEXED INTELLIGENCE (most recent, ranked by severity):\n"
         f"{article_lines}\n\n"
-        "GUIDELINES:\n"
+        + (recall + "\n\n" if recall else "")
+        + "GUIDELINES:\n"
         "- Lead with the indexed data, but cross-reference with your broader knowledge "
         "to verify, add context, and surface patterns the data alone doesn't show.\n"
         "- Clearly flag when you go beyond indexed sources: prefix such sentences with "
@@ -1538,7 +1571,12 @@ async def market_chat_endpoint(req: MarketChatRequest):
         raise HTTPException(status_code=400, detail=str(e)) from e
     history = [msg.model_dump() for msg in req.messages]
     messages = market_chat_messages(snapshot, history)
-    messages[0]["content"] = apply_persona(messages[0]["content"], config.personality, _profile_store.to_context_block())
+    persona = apply_persona(
+        messages[0]["content"], config.personality, _profile_store.to_context_block()
+    )
+    # Recall indexed market snapshots + relevant news for this question.
+    recall = await apollo.recall_block(_last_user_text(req.messages), kinds=["market", "osint"])
+    messages[0]["content"] = persona + ("\n\n" + recall if recall else "")
     return _sse_stream(provider, model, messages, feature="market")
 
 
@@ -1759,6 +1797,92 @@ async def polymarket_analyze() -> StreamingResponse:
     board = await polymarket_svc.get_board()
     payload = {"markets": [m.to_dict() for m in board.markets[:30]]}
     return _stream_ai("polymarket", payload, feature="polymarket")
+
+
+def _parse_poly_scores(text: str, valid_ids: set[str]) -> list[dict]:
+    """Pull the JSON array out of a model reply (tolerating prose/fences) and keep
+    only well-formed rows for known market ids."""
+    start, end = text.find("["), text.rfind("]")
+    if start < 0 or end <= start:
+        return []
+    try:
+        rows = json.loads(text[start : end + 1])
+    except (ValueError, TypeError):
+        return []
+    out: list[dict] = []
+    if not isinstance(rows, list):
+        return []
+    for r in rows:
+        if not isinstance(r, dict) or r.get("id") not in valid_ids:
+            continue
+        try:
+            prob = max(0.0, min(1.0, float(r.get("prob"))))
+            score = max(0, min(100, int(round(float(r.get("score", 0))))))
+        except (TypeError, ValueError):
+            continue
+        out.append({"id": r["id"], "prob": round(prob, 4), "score": score,
+                    "note": str(r.get("note", ""))[:80]})
+    return out
+
+
+# Apollo board-score cache: one batched AI call, reused for a TTL so re-renders /
+# polls don't re-spend tokens. (cache_dict, monotonic_ts)
+_poly_scores: tuple[dict, float] | None = None
+_POLY_SCORE_TTL = 600  # 10 min
+
+
+@app.post("/polymarket/score")
+async def polymarket_score(force: bool = False) -> dict:
+    """Apollo's read on the board: for each market, an independent YES probability,
+    a 0–100 conviction score, and the EV edge vs the market price (aiProb −
+    marketPrice). One batched AI call, cached ~10 min. Best-effort — returns an
+    empty map (UI shows no badges) if the model/JSON fails."""
+    global _poly_scores
+    _check_network()
+    now_iso = _dt.datetime.now(_dt.timezone.utc).isoformat()
+    fresh = _poly_scores is not None and (_time.monotonic() - _poly_scores[1]) < _POLY_SCORE_TTL
+    if not force and fresh:
+        return _poly_scores[0]
+
+    board = await polymarket_svc.get_board()
+    markets = board.markets[:30]
+    if not markets:
+        return {"generatedAt": now_iso, "scores": {}}
+
+    vol_rank = sorted(markets, key=lambda m: m.volume_24hr, reverse=True)
+    trending = {m.condition_id for m in vol_rank[: max(1, len(vol_rank) // 3)]}
+    rows = json.dumps([
+        {"id": m.condition_id, "q": m.question, "yes": round(m.yes_price, 3),
+         "vol24": round(m.volume_24hr), "ends": m.end_date}
+        for m in markets
+    ])
+
+    provider_name, model = _ai_route()
+    try:
+        provider = build_provider(provider_name, config)
+        text = ""
+        msgs = polymarket_score_messages(rows)
+        async for chunk in provider.chat(model, msgs, _feature="polymarket"):
+            if chunk.text:
+                text += chunk.text
+    except Exception:
+        return {"generatedAt": now_iso, "scores": {}}
+
+    by_id = {m.condition_id: m for m in markets}
+    scores: dict[str, dict] = {}
+    for r in _parse_poly_scores(text, set(by_id)):
+        m = by_id[r["id"]]
+        edge = round((r["prob"] - m.yes_price) * 100, 1)  # percentage points
+        scores[r["id"]] = {
+            "prob": r["prob"],
+            "score": r["score"],
+            "edge": edge,
+            "note": r["note"],
+            "trending": m.condition_id in trending,
+        }
+    out = {"generatedAt": now_iso, "scores": scores}
+    _poly_scores = (out, _time.monotonic())
+    return out
 
 
 class PolymarketChatRequest(BaseModel):
@@ -2192,16 +2316,16 @@ async def _apollo_run(kind: str):
                 yield _status_ev("Pulling GDELT + RSS feeds…")
                 payload = await apollo.osint_payload()
                 yield _status_ev("Scoring severity · ranking hotspots…")
-                yield _status_ev("Embedding criticals → vector memory", db=1)
-                n = await apollo.ingest_osint(payload)
-                yield _status_ev(f"Wrote {n} memories · purged >24h", db=1)
+                yield _status_ev("Embedding all indexed news → knowledge base", db=1)
+                n = await apollo.ingest_all_articles()
+                yield _status_ev(f"Indexed {n} stories · purged >30d", db=1)
                 action = "apollo_osint"
             elif kind == "market":
                 yield _status_ev("Fetching quotes · breadth · market news…")
                 payload = await apollo.market_payload()
-                yield _status_ev("Embedding market snapshot → vector memory", db=1)
+                yield _status_ev("Embedding market snapshot → knowledge base", db=1)
                 n = await apollo.ingest_market(payload)
-                yield _status_ev(f"Wrote {n} memories · purged >24h", db=1)
+                yield _status_ev(f"Indexed {n} memories · purged >30d", db=1)
                 action = "apollo_market"
             else:  # predict
                 yield _status_ev("Assembling OSINT + market signals…")
@@ -2215,9 +2339,24 @@ async def _apollo_run(kind: str):
             provider_name, model = _ai_route()
             yield _status_ev(f"Generating via {provider_name} · {model}…")
             provider = build_provider(provider_name, config)
+            parts: list[str] = []
             async for chunk in provider.chat(model, messages_for(action, json.dumps(payload)), _feature="apollo"):
                 if chunk.text:
+                    parts.append(chunk.text)
                     yield _delta_ev(chunk.text, model)
+            # Index the generated report so the AI can recall its own analysis later.
+            report_text = "".join(parts).strip()
+            if report_text:
+                day = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
+                rkind = "prediction" if kind == "predict" else "report"
+                title = {
+                    "osint": "OSINT situational report",
+                    "market": "Market report",
+                    "predict": "Apollo forward prediction",
+                }.get(kind, "Apollo report")
+                await apollo.ingest_report(
+                    rkind, f"apollo:{kind}:{day}", f"{title} — {day}", report_text
+                )
             yield "data: [DONE]\n\n"
         except Exception as e:  # surface backend errors to the client
             yield _ev({"error": {"message": str(e), "type": type(e).__name__}})
@@ -2288,7 +2427,13 @@ async def apollo_chat(req: ApolloChatRequest) -> StreamingResponse:
     The last 3 days of prediction history are injected into the system prompt
     so the AI can answer follow-up questions about its own forecasts."""
     prediction_ctx = _prediction_history.to_context_block()
+    # Recall relevant indexed knowledge (news + market + prior reports) for THIS
+    # question — lets Apollo answer from what it has actually seen, not just its
+    # own recent forecasts.
+    recall = await apollo.recall_block(_last_user_text(req.messages))
     system = apply_persona(_APOLLO_CHAT_SYSTEM, config.personality, _profile_store.to_context_block())
+    if recall:
+        system = system + "\n\n" + recall
     if prediction_ctx:
         system = system + "\n\n" + prediction_ctx
     history = [m.model_dump() for m in req.messages]

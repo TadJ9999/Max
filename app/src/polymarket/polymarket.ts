@@ -124,6 +124,28 @@ export async function getPortfolio(address: string): Promise<PolyPortfolio | nul
   }
 }
 
+// Apollo's per-market read: independent YES probability, 0–100 conviction score,
+// EV edge (aiProb − marketPrice, in percentage points), and a trending flag.
+export type PolyScore = {
+  prob: number;
+  score: number;
+  edge: number;
+  note: string;
+  trending: boolean;
+};
+
+export async function getScores(force = false): Promise<Record<string, PolyScore>> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/polymarket/score${force ? "?force=true" : ""}`, {
+      method: "POST",
+    });
+    if (!r.ok) return {};
+    return ((await r.json()).scores ?? {}) as Record<string, PolyScore>;
+  } catch {
+    return {};
+  }
+}
+
 export async function getBoard(): Promise<PolyBoard | null> {
   try {
     const r = await fetch(`${ENGINE_URL}/polymarket/board`);

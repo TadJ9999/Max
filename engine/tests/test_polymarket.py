@@ -119,6 +119,32 @@ def test_market_to_dict():
     assert d["volume24hr"] == 12000.0
 
 
+# ---- Apollo board score parser ------------------------------------------
+
+
+def test_parse_poly_scores_extracts_known_ids():
+    from max_engine.main import _parse_poly_scores
+
+    text = (
+        'Here are the scores:\n```json\n'
+        '[{"id":"0xabc","prob":0.7,"score":80,"note":"likely"},'
+        '{"id":"0xdef","prob":1.5,"score":150,"note":"clamp"},'
+        '{"id":"0xUNKNOWN","prob":0.2,"score":10}]\n```'
+    )
+    rows = _parse_poly_scores(text, {"0xabc", "0xdef"})
+    by_id = {r["id"]: r for r in rows}
+    assert set(by_id) == {"0xabc", "0xdef"}          # unknown id dropped
+    assert by_id["0xabc"]["prob"] == 0.7 and by_id["0xabc"]["score"] == 80
+    assert by_id["0xdef"]["prob"] == 1.0 and by_id["0xdef"]["score"] == 100  # clamped
+
+
+def test_parse_poly_scores_bad_input():
+    from max_engine.main import _parse_poly_scores
+
+    assert _parse_poly_scores("no json here", {"0xabc"}) == []
+    assert _parse_poly_scores("[not valid json", {"0xabc"}) == []
+
+
 # ---- price history -------------------------------------------------------
 
 

@@ -1,8 +1,11 @@
-// Market view — improved Webull-inspired ticker board + collapsible AI panel.
-// Layout: full-width board with a slide-in AI panel from the right (same
-// pattern as OSINT chat). Sub-tabs: Board (ticker cards) | Summary (stats).
+// Market view — Webull-style single-symbol trading terminal.
+// Layout: left watchlist (switches the focused symbol) │ center candlestick
+// chart (+ volume + RSI, selectable intervals) │ right rail (Quotes, simulated
+// Order Book L2, live Time & Sales). The AI Analysis/Chat slide-in panel + orb
+// FAB are unchanged. Order-book depth is SIMULATED around the live price (no
+// free L2 feed exists) and clearly tagged; everything else is real data.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getBoard,
   getCandles,
@@ -17,33 +20,47 @@ import {
   type MarketBoard,
   type Quote,
 } from "./market";
-
-// Resolution/range presets for the drill-down chart (intraday → yearly).
-const CHART_RANGES = [
-  { key: "1D", resolution: "5",  days: 1,   label: "1D", desc: "5-min intraday" },
-  { key: "1W", resolution: "30", days: 7,   label: "1W", desc: "30-min" },
-  { key: "1M", resolution: "D",  days: 30,  label: "1M", desc: "daily closes" },
-  { key: "3M", resolution: "D",  days: 90,  label: "3M", desc: "daily closes" },
-  { key: "1Y", resolution: "W",  days: 365, label: "1Y", desc: "weekly closes" },
-] as const;
-type RangeKey = (typeof CHART_RANGES)[number]["key"];
 import { MarkdownView } from "../components/MarkdownView";
 import { CopyButton } from "../components/CopyButton";
 import "./Market.css";
 
 const POLL_MS = 10_000;
 
+// Webull-style interval presets → Finnhub resolution + lookback window.
+const INTERVALS = [
+  { key: "5",  label: "5m", resolution: "5",  days: 1 },
+  { key: "30", label: "30m", resolution: "30", days: 5 },
+  { key: "60", label: "1H", resolution: "60", days: 10 },
+  { key: "D",  label: "D",  resolution: "D",  days: 180 },
+  { key: "W",  label: "W",  resolution: "W",  days: 730 },
+  { key: "M",  label: "M",  resolution: "M",  days: 1825 },
+] as const;
+type IntervalKey = (typeof INTERVALS)[number]["key"];
+
+const UP = "#22c55e";
+const DOWN = "#ef4444";
+const FLAT = "#6b7c93";
+
 function fmt(n: number, dec = 2): string {
-  return n.toLocaleString(undefined, {
-    minimumFractionDigits: dec,
-    maximumFractionDigits: dec,
-  });
+  return n.toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+
+function fmtCompact(n: number): string {
+  if (!isFinite(n)) return "—";
+  if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+  return String(Math.round(n));
 }
 
 function dirClass(change: number): string {
   if (change > 0) return "is-up";
   if (change < 0) return "is-down";
   return "is-flat";
+}
+
+function dirColor(change: number): string {
+  return change > 0 ? UP : change < 0 ? DOWN : FLAT;
 }
 
 async function emitMascotEvent(name: string, payload?: unknown) {
@@ -58,280 +75,243 @@ async function emitMascotEvent(name: string, payload?: unknown) {
   } catch { /* not in Tauri */ }
 }
 
-// ── Sparkline SVG — mini 30-day price chart ────────────────────────────────
-function Sparkline({ candles, dir }: { candles: Candle[]; dir: string }) {
-  if (candles.length < 2) return null;
-  const W = 80, H = 28;
-  const prices = candles.map((c) => c.c);
-  const min = Math.min(...prices);
-  const max = Math.max(...prices);
-  const range = max - min || 1;
-  const pts = prices
-    .map((p, i) => {
-      const x = (i / (prices.length - 1)) * W;
-      const y = H - ((p - min) / range) * H;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-  const color = dir === "is-up" ? "#22c55e" : dir === "is-down" ? "#ef4444" : "#6b7c93";
-  return (
-    <svg className="mkt-sparkline" width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-// ── Range bar — shows where current price sits vs day range ────────────────
-function RangeBar({ quote }: { quote: Quote }) {
-  const { low, high, price } = quote;
-  const range = high - low;
-  const pct = range > 0 ? Math.max(0, Math.min(100, ((price - low) / range) * 100)) : 50;
-  return (
-    <div className="mkt-card__range" title={`L $${fmt(low)}  H $${fmt(high)}`}>
-      <span className="mkt-card__range-lo">${fmt(low)}</span>
-      <div className="mkt-card__range-track">
-        <div className="mkt-card__range-fill" style={{ width: `${pct}%` }} />
-        <div className="mkt-card__range-dot" style={{ left: `${pct}%` }} />
-      </div>
-      <span className="mkt-card__range-hi">${fmt(high)}</span>
-    </div>
-  );
-}
-
-// ── Ticker drill-down modal ───────────────────────────────────────────────
-function DrillDownModal({
-  quote,
-  candles: initialCandles,
-  keySet,
-  onClose,
-}: {
-  quote: Quote;
-  candles: Candle[];
-  keySet: boolean;
-  onClose: () => void;
-}) {
-  const [rangeKey, setRangeKey] = useState<RangeKey>("1M");
-  // Seed the default "1M" view with the sparkline candles already fetched (D/30d).
-  const [candles, setCandles] = useState<Candle[]>(initialCandles);
-  const [loadingChart, setLoadingChart] = useState(false);
-  const activeRange = CHART_RANGES.find((r) => r.key === rangeKey)!;
-
-  // (Re)fetch candles whenever the selected range changes. "1M" reuses the
-  // pre-loaded daily candles when present to avoid a redundant request.
+// ── element size hook (px-accurate charts that fill their container) ───────
+function useElementSize<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const [size, setSize] = useState({ w: 0, h: 0 });
   useEffect(() => {
-    if (!keySet) { setCandles([]); return; }
-    if (rangeKey === "1M" && initialCandles.length > 0) {
-      setCandles(initialCandles);
-      return;
-    }
-    let alive = true;
-    setLoadingChart(true);
-    getCandles(quote.symbol, activeRange.resolution, activeRange.days).then((c) => {
-      if (!alive) return;
-      setCandles(c);
-      setLoadingChart(false);
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      if (r) setSize({ w: Math.round(r.width), h: Math.round(r.height) });
     });
-    return () => { alive = false; };
-  }, [quote.symbol, keySet, rangeKey, activeRange.resolution, activeRange.days, initialCandles]);
-
-  const dir = dirClass(quote.change);
-  const sign = quote.change > 0 ? "+" : "";
-
-  // Larger chart version
-  const W = 340, H = 80;
-  const prices = candles.map((c) => c.c);
-  const min = Math.min(...prices);
-  const max = Math.max(...prices);
-  const range = max - min || 1;
-  const pts =
-    prices.length > 1
-      ? prices
-          .map((p, i) => {
-            const x = (i / (prices.length - 1)) * W;
-            const y = H - ((p - min) / range) * H;
-            return `${x.toFixed(1)},${y.toFixed(1)}`;
-          })
-          .join(" ")
-      : "";
-  const color = dir === "is-up" ? "#22c55e" : dir === "is-down" ? "#ef4444" : "#6b7c93";
-
-  return (
-    <div className="mkt-modal-overlay" onClick={onClose}>
-      <div className="mkt-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="mkt-modal__head">
-          <div>
-            <div className="mkt-modal__sym">{quote.symbol}</div>
-            {quote.name && <div className="mkt-modal__name">{quote.name}</div>}
-          </div>
-          <button className="mkt-modal__close" onClick={onClose}>×</button>
-        </div>
-
-        <div className="mkt-modal__price">
-          <span className="mkt-modal__price-val">${fmt(quote.price)}</span>
-          <span className={`mkt-modal__chg mkt-modal__chg--${dir}`}>
-            {sign}{fmt(quote.change)} ({sign}{fmt(Math.abs(quote.changePct))}%)
-          </span>
-        </div>
-
-        {/* Resolution / range selector */}
-        <div className="mkt-modal__ranges">
-          {CHART_RANGES.map((r) => (
-            <button
-              key={r.key}
-              className={`mkt-modal__range${rangeKey === r.key ? " is-on" : ""}`}
-              onClick={() => setRangeKey(r.key)}
-              title={r.desc}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
-
-        {loadingChart ? (
-          <p className="mkt-modal__no-data" style={{ opacity: 0.55 }}>Loading chart…</p>
-        ) : pts ? (
-          <svg className="mkt-modal__chart" width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
-            <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" />
-          </svg>
-        ) : (
-          <p className="mkt-modal__no-data">
-            {keySet ? "No chart data available." : "Set FINNHUB_API_KEY in Settings → API Keys to load chart history."}
-          </p>
-        )}
-
-        <div className="mkt-modal__stats">
-          {[
-            ["Open",  `$${fmt(quote.open)}`],
-            ["High",  `$${fmt(quote.high)}`],
-            ["Low",   `$${fmt(quote.low)}`],
-            ["Prev close", `$${fmt(quote.prevClose)}`],
-          ].map(([label, value]) => (
-            <div key={label} className="mkt-modal__stat">
-              <span className="mkt-modal__stat-lbl">{label}</span>
-              <span className="mkt-modal__stat-val">{value}</span>
-            </div>
-          ))}
-        </div>
-
-        {candles.length > 0 && (
-          <p className="mkt-modal__hint">{activeRange.label} · {activeRange.desc} — {candles.length} points</p>
-        )}
-      </div>
-    </div>
-  );
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, size] as const;
 }
 
-// ── Webull-style ticker card ───────────────────────────────────────────────
-function TickerCard({
-  quote,
-  sparkCandles,
-  onRemove,
-  onDrillDown,
-}: {
-  quote: Quote;
-  sparkCandles: Candle[];
-  onRemove: () => void;
-  onDrillDown: () => void;
-}) {
-  const dir = dirClass(quote.change);
-  const sign = quote.change > 0 ? "+" : "";
-  const changePct = Math.abs(quote.changePct);
-
-  // Flash the price cell green/red on each live tick.
-  const [flash, setFlash] = useState<"up" | "down" | null>(null);
-  const prevPrice = useRef(quote.price);
-  useEffect(() => {
-    const prev = prevPrice.current;
-    if (quote.price > prev) setFlash("up");
-    else if (quote.price < prev) setFlash("down");
-    prevPrice.current = quote.price;
-    const id = setTimeout(() => setFlash(null), 500);
-    return () => clearTimeout(id);
-  }, [quote.price]);
-
-  return (
-    <div className={`mkt-card mkt-card--${dir}`} onClick={onDrillDown} style={{ cursor: "pointer" }}>
-      <div className="mkt-card__left">
-        <div className="mkt-card__sym">{quote.symbol}</div>
-        {quote.name && <div className="mkt-card__name">{quote.name}</div>}
-        <div className="mkt-card__vol">
-          {quote.open > 0 && <span>O ${fmt(quote.open)}</span>}
-          {quote.prevClose > 0 && <span className="mkt-card__sep">PC ${fmt(quote.prevClose)}</span>}
-        </div>
-        <Sparkline candles={sparkCandles} dir={dir} />
-      </div>
-      <div className="mkt-card__right">
-        <div className={`mkt-card__price${flash ? ` mkt-card__price--flash-${flash}` : ""}`}>${fmt(quote.price)}</div>
-        <div className={`mkt-card__chg mkt-card__chg--${dir}`}>
-          <span className="mkt-card__chg-abs">{sign}{fmt(quote.change)}</span>
-          <span className={`mkt-card__chg-badge mkt-card__chg-badge--${dir}`}>
-            {sign}{fmt(changePct)}%
-          </span>
-        </div>
-        {quote.high > 0 && quote.low > 0 && <RangeBar quote={quote} />}
-      </div>
-      <button className="mkt-card__rm" onClick={(e) => { e.stopPropagation(); onRemove(); }} title={`Remove ${quote.symbol}`}>×</button>
-    </div>
-  );
-}
-
-// ── Summary tab: market breadth stats ────────────────────────────────────
-function SummaryTab({ board }: { board: MarketBoard | null }) {
-  if (!board || board.quotes.length === 0) {
-    return <div className="mkt-summary__empty">No market data — add tickers to the board.</div>;
+// ── Wilder's RSI(14) over candle closes; NaN until enough data ─────────────
+function computeRSI(candles: Candle[], period = 14): number[] {
+  const out = new Array(candles.length).fill(NaN);
+  if (candles.length <= period) return out;
+  let gain = 0, loss = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = candles[i].c - candles[i - 1].c;
+    if (d >= 0) gain += d; else loss -= d;
   }
-  const quotes = board.quotes;
-  const up    = quotes.filter((q) => q.change > 0).length;
-  const down  = quotes.filter((q) => q.change < 0).length;
-  const flat  = quotes.length - up - down;
-  const avgChg = quotes.reduce((s, q) => s + q.changePct, 0) / quotes.length;
-  const gainers = [...quotes].sort((a, b) => b.changePct - a.changePct).slice(0, 3);
-  const losers  = [...quotes].sort((a, b) => a.changePct - b.changePct).slice(0, 3);
+  let avgGain = gain / period, avgLoss = loss / period;
+  out[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  for (let i = period + 1; i < candles.length; i++) {
+    const d = candles[i].c - candles[i - 1].c;
+    const g = d > 0 ? d : 0, l = d < 0 ? -d : 0;
+    avgGain = (avgGain * (period - 1) + g) / period;
+    avgLoss = (avgLoss * (period - 1) + l) / period;
+    out[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  }
+  return out;
+}
+
+// ── Candlestick + volume chart (fills its container) ───────────────────────
+function CandleChart({ candles }: { candles: Candle[] }) {
+  const [ref, { w, h }] = useElementSize<HTMLDivElement>();
+  const RIGHT = 52, LEFT = 4, TOP = 8, BOT = 6;
+  const n = candles.length;
+
+  const body = (() => {
+    if (n < 2 || w < 40 || h < 40) return null;
+    const innerW = w - RIGHT - LEFT;
+    const volH = Math.max(26, h * 0.18);
+    const priceH = h - volH - TOP - BOT - 6;
+    const highs = candles.map((c) => c.h);
+    const lows = candles.map((c) => c.l);
+    const pMax = Math.max(...highs), pMin = Math.min(...lows);
+    const pRange = pMax - pMin || 1;
+    const vMax = Math.max(...candles.map((c) => c.v), 1);
+    const slot = innerW / n;
+    const bodyW = Math.max(1, Math.min(slot * 0.7, 14));
+    const yPrice = (p: number) => TOP + (1 - (p - pMin) / pRange) * priceH;
+    const volTop = TOP + priceH + 6;
+    const lastClose = candles[n - 1].c;
+
+    const gridVals = Array.from({ length: 5 }, (_, i) => pMin + (pRange * i) / 4);
+    return { innerW, volH, priceH, pMax, pMin, vMax, slot, bodyW, yPrice, volTop, lastClose, gridVals };
+  })();
 
   return (
-    <div className="mkt-summary">
-      <div className="mkt-summary__stats">
-        <div className="mkt-summary__stat mkt-summary__stat--up">
-          <span className="mkt-summary__stat-val">{up}</span>
-          <span className="mkt-summary__stat-lbl">advancing</span>
-        </div>
-        <div className="mkt-summary__stat mkt-summary__stat--down">
-          <span className="mkt-summary__stat-val">{down}</span>
-          <span className="mkt-summary__stat-lbl">declining</span>
-        </div>
-        <div className="mkt-summary__stat">
-          <span className="mkt-summary__stat-val">{flat}</span>
-          <span className="mkt-summary__stat-lbl">unchanged</span>
-        </div>
-        <div className={`mkt-summary__stat ${avgChg >= 0 ? "mkt-summary__stat--up" : "mkt-summary__stat--down"}`}>
-          <span className="mkt-summary__stat-val">{avgChg >= 0 ? "+" : ""}{fmt(avgChg)}%</span>
-          <span className="mkt-summary__stat-lbl">avg move</span>
-        </div>
-      </div>
+    <div className="mkt-chart" ref={ref}>
+      {body && (
+        <svg className="mkt-chart__svg" width={w} height={h}>
+          {/* horizontal price grid + right-axis labels */}
+          {body.gridVals.map((p, i) => {
+            const y = body.yPrice(p);
+            return (
+              <g key={i}>
+                <line x1={LEFT} y1={y} x2={w - RIGHT} y2={y} stroke="rgba(255,255,255,0.05)" />
+                <text x={w - RIGHT + 5} y={y + 3} className="mkt-chart__axis">{fmt(p)}</text>
+              </g>
+            );
+          })}
+          {/* candles */}
+          {candles.map((c, i) => {
+            const x = LEFT + i * body.slot + body.slot / 2;
+            const up = c.c >= c.o;
+            const col = up ? UP : DOWN;
+            const yO = body.yPrice(c.o), yC = body.yPrice(c.c);
+            const top = Math.min(yO, yC);
+            const bh = Math.max(1, Math.abs(yC - yO));
+            const vh = (c.v / body.vMax) * (body.volH - 2);
+            return (
+              <g key={i}>
+                <line x1={x} y1={body.yPrice(c.h)} x2={x} y2={body.yPrice(c.l)} stroke={col} strokeWidth="1" />
+                <rect x={x - body.bodyW / 2} y={top} width={body.bodyW} height={bh} fill={col} />
+                <rect
+                  x={x - body.bodyW / 2}
+                  y={body.volTop + (body.volH - vh)}
+                  width={body.bodyW}
+                  height={vh}
+                  fill={col}
+                  opacity={0.45}
+                />
+              </g>
+            );
+          })}
+          {/* last-price dashed marker */}
+          <line
+            x1={LEFT}
+            y1={body.yPrice(body.lastClose)}
+            x2={w - RIGHT}
+            y2={body.yPrice(body.lastClose)}
+            stroke="rgba(34,211,238,0.55)"
+            strokeWidth="1"
+            strokeDasharray="3 3"
+          />
+          <rect x={w - RIGHT} y={body.yPrice(body.lastClose) - 8} width={RIGHT} height={16} fill="rgba(34,211,238,0.85)" rx="2" />
+          <text x={w - RIGHT + 4} y={body.yPrice(body.lastClose) + 3} className="mkt-chart__axis mkt-chart__axis--last">
+            {fmt(body.lastClose)}
+          </text>
+        </svg>
+      )}
+    </div>
+  );
+}
 
-      <div className="mkt-summary__lists">
-        <div className="mkt-summary__col">
-          <div className="mkt-summary__col-head">Top Gainers</div>
-          {gainers.map((q) => (
-            <div key={q.symbol} className="mkt-summary__row mkt-summary__row--up">
-              <span className="mkt-summary__sym">{q.symbol}</span>
-              <span className="mkt-summary__pct">+{fmt(q.changePct)}%</span>
-            </div>
-          ))}
-        </div>
-        <div className="mkt-summary__col">
-          <div className="mkt-summary__col-head">Top Losers</div>
-          {losers.map((q) => (
-            <div key={q.symbol} className="mkt-summary__row mkt-summary__row--down">
-              <span className="mkt-summary__sym">{q.symbol}</span>
-              <span className="mkt-summary__pct">{fmt(q.changePct)}%</span>
-            </div>
-          ))}
-        </div>
-      </div>
+// ── RSI(14) sub-chart ──────────────────────────────────────────────────────
+function RsiChart({ candles }: { candles: Candle[] }) {
+  const [ref, { w, h }] = useElementSize<HTMLDivElement>();
+  const rsi = useMemo(() => computeRSI(candles), [candles]);
+  const RIGHT = 52, LEFT = 4;
+  const valid = rsi.filter((v) => !isNaN(v));
+  const last = valid.length ? valid[valid.length - 1] : NaN;
 
-      <div className="mkt-summary__updated">
-        Last updated: {new Date(board.updated).toLocaleTimeString()}
+  const path = (() => {
+    if (w < 40 || h < 20 || candles.length < 2) return "";
+    const innerW = w - RIGHT - LEFT;
+    const slot = innerW / candles.length;
+    const y = (v: number) => 2 + (1 - v / 100) * (h - 4);
+    let d = "";
+    let started = false;
+    rsi.forEach((v, i) => {
+      if (isNaN(v)) return;
+      const x = LEFT + i * slot + slot / 2;
+      d += `${started ? "L" : "M"}${x.toFixed(1)},${y(v).toFixed(1)} `;
+      started = true;
+    });
+    return d;
+  })();
+
+  const yLvl = (v: number) => 2 + (1 - v / 100) * (h - 4);
+  return (
+    <div className="mkt-rsi" ref={ref}>
+      {w > 40 && (
+        <svg className="mkt-chart__svg" width={w} height={h}>
+          <line x1={LEFT} y1={yLvl(70)} x2={w - RIGHT} y2={yLvl(70)} stroke="rgba(239,68,68,0.25)" strokeDasharray="2 3" />
+          <line x1={LEFT} y1={yLvl(30)} x2={w - RIGHT} y2={yLvl(30)} stroke="rgba(34,197,94,0.25)" strokeDasharray="2 3" />
+          <text x={w - RIGHT + 5} y={yLvl(70) + 3} className="mkt-chart__axis">70</text>
+          <text x={w - RIGHT + 5} y={yLvl(30) + 3} className="mkt-chart__axis">30</text>
+          {path && <path d={path} fill="none" stroke="#38bdf8" strokeWidth="1.3" />}
+        </svg>
+      )}
+      <span className="mkt-rsi__label">
+        RSI(14) <b style={{ color: isNaN(last) ? FLAT : last >= 70 ? DOWN : last <= 30 ? UP : "#38bdf8" }}>
+          {isNaN(last) ? "—" : last.toFixed(1)}
+        </b>
+      </span>
+    </div>
+  );
+}
+
+// ── Simulated Order Book (L2). No free depth feed exists — derived from the
+// live price + spread, clearly tagged SIM. Deterministic per (symbol, price)
+// so it doesn't jitter wildly between renders but moves as the price moves. ──
+function seededSize(sym: string, level: number, priceBucket: number): number {
+  let s = priceBucket + level * 97;
+  for (let i = 0; i < sym.length; i++) s = (s * 31 + sym.charCodeAt(i)) >>> 0;
+  // 1..~9999 with a bias toward smaller sizes
+  const r = ((s % 1000) / 1000) ** 1.7;
+  return Math.max(1, Math.round(r * 4000) + (level % 3 === 0 ? 200 : 10));
+}
+
+function OrderBook({ quote }: { quote: Quote }) {
+  const mid = quote.price || quote.prevClose || 0;
+  const levels = 8;
+  const spread = Math.max(0.01, mid * 0.0004);
+  const bucket = Math.floor(mid * 100);
+  const asks = Array.from({ length: levels }, (_, i) => {
+    const lvl = levels - i; // top of list = highest ask
+    return { price: mid + spread * lvl, size: seededSize(quote.symbol, lvl + 50, bucket) };
+  });
+  const bids = Array.from({ length: levels }, (_, i) => {
+    const lvl = i + 1;
+    return { price: mid - spread * lvl, size: seededSize(quote.symbol, lvl, bucket) };
+  });
+  const maxSize = Math.max(...asks.map((a) => a.size), ...bids.map((b) => b.size), 1);
+
+  const Row = ({ price, size, side }: { price: number; size: number; side: "ask" | "bid" }) => (
+    <div className={`mkt-ob__row mkt-ob__row--${side}`}>
+      <span className="mkt-ob__depth" style={{ width: `${(size / maxSize) * 100}%` }} />
+      <span className="mkt-ob__size">{fmtCompact(size)}</span>
+      <span className="mkt-ob__price">{fmt(price)}</span>
+    </div>
+  );
+
+  return (
+    <div className="mkt-panel mkt-ob">
+      <div className="mkt-panel__head">
+        Order Book (L2)
+        <span className="mkt-ob__sim" title="No free Level-2 feed exists. This depth is simulated around the live price for layout — it is not real market depth.">SIM</span>
+      </div>
+      <div className="mkt-ob__cols"><span>Size</span><span>Bid · Ask</span></div>
+      <div className="mkt-ob__side">{asks.map((a, i) => <Row key={`a${i}`} {...a} side="ask" />)}</div>
+      <div className="mkt-ob__mid">
+        <span>{fmt(mid)}</span>
+        <span className="mkt-ob__spread">spread {fmt(spread * 2)}</span>
+      </div>
+      <div className="mkt-ob__side">{bids.map((b, i) => <Row key={`b${i}`} {...b} side="bid" />)}</div>
+    </div>
+  );
+}
+
+// ── Time & Sales (real, from the live Finnhub trade stream) ────────────────
+type Tape = { price: number; size: number | null; ts: number | null; dir: "up" | "down" | "flat" };
+
+function TimeSales({ tape }: { tape: Tape[] }) {
+  return (
+    <div className="mkt-panel mkt-ts">
+      <div className="mkt-panel__head">Time &amp; Sales</div>
+      <div className="mkt-ts__cols"><span>Time</span><span>Price</span><span>Size</span></div>
+      <div className="mkt-ts__rows">
+        {tape.length === 0 && <div className="mkt-ts__empty">Waiting for live trades…</div>}
+        {tape.map((t, i) => (
+          <div key={i} className={`mkt-ts__row mkt-ts__row--${t.dir}`}>
+            <span className="mkt-ts__time">
+              {t.ts ? new Date(t.ts).toLocaleTimeString(undefined, { hour12: false }) : "—"}
+            </span>
+            <span className="mkt-ts__price">{fmt(t.price)}</span>
+            <span className="mkt-ts__size">{t.size != null ? fmtCompact(t.size) : "—"}</span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -344,11 +324,16 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
   const [keySet, setKeySet]  = useState<boolean>(true);
   const [loading, setLoading] = useState(true);
   const [add, setAdd]         = useState("");
-  const [subTab, setSubTab]   = useState<"board" | "summary">("board");
-  const [sparklines, setSparklines] = useState<Record<string, Candle[]>>({});
-  const [drillSym, setDrillSym]     = useState<string | null>(null);
-  // Live trade ticks from the SSE bridge (overlay the polled board).
-  const [liveTicks, setLiveTicks]   = useState<Record<string, number>>({});
+  const [focused, setFocused] = useState<string | null>(null);
+  const focusedRef = useRef<string | null>(null);
+  const [interval, setIntervalKey] = useState<IntervalKey>("D");
+  const [candles, setCandles] = useState<Candle[]>([]);
+  const [loadingChart, setLoadingChart] = useState(false);
+
+  // Live trade ticks: latest price per symbol (board overlay) + a rolling tape
+  // for the focused symbol (Time & Sales).
+  const [liveTicks, setLiveTicks] = useState<Record<string, number>>({});
+  const [tape, setTape] = useState<Tape[]>([]);
   const [streamLive, setStreamLive] = useState(false);
 
   // AI panel state (collapsible, slides from right)
@@ -366,9 +351,7 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
   const chatThreadRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (chatThreadRef.current) {
-      chatThreadRef.current.scrollTop = chatThreadRef.current.scrollHeight;
-    }
+    if (chatThreadRef.current) chatThreadRef.current.scrollTop = chatThreadRef.current.scrollHeight;
   }, [chat]);
 
   useEffect(() => {
@@ -386,25 +369,34 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
       if (src.watchlist.length) setList((cur) => (cur.length ? cur : src.watchlist));
     }
     setLoading(false);
-    // Lazy-load sparklines for all visible symbols (don't await — background)
-    if (b && src?.key_set) {
-      void Promise.all(
-        b.quotes.map(async (q) => {
-          if (sparklines[q.symbol]?.length) return;
-          const candles = await getCandles(q.symbol, "D", 30);
-          if (candles.length) {
-            setSparklines((prev) => ({ ...prev, [q.symbol]: candles }));
-          }
-        }),
-      );
-    }
-  }, [sparklines]);
+  }, []);
 
   useEffect(() => {
     void refresh();
     const id = setInterval(() => void refresh(), POLL_MS);
     return () => clearInterval(id);
   }, [refresh]);
+
+  // Pick a default focused symbol once the board loads.
+  useEffect(() => {
+    if (!focused && board?.quotes.length) setFocused(board.quotes[0].symbol);
+  }, [board, focused]);
+
+  useEffect(() => { focusedRef.current = focused; setTape([]); }, [focused]);
+
+  // (Re)load candles whenever the focused symbol or interval changes.
+  useEffect(() => {
+    if (!focused || !keySet) { setCandles([]); return; }
+    const ivl = INTERVALS.find((x) => x.key === interval)!;
+    let alive = true;
+    setLoadingChart(true);
+    getCandles(focused, ivl.resolution, ivl.days).then((c) => {
+      if (!alive) return;
+      setCandles(c);
+      setLoadingChart(false);
+    });
+    return () => { alive = false; };
+  }, [focused, interval, keySet]);
 
   // Live trade-tick stream (Finnhub WS → engine SSE). Reconnects on drop.
   useEffect(() => {
@@ -415,16 +407,23 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
         try {
           for await (const ev of streamTrades(ctrl.signal)) {
             if ("type" in ev && ev.type === "nokey") { setStreamLive(false); return; }
-            const tr = ev as { symbol: string; price: number };
+            const tr = ev as { symbol: string; price: number; volume: number | null; ts: number | null };
             if (tr.symbol && typeof tr.price === "number") {
               setStreamLive(true);
-              setLiveTicks((prev) => ({ ...prev, [tr.symbol]: tr.price }));
+              setLiveTicks((prev) => {
+                const dir: Tape["dir"] = prev[tr.symbol] == null ? "flat"
+                  : tr.price > prev[tr.symbol] ? "up" : tr.price < prev[tr.symbol] ? "down" : "flat";
+                if (tr.symbol === focusedRef.current) {
+                  setTape((t) => [{ price: tr.price, size: tr.volume, ts: tr.ts ? tr.ts : Date.now(), dir }, ...t].slice(0, 40));
+                }
+                return { ...prev, [tr.symbol]: tr.price };
+              });
             }
           }
         } catch { /* stream dropped */ }
         if (!alive) break;
         setStreamLive(false);
-        await new Promise((r) => setTimeout(r, 2000)); // reconnect backoff
+        await new Promise((r) => setTimeout(r, 2000));
       }
     })();
     return () => { alive = false; ctrl.abort(); };
@@ -439,13 +438,15 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
 
   const onAdd = () => {
     const sym = add.trim().toUpperCase();
-    if (!sym || watchlist.includes(sym)) { setAdd(""); return; }
-    void commitWatchlist([...watchlist, sym]);
+    if (!sym) return;
+    if (!watchlist.includes(sym)) void commitWatchlist([...watchlist, sym]);
+    setFocused(sym);
     setAdd("");
   };
 
   const onRemove = (sym: string) => {
     void commitWatchlist(watchlist.filter((s) => s !== sym));
+    if (focused === sym) setFocused(null);
   };
 
   const onIngest = async () => {
@@ -459,9 +460,7 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
-      for await (const delta of streamAnalyze(ctrl.signal)) {
-        setAnalysis((prev) => prev + delta);
-      }
+      for await (const delta of streamAnalyze(ctrl.signal)) setAnalysis((prev) => prev + delta);
     } catch (e) {
       if (!ctrl.signal.aborted) setIngestErr((e as Error).message);
     } finally {
@@ -510,16 +509,16 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
 
   useEffect(() => () => chatAbortRef.current?.abort(), []);
 
-  const rawQuotes = board?.quotes ?? [];
   // Overlay the latest live tick onto each quote, recomputing change vs prev close.
-  const quotes = rawQuotes.map((q) => {
+  const quotes = (board?.quotes ?? []).map((q) => {
     const lp = liveTicks[q.symbol];
     if (lp == null || lp === q.price) return q;
     const change = lp - q.prevClose;
     const changePct = q.prevClose ? (change / q.prevClose) * 100 : q.changePct;
     return { ...q, price: lp, change, changePct };
   });
-  const drillQuote = drillSym ? quotes.find((q) => q.symbol === drillSym) ?? null : null;
+  const focusedQuote = focused ? quotes.find((q) => q.symbol === focused) ?? null : null;
+  const lastVol = candles.length ? candles[candles.length - 1].v : 0;
   const offline = !loading && board === null;
 
   return (
@@ -527,11 +526,9 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
       {/* ── AI slide-in panel (right overlay) ── */}
       <div className={`market__ai-panel${panelOpen ? " is-open" : ""}`}>
         <div className="market__ai-head">
-          <span className="market__ai-title">✦ AI Analysis & Chat</span>
+          <span className="market__ai-title">✦ AI Analysis &amp; Chat</span>
           <button className="market__ai-close" onClick={() => setPanelOpen(false)}>×</button>
         </div>
-
-        {/* Analysis section */}
         <div className="market__ai-section-head">
           AI Ingest
           {analysis && <CopyButton text={analysis} />}
@@ -547,15 +544,11 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
           {analysis && <MarkdownView source={analysis} />}
           {ingesting && <span className="market__cursor">▍</span>}
         </div>
-
-        {/* Chat section */}
         <div className="market__ai-section-head market__ai-section-head--chat">Ask the board</div>
         <div className="market__ai-chat">
           <div className="market__chat-thread" ref={chatThreadRef}>
             {chat.length === 0 && (
-              <div className="market__placeholder">
-                Ask anything — e.g. <i>"why is NVDA down?"</i>
-              </div>
+              <div className="market__placeholder">Ask anything — e.g. <i>"why is NVDA down?"</i></div>
             )}
             {chat.map((turn, i) => (
               <div key={i} className={`market__msg market__msg--${turn.role}`}>
@@ -565,12 +558,8 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
                       <MarkdownView source={turn.content} />
                       <CopyButton text={turn.content} className="market__msg-copy" />
                     </>
-                  ) : (
-                    <span className="market__cursor">▍</span>
-                  )
-                ) : (
-                  turn.content
-                )}
+                  ) : (<span className="market__cursor">▍</span>)
+                ) : (turn.content)}
               </div>
             ))}
           </div>
@@ -579,17 +568,11 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
               className="market__chat-text"
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) =>
-                e.key === "Enter" && !e.shiftKey && (e.preventDefault(), void sendChat())
-              }
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), void sendChat())}
               placeholder="Ask about the board…"
               disabled={chatBusy}
             />
-            <button
-              className="market__chat-send"
-              onClick={() => void sendChat()}
-              disabled={chatBusy || !question.trim()}
-            >
+            <button className="market__chat-send" onClick={() => void sendChat()} disabled={chatBusy || !question.trim()}>
               {chatBusy ? "…" : "▶"}
             </button>
           </div>
@@ -600,22 +583,8 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
       <header className="market__bar">
         <div className="market__title">
           <span className="market__glyph">$</span>
-          Market · Live Tape
+          Market · Terminal
         </div>
-
-        {/* Sub-tabs */}
-        <div className="market__subtabs">
-          {(["board", "summary"] as const).map((t) => (
-            <button
-              key={t}
-              className={`market__subtab${subTab === t ? " is-on" : ""}`}
-              onClick={() => setSubTab(t)}
-            >
-              {t === "board" ? "Board" : "Summary"}
-            </button>
-          ))}
-        </div>
-
         <div className="market__bar-right">
           {streamLive && (
             <span className="market__live" title="Live trade stream connected (Finnhub)">
@@ -623,20 +592,12 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
             </span>
           )}
           <span className="market__updated">
-            {loading ? "loading…"
-              : offline ? "engine offline"
-              : !keySet ? "no API key"
-              : `${quotes.length} symbols`}
+            {loading ? "loading…" : offline ? "engine offline" : !keySet ? "no API key" : `${quotes.length} symbols`}
           </span>
-          <button
-            className={`market__ingest${ingesting ? " is-busy" : ""}`}
-            onClick={() => void onIngest()}
-          >
+          <button className={`market__ingest${ingesting ? " is-busy" : ""}`} onClick={() => void onIngest()}>
             {ingesting ? "Ingesting…" : "Ingest"}
           </button>
-          {onClose && (
-            <button className="market__btn market__btn--close" onClick={onClose}>×</button>
-          )}
+          {onClose && <button className="market__btn market__btn--close" onClick={onClose}>×</button>}
         </div>
       </header>
 
@@ -653,62 +614,141 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
         <span className="market__ai-fab__gloss" />
       </button>
 
-      {/* ── body ── */}
-      <div className="market__body">
-        {subTab === "board" ? (
-          <div className="market__board">
-            {/* Add ticker */}
-            <div className="market__add">
-              <input
-                className="market__add-input"
-                value={add}
-                onChange={(e) => setAdd(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && onAdd()}
-                placeholder="Add ticker (e.g. AAPL)"
-                spellCheck={false}
-                maxLength={8}
-              />
-              <button className="market__add-btn" onClick={onAdd}>+</button>
-            </div>
-
-            {!keySet && (
-              <div className="market__note">
-                Set <code>FINNHUB_API_KEY</code> in Settings for live quotes.
-              </div>
-            )}
-            {offline && (
-              <div className="market__note">Engine offline — start Max engine for live quotes.</div>
-            )}
-
-            {drillQuote && (
-              <DrillDownModal
-                quote={drillQuote}
-                candles={sparklines[drillQuote.symbol] ?? []}
-                keySet={keySet}
-                onClose={() => setDrillSym(null)}
-              />
-            )}
-
-            <div className="market__cards">
-              {quotes.length === 0 && !loading && (
-                <div className="market__empty">No quotes yet.</div>
-              )}
-              {quotes.map((q) => (
-                <TickerCard
+      {/* ── terminal body: watchlist │ chart │ right rail ── */}
+      <div className="market__term">
+        {/* Watchlist */}
+        <aside className="mkt-watch">
+          <div className="mkt-watch__add">
+            <input
+              className="mkt-watch__add-input"
+              value={add}
+              onChange={(e) => setAdd(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && onAdd()}
+              placeholder="Add symbol"
+              spellCheck={false}
+              maxLength={8}
+            />
+            <button className="mkt-watch__add-btn" onClick={onAdd}>+</button>
+          </div>
+          <div className="mkt-watch__head"><span>Symbol</span><span>Price · Chg%</span></div>
+          <div className="mkt-watch__list">
+            {quotes.length === 0 && !loading && <div className="mkt-watch__empty">No symbols.</div>}
+            {quotes.map((q) => {
+              const dir = dirClass(q.change);
+              const sign = q.change > 0 ? "+" : "";
+              return (
+                <div
                   key={q.symbol}
-                  quote={q}
-                  sparkCandles={sparklines[q.symbol] ?? []}
-                  onRemove={() => onRemove(q.symbol)}
-                  onDrillDown={() => setDrillSym(q.symbol)}
-                />
-              ))}
+                  className={`mkt-watch__row${focused === q.symbol ? " is-active" : ""}`}
+                  onClick={() => setFocused(q.symbol)}
+                >
+                  <div className="mkt-watch__sym">
+                    <span className="mkt-watch__ticker">{q.symbol}</span>
+                    {q.name && <span className="mkt-watch__name">{q.name}</span>}
+                  </div>
+                  <div className="mkt-watch__nums">
+                    <span className="mkt-watch__price">{fmt(q.price)}</span>
+                    <span className={`mkt-watch__pct mkt-watch__pct--${dir}`}>{sign}{fmt(q.changePct)}%</span>
+                  </div>
+                  <button className="mkt-watch__rm" onClick={(e) => { e.stopPropagation(); onRemove(q.symbol); }} title={`Remove ${q.symbol}`}>×</button>
+                </div>
+              );
+            })}
+          </div>
+        </aside>
+
+        {/* Center: quote header + chart */}
+        <section className="mkt-center">
+          {focusedQuote ? (
+            <>
+              <div className="mkt-quote-head">
+                <div className="mkt-quote-head__id">
+                  <span className="mkt-quote-head__sym">{focusedQuote.symbol}</span>
+                  {focusedQuote.name && <span className="mkt-quote-head__name">{focusedQuote.name}</span>}
+                </div>
+                <div className="mkt-quote-head__px">
+                  <span className="mkt-quote-head__price" style={{ color: dirColor(focusedQuote.change) }}>
+                    {fmt(focusedQuote.price)}
+                  </span>
+                  <span className="mkt-quote-head__chg" style={{ color: dirColor(focusedQuote.change) }}>
+                    {focusedQuote.change > 0 ? "+" : ""}{fmt(focusedQuote.change)} ({focusedQuote.change > 0 ? "+" : ""}{fmt(focusedQuote.changePct)}%)
+                  </span>
+                </div>
+                <div className="mkt-quote-head__ohlc">
+                  {([["O", focusedQuote.open], ["H", focusedQuote.high], ["L", focusedQuote.low], ["PC", focusedQuote.prevClose]] as const).map(([k, v]) => (
+                    <span key={k}><i>{k}</i> {fmt(v)}</span>
+                  ))}
+                  {lastVol > 0 && <span><i>Vol</i> {fmtCompact(lastVol)}</span>}
+                </div>
+              </div>
+
+              <div className="mkt-intervals">
+                {INTERVALS.map((iv) => (
+                  <button
+                    key={iv.key}
+                    className={`mkt-interval${interval === iv.key ? " is-on" : ""}`}
+                    onClick={() => setIntervalKey(iv.key)}
+                  >
+                    {iv.label}
+                  </button>
+                ))}
+              </div>
+
+              {!keySet ? (
+                <div className="mkt-center__msg">Set <code>FINNHUB_API_KEY</code> in Settings for live charts.</div>
+              ) : loadingChart ? (
+                <div className="mkt-center__msg">Loading chart…</div>
+              ) : candles.length < 2 ? (
+                <div className="mkt-center__msg">No chart data for this interval.</div>
+              ) : (
+                <>
+                  <CandleChart candles={candles} />
+                  <RsiChart candles={candles} />
+                </>
+              )}
+            </>
+          ) : (
+            <div className="mkt-center__msg">
+              {offline ? "Engine offline — start the Max engine for live quotes."
+                : "Select a symbol from the watchlist."}
             </div>
-          </div>
-        ) : (
-          <div className="market__board">
-            <SummaryTab board={board} />
-          </div>
-        )}
+          )}
+        </section>
+
+        {/* Right rail: quotes + order book + time & sales */}
+        <aside className="mkt-rail">
+          {focusedQuote ? (
+            <>
+              <div className="mkt-panel mkt-quotes">
+                <div className="mkt-panel__head">Quotes</div>
+                <div className="mkt-quotes__grid">
+                  {([["Open", focusedQuote.open], ["High", focusedQuote.high], ["Low", focusedQuote.low], ["Prev Close", focusedQuote.prevClose]] as const).map(([k, v]) => (
+                    <div key={k} className="mkt-quotes__cell">
+                      <span className="mkt-quotes__lbl">{k}</span>
+                      <span className="mkt-quotes__val">{fmt(v)}</span>
+                    </div>
+                  ))}
+                </div>
+                {focusedQuote.high > 0 && focusedQuote.low > 0 && (
+                  <div className="mkt-quotes__range" title={`Day range ${fmt(focusedQuote.low)}–${fmt(focusedQuote.high)}`}>
+                    <span>{fmt(focusedQuote.low)}</span>
+                    <div className="mkt-quotes__track">
+                      <div
+                        className="mkt-quotes__dot"
+                        style={{ left: `${Math.max(0, Math.min(100, ((focusedQuote.price - focusedQuote.low) / ((focusedQuote.high - focusedQuote.low) || 1)) * 100))}%` }}
+                      />
+                    </div>
+                    <span>{fmt(focusedQuote.high)}</span>
+                  </div>
+                )}
+              </div>
+              <OrderBook quote={focusedQuote} />
+              <TimeSales tape={tape} />
+            </>
+          ) : (
+            <div className="mkt-center__msg">—</div>
+          )}
+        </aside>
       </div>
     </div>
   );
