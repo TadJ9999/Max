@@ -624,6 +624,41 @@ fn engine_base() -> String {
     }
 }
 
+/// Trigger the engine's autonomous Aegis fix for an event via the local HTTP API
+/// (raw TCP — the same minimal client as the health check). Returns the raw SSE
+/// body so the caller can parse the final status. Only effective when the engine's
+/// `aegis.autonomy` is `auto`; otherwise the engine streams an error event. This is
+/// the desktop/Rust path into the auto-fix pipeline, complementing the in-webview
+/// fetch stream used by the browser/LAN client.
+#[tauri::command]
+fn aegis_auto_fix(event_id: String) -> Result<String, String> {
+    use std::io::{Read, Write};
+    // Constrain the id to a path-safe token — it is interpolated into the URL.
+    if event_id.is_empty()
+        || !event_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err("invalid event id".into());
+    }
+    let addr = format!("127.0.0.1:{ENGINE_PORT}");
+    let parsed = addr.parse().map_err(|_| "bad engine address".to_string())?;
+    let mut stream = TcpStream::connect_timeout(&parsed, Duration::from_millis(3000))
+        .map_err(|e| format!("connect failed: {e}"))?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(180)));
+    let req = format!(
+        "POST /aegis/auto-fix/{event_id} HTTP/1.0\r\nHost: 127.0.0.1\r\nContent-Length: 0\r\n\r\n"
+    );
+    stream
+        .write_all(req.as_bytes())
+        .map_err(|e| format!("write failed: {e}"))?;
+    let mut body = String::new();
+    stream
+        .read_to_string(&mut body)
+        .map_err(|e| format!("read failed: {e}"))?;
+    Ok(body)
+}
+
 #[derive(serde::Serialize)]
 struct LanStatus {
     enabled: bool,
@@ -1003,6 +1038,7 @@ pub fn run() {
             stop_tor,
             tor_running,
             engine_base,
+            aegis_auto_fix,
             get_lan_status,
             setup_cert,
             reveal_root_ca,

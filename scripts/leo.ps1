@@ -229,12 +229,12 @@ function Invoke-Diagnosis([System.Collections.Generic.List[string]]$issues, [str
     }
 
     if ($cloudKey -and ($cloudKey.Length -gt 10)) {
-        $diagnosis = Invoke-ClaudeDiagnosis -ApiKey $cloudKey -Issues $issues -Stderr $stderr
+        $diagnosis = Invoke-ClaudeDiagnosisStream -ApiKey $cloudKey -Issues $issues -Stderr $stderr
         if ($diagnosis) { return $diagnosis }
     }
 
-    # --- Try local Ollama ---
-    $localDiag = Invoke-OllamaDiagnosis -Issues $issues -Stderr $stderr
+    # --- Try local Ollama (streamed) ---
+    $localDiag = Invoke-OllamaDiagnosisStream -Issues $issues -Stderr $stderr
     if ($localDiag) { return $localDiag }
 
     # --- Offline fallback ---
@@ -242,7 +242,11 @@ function Invoke-Diagnosis([System.Collections.Generic.List[string]]$issues, [str
     return "Could not reach any AI model for diagnosis.`nManual check:`n  1. Verify engine\.venv exists`n  2. Verify engine\.env has required keys`n  3. Check port 8001 is free`n  4. Run: cd engine; .venv\Scripts\python -m uvicorn max_engine.main:app --port 8001"
 }
 
-function Invoke-ClaudeDiagnosis([string]$ApiKey, [System.Collections.Generic.List[string]]$Issues, [string]$Stderr) {
+# Stream a Claude diagnosis token-by-token. Prints tokens live (red) as they
+# arrive and returns the full text. Sets $script:DiagStreamed = $true on success
+# so MAIN knows not to re-print. Uses HttpClient with ResponseHeadersRead so the
+# SSE body is read incrementally (Invoke-RestMethod would buffer the whole reply).
+function Invoke-ClaudeDiagnosisStream([string]$ApiKey, [System.Collections.Generic.List[string]]$Issues, [string]$Stderr) {
     try {
         $issueStr  = if ($Issues.Count) { $Issues -join "`n" } else { "None detected" }
         $stderrStr = Get-Tail $Stderr 1500
@@ -251,48 +255,134 @@ function Invoke-ClaudeDiagnosis([string]$ApiKey, [System.Collections.Generic.Lis
         $stderrStr = $stderrStr -replace "sk-ant-[a-zA-Z0-9\-_]+", "[REDACTED]"
         $stderrStr = $stderrStr -replace "[A-Z_]{8,}=[^\s]{6,}", "[REDACTED]"
 
-        $prompt = "You are Leo, Max's boot-rescue assistant. Max's Python engine (FastAPI on port 8001) failed to start.`n`nISSUES DETECTED:`n$issueStr`n`nENGINE STDERR (last 1500 chars):`n$stderrStr`n`nProvide: (1) root cause in 1-2 sentences, (2) the exact fix command(s) to run, (3) how to verify it worked. Be concise and direct. Plain text only, no markdown."
+        $prompt = "You are Leo, Max's boot-rescue assistant. Max's Python engine (FastAPI on port 8001) failed to start.`n`nISSUES DETECTED:`n$issueStr`n`nENGINE STDERR (last 1500 chars):`n$stderrStr`n`nProvide: (1) root cause in 1-2 sentences, (2) the exact fix command(s) to run, one per line, (3) how to verify it worked. Be concise and direct. Plain text only, no markdown."
 
         $body = @{
             model      = "claude-haiku-4-5-20251001"
             max_tokens = 512
+            stream     = $true
             messages   = @(@{ role = "user"; content = $prompt })
         } | ConvertTo-Json -Depth 5
 
-        $resp = Invoke-RestMethod -Uri "https://api.anthropic.com/v1/messages" `
-            -Method POST `
-            -Headers @{
-                "x-api-key"         = $ApiKey
-                "anthropic-version" = "2023-06-01"
-                "content-type"      = "application/json"
-            } `
-            -Body $body `
-            -ErrorAction Stop
+        Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
+        $client = New-Object System.Net.Http.HttpClient
+        $client.Timeout = [TimeSpan]::FromSeconds(60)
+        $req = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Post, "https://api.anthropic.com/v1/messages")
+        $req.Headers.Add("x-api-key", $ApiKey)
+        $req.Headers.Add("anthropic-version", "2023-06-01")
+        $req.Content = New-Object System.Net.Http.StringContent($body, [System.Text.Encoding]::UTF8, "application/json")
 
-        return $resp.content[0].text
+        $resp = $client.SendAsync($req, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+        if (-not $resp.IsSuccessStatusCode) { $client.Dispose(); return $null }
+        $stream = $resp.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+        $reader = New-Object System.IO.StreamReader($stream)
+        $full = New-Object System.Text.StringBuilder
+        while (-not $reader.EndOfStream) {
+            $line = $reader.ReadLine()
+            if (-not $line -or -not $line.StartsWith("data:")) { continue }
+            $json = $line.Substring(5).Trim()
+            if (-not $json) { continue }
+            try { $obj = $json | ConvertFrom-Json } catch { continue }
+            if ($obj.type -eq "content_block_delta" -and $obj.delta.text) {
+                Write-Host $obj.delta.text -ForegroundColor Red -NoNewline
+                [void]$full.Append($obj.delta.text)
+            }
+        }
+        $reader.Close(); $client.Dispose()
+        if ($full.Length -gt 0) { $script:DiagStreamed = $true; return $full.ToString() }
+        return $null
     } catch {
         return $null
     }
 }
 
-function Invoke-OllamaDiagnosis([System.Collections.Generic.List[string]]$Issues, [string]$Stderr) {
+# Stream a local Ollama diagnosis token-by-token (JSONL stream). Same contract as
+# the Claude streamer: prints live, returns full text, sets $script:DiagStreamed.
+function Invoke-OllamaDiagnosisStream([System.Collections.Generic.List[string]]$Issues, [string]$Stderr) {
     try {
         $issueStr = if ($Issues.Count) { $Issues -join "`n" } else { "None detected" }
         $tail     = Get-Tail $Stderr 500
-        $prompt   = "Max's Python engine failed to start. Issues: $issueStr. Stderr: $tail. Give a 2-line diagnosis and fix. Plain text only."
+        $prompt   = "Max's Python engine failed to start. Issues: $issueStr. Stderr: $tail. Give a 2-line diagnosis and the fix command(s), one per line. Plain text only."
 
-        $body = @{
-            model  = "qwen2.5-coder:3b"
-            prompt = $prompt
-            stream = $false
-        } | ConvertTo-Json
+        $body = (@{ model = "qwen2.5-coder:3b"; prompt = $prompt; stream = $true } | ConvertTo-Json)
 
-        $resp = Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/generate" `
-            -Method POST -Body $body -ErrorAction Stop -TimeoutSec 15
-        return $resp.response
+        Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
+        $client = New-Object System.Net.Http.HttpClient
+        $client.Timeout = [TimeSpan]::FromSeconds(30)
+        $req = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Post, "http://127.0.0.1:11434/api/generate")
+        $req.Content = New-Object System.Net.Http.StringContent($body, [System.Text.Encoding]::UTF8, "application/json")
+
+        $resp = $client.SendAsync($req, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+        if (-not $resp.IsSuccessStatusCode) { $client.Dispose(); return $null }
+        $stream = $resp.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+        $reader = New-Object System.IO.StreamReader($stream)
+        $full = New-Object System.Text.StringBuilder
+        while (-not $reader.EndOfStream) {
+            $line = $reader.ReadLine()
+            if (-not $line) { continue }
+            try { $obj = $line | ConvertFrom-Json } catch { continue }
+            if ($obj.response) {
+                Write-Host $obj.response -ForegroundColor Red -NoNewline
+                [void]$full.Append($obj.response)
+            }
+            if ($obj.done) { break }
+        }
+        $reader.Close(); $client.Dispose()
+        if ($full.Length -gt 0) { $script:DiagStreamed = $true; return $full.ToString() }
+        return $null
     } catch {
         return $null
     }
+}
+
+# Pull runnable fix commands out of a diagnosis. Conservative: only lines that
+# start with a known command token (after stripping bullets/numbering/backticks).
+function Get-FixCommands([string]$text) {
+    $cmds = [System.Collections.Generic.List[string]]::new()
+    if (-not $text) { return $cmds }
+    $prefixes = @('cd ', 'python', 'pip', 'py ', 'npm', 'npx', 'git ', 'netstat',
+                  'taskkill', 'uvicorn', 'powershell', '.\', 'engine\', '.venv')
+    foreach ($raw in ($text -split "`n")) {
+        $line = $raw.Trim()
+        $line = $line -replace '^[\-\*\d\.\)\s`]+', ''   # strip bullets / numbering
+        $line = $line.Trim('`').Trim()
+        if (-not $line) { continue }
+        $low = $line.ToLower()
+        foreach ($p in $prefixes) {
+            if ($low.StartsWith($p.ToLower())) {
+                if ($line.Length -lt 200) { $cmds.Add($line) | Out-Null }
+                break
+            }
+        }
+    }
+    return $cmds
+}
+
+# One-click apply: show the extracted commands, confirm once, run them in order,
+# echoing output. The commands come from a diagnosis the user just reviewed, run
+# locally on their own machine -- this is the explicit "apply suggested fix" step.
+function Invoke-ApplyFix($cmds) {
+    if (-not $cmds -or $cmds.Count -eq 0) {
+        Say "No runnable commands found in the diagnosis. Use [S] to open a shell." "Yellow"
+        return
+    }
+    Write-Host ""
+    Say "Leo found these fix commands:" "Red"
+    for ($i = 0; $i -lt $cmds.Count; $i++) { Say ("  [{0}] {1}" -f ($i + 1), $cmds[$i]) "Yellow" }
+    Write-Host "  Run them now? [Y] yes  [any] cancel  > " -ForegroundColor Red -NoNewline
+    $ans = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown").Character.ToString().ToUpper()
+    Write-Host $ans -ForegroundColor Red
+    if ($ans -ne "Y") { Say "Skipped." "DarkRed"; return }
+    foreach ($c in $cmds) {
+        Say ">> $c" "Red"
+        try {
+            Invoke-Expression $c 2>&1 | ForEach-Object { Say "   $_" "DarkRed" }
+            Say "[ok] done" "Green"
+        } catch {
+            Say "[x] failed: $($_.Exception.Message)" "Red"
+        }
+    }
+    Write-Logbook "applied" "Leo applied suggested commands" (($cmds) -join " ; ")
 }
 
 # ============================================================
@@ -343,23 +433,29 @@ while ($attempt -lt $MAX_ATTEMPTS) {
     Say "[ Attempt $attempt ] Sniffing environment..." "Red"
     $sniff = Invoke-EnvSniff
 
-    # ---- PHASE 3: diagnosis ----
+    # ---- PHASE 3: diagnosis (streamed token-by-token when a model answers) ----
     Write-Host ""
-    $null = Wait-Leo 800 "Diagnosing root cause"
-    $diagnosis = Invoke-Diagnosis $sniff.issues $sniff.stderrSummary
-
-    # ---- show result ----
+    $null = Wait-Leo 600 "Diagnosing root cause"
     Show-Poodle "alert"
     Say ">> DIAGNOSIS (attempt $attempt):" "Red"
-    $diagLines = $diagnosis -split "`n"
-    foreach ($dl in $diagLines) { Say "   $dl" "Red" }
+    $script:DiagStreamed = $false
+    $diagnosis = Invoke-Diagnosis $sniff.issues $sniff.stderrSummary
+    if ($script:DiagStreamed) {
+        Write-Host ""   # close off the streamed line
+    } else {
+        # Offline heuristic (no streaming) -> print line by line as before.
+        foreach ($dl in ($diagnosis -split "`n")) { Say "   $dl" "Red" }
+    }
+    $diagLines     = $diagnosis -split "`n"
     $lastDiagnosis = $diagLines[0]
     $lastFix       = ($diagLines | Select-Object -Skip 1) -join " "
+    $script:FixCommands = Get-FixCommands $diagnosis
     Write-Logbook "proposed" $lastDiagnosis $lastFix
     Rule
 
     # ---- MENU ----
-    Say "[R] Retry (relaunch Max)   [D] Diagnose again   [S] Open shell   [Q] Quit" "Yellow"
+    $applyHint = if ($script:FixCommands.Count -gt 0) { "[A] Apply fix ($($script:FixCommands.Count))   " } else { "" }
+    Say "[R] Retry (relaunch Max)   ${applyHint}[D] Diagnose again   [S] Open shell   [Q] Quit" "Yellow"
     Write-Host "  > " -ForegroundColor Red -NoNewline
     $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown").Character.ToString().ToUpper()
     Write-Host $key -ForegroundColor Red
@@ -372,6 +468,12 @@ while ($attempt -lt $MAX_ATTEMPTS) {
     elseif ($key -eq "S") {
         Say "Leo: Opening a shell for you. Type 'exit' to return." "Red"
         Start-Process powershell -Wait
+    }
+    elseif ($key -eq "A") {
+        Invoke-ApplyFix $script:FixCommands
+        $up = Wait-Leo 6000 "Re-checking engine after applying fix" $true
+        if ($up) { break }
+        Say "Engine still not up. Try [R] to relaunch, or [D] to diagnose again." "Yellow"
     }
     elseif ($key -eq "D") {
         continue   # loop again for re-diagnosis

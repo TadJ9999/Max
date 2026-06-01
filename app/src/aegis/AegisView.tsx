@@ -3,6 +3,7 @@ import {
   type AegisEvent,
   type AegisSeverity,
   applyFix,
+  autoFixNative,
   getAegisEvents,
   getAegisSources,
   streamAutoFix,
@@ -202,16 +203,24 @@ export function AegisView() {
     setAutoFixStatus("Starting auto-fix…");
     setDiagText("");
     setDiagState("idle");
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
+    const fmtStatus = (ev: { status?: string; detail?: string }) =>
+      ev.status === "applied" ? `✓ Applied & verified` : `${ev.status}${ev.detail ? ` — ${ev.detail}` : ""}`;
     try {
-      for await (const ev of streamAutoFix(selectedId, ctrl.signal)) {
-        if (ev.error) {
-          setAutoFixStatus(`Error: ${ev.error}`);
-          break;
-        }
-        if (ev.status) {
-          setAutoFixStatus(ev.status === "applied" ? `✓ Applied & verified` : `${ev.status}${ev.detail ? ` — ${ev.detail}` : ""}`);
+      // Desktop: drive the fix through the Rust/Tauri path; browser/LAN: SSE stream.
+      const native = await autoFixNative(selectedId);
+      if (native) {
+        if (native.error) setAutoFixStatus(`Error: ${native.error}`);
+        else if (native.status) setAutoFixStatus(fmtStatus(native));
+        else setAutoFixStatus("Auto-fix complete");
+      } else {
+        const ctrl = new AbortController();
+        abortRef.current = ctrl;
+        for await (const ev of streamAutoFix(selectedId, ctrl.signal)) {
+          if (ev.error) {
+            setAutoFixStatus(`Error: ${ev.error}`);
+            break;
+          }
+          if (ev.status) setAutoFixStatus(fmtStatus(ev));
         }
       }
     } catch (e) {

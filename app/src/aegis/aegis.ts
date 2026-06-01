@@ -164,10 +164,35 @@ export async function getAegisSources(): Promise<AegisSources | null> {
   }
 }
 
+type AutoFixEvent = { status?: string; detail?: string; error?: string };
+
+function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+// Desktop/Rust auto-fix path: trigger the engine's auto-fix through the Tauri
+// shell (raw HTTP from Rust) and parse the final status from the collected SSE
+// body. Returns null when not running under Tauri, so callers fall back to the
+// in-webview fetch stream (browser / LAN).
+export async function autoFixNative(eventId: string): Promise<AutoFixEvent | null> {
+  if (!isTauri()) return null;
+  const { invoke } = await import("@tauri-apps/api/core");
+  const body = await invoke<string>("aegis_auto_fix", { eventId });
+  let last: AutoFixEvent = {};
+  for (const line of body.split("\n")) {
+    const t = line.trim();
+    if (!t.startsWith("data:")) continue;
+    const data = t.slice(5).trim();
+    if (!data || data === "[DONE]") continue;
+    try { last = JSON.parse(data) as AutoFixEvent; } catch { /* skip */ }
+  }
+  return last;
+}
+
 export async function* streamAutoFix(
   eventId: string,
   signal?: AbortSignal,
-): AsyncGenerator<{ status?: string; detail?: string; error?: string }> {
+): AsyncGenerator<AutoFixEvent> {
   const r = await fetch(`${ENGINE_URL}/aegis/auto-fix/${encodeURIComponent(eventId)}`, {
     method: "POST",
     signal,

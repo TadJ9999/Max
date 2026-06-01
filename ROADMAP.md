@@ -386,7 +386,7 @@ Parser rules:
 - [x] **Leo rescue console** — red `LEO · SELF-DIAGNOSE MODE` banner, **all output red**, animated sprite + live status, gathers env + stderr signal, **redacts secrets**, diagnoses (cloud Claude → local Ollama → offline heuristics), records to `selfdiagnosefixes.md`, and **loops until the engine is back up**
 - [x] **Happy finale** — on green `/health`, Leo prints **"My job is done!"** + a tiny smiling toy-poodle ASCII image, then exits; bubbly encouraging voice throughout
 - [x] **Polish**: fixed PowerShell 5.1 encoding bug (em-dash/box-chars with 0x94 byte read as curly-quote by Windows-1252, breaking string parsing); added `-ExecutionPolicy Bypass` to launcher ✅
-- [ ] *(stretch)* Stream diagnosis token-by-token; one-click "apply suggested commands"; cross-platform launcher (`.sh`) once non-Windows lands
+- [~] *(stretch)* **Stream diagnosis token-by-token** — `Invoke-ClaudeDiagnosisStream` / `Invoke-OllamaDiagnosisStream` in `scripts/leo.ps1` read the SSE/JSONL body via `HttpClient` (ResponseHeadersRead) and print tokens live in red as they arrive; **one-click "apply suggested commands"** — `Get-FixCommands` extracts runnable commands from the diagnosis, `[A] Apply fix` shows + confirms + runs them then re-checks `/health`. **Still open:** cross-platform launcher (`.sh`) once non-Windows lands
 
 **Runtime layer (engine up):**
 - [x] **Observability module** (`engine/max_engine/aegis/`): structured logger + ring buffer + SQLite event store (survives restart); FastAPI exception handler; taps on delegate `ERROR` sessions, provider errors, and startup failures; **secret redaction** before store/egress
@@ -400,7 +400,7 @@ Parser rules:
 - [x] **Tests** (`engine/tests/test_aegis_*.py`): capture, event ranking, redaction, store operations — 21 tests passing
 - [x] **Surface egress in settings/privacy guard** — amber egress warning + Aegis section in Settings; notes secrets are redacted before egress ✅
 - [x] *(stretch)* **Opt-in auto mode** (`autonomy=auto` config): `POST /aegis/auto-fix/{event_id}` streams diagnose→extract diff→apply→verify in one shot; **Apollo fix memory**: every `apply()` embeds the fix record into Apollo vector store (`source="aegis_fix"`) so recurring bugs are recognized; autonomy selector (suggest/ask/auto) in both Settings and AegisView; **Auto-Fix button** shown in AegisView when `autonomy=auto`
-- [ ] *(stretch)* Rust/Tauri auto-fix path; streaming token-by-token Leo diagnosis; cross-platform launcher (.sh)
+- [~] *(stretch)* **Rust/Tauri auto-fix path** — `aegis_auto_fix(event_id)` Tauri command (`lib.rs`) POSTs `/aegis/auto-fix/{id}` over raw TCP and returns the collected SSE body; `AegisView` drives the desktop Auto-Fix through this native path (`autoFixNative` in `aegis.ts`), falling back to the in-webview SSE stream in the browser/LAN client. Streaming token-by-token Leo diagnosis: done (see Leo). **Still open:** cross-platform launcher (`.sh`)
 
 ---
 
