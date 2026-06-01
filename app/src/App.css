@@ -645,7 +645,7 @@ body {
   left: 2px;
   top: 0;
   bottom: 0;
-  height: 17px;
+  height: 22px;
   margin: auto;
   display: block;
   line-height: 0;
@@ -684,6 +684,57 @@ body {
 }
 .chat__cloud {
   color: var(--magenta);
+}
+/* Vision / image attach */
+.chat__attach {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.chat__attach:hover {
+  border-color: #60a5fa;
+  color: #60a5fa;
+}
+.chat__image-input {
+  display: none;
+}
+.chat__image-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(96, 165, 250, 0.08);
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  border-radius: 8px;
+  margin-bottom: 4px;
+}
+.chat__image-thumb {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.chat__image-clear {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.chat__image-clear:hover { color: #f87171; }
+.chat__image-label {
+  font-size: 11px;
+  color: #60a5fa;
+  margin-left: auto;
 }
 /* "Knows your code" toggle + re-index button (icon ghost-buttons). */
 .chat__mode,

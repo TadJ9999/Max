@@ -342,9 +342,21 @@ export function ModelManager() {
   const load = useCallback(async () => {
     const d = await getModels();
     setData(d);
+    return d;
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  // Initial load with retry: poll every 3s until the engine responds.
+  useEffect(() => {
+    let alive = true;
+    const poll = async () => {
+      const d = await getModels();
+      if (!alive) return;
+      setData(d);
+      if (!d) window.setTimeout(poll, 3000);
+    };
+    void poll();
+    return () => { alive = false; };
+  }, []);
 
   const handleBenchmark = async (modelId: string) => {
     setBenchmarking(modelId);

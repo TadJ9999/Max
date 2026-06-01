@@ -28,6 +28,20 @@ class ProviderConfig(BaseModel):
     # API keys are loaded from the environment / secret store, never hard-coded.
 
 
+class CustomCommand(BaseModel):
+    """A user-defined DSL command with a custom trigger character and prompt template.
+
+    The trigger character is used as both the opening and closing delimiter, e.g.
+    ``? explain this ?`` if trigger is ``?``. The prompt_template may include
+    ``{body}`` which is replaced with the command body at call time.
+    """
+
+    name: str
+    description: str = ""
+    trigger: str  # single character, e.g. "?" or ">"
+    prompt_template: str  # e.g. "Explain the following in plain English:\n\n{body}"
+
+
 class DelegateConfig(BaseModel):
     mode: str = "smart-auto"  # "manual" | "smart-auto"
     max_parallel_local: int = 1  # heavy local models queue past this (12 GB VRAM)
@@ -179,7 +193,7 @@ class RagConfig(BaseModel):
 class EngineConfig(BaseModel):
     # sigil -> provider name
     sigils: dict[str, str] = Field(
-        default_factory=lambda: {"@": "ollama", "#": "qwen", "!": "claude"}
+        default_factory=lambda: {"@": "ollama", "#": "qwen", "!": "claude", "%": "openai"}
     )
     # task -> default model
     task_models: dict[str, str] = Field(
@@ -200,7 +214,13 @@ class EngineConfig(BaseModel):
                 "summarize": "claude-haiku-4-5-20251001",
                 "fix": "claude-sonnet-4-6",
                 "chat": "claude-sonnet-4-6",
-            }
+            },
+            "openai": {
+                "generate": "gpt-4o",
+                "summarize": "gpt-4o-mini",
+                "fix": "gpt-4o",
+                "chat": "gpt-4o",
+            },
         }
     )
     providers: list[ProviderConfig] = Field(
@@ -208,8 +228,10 @@ class EngineConfig(BaseModel):
             ProviderConfig(name="ollama", kind="local", base_url="http://127.0.0.1:11434"),
             ProviderConfig(name="qwen", kind="local", base_url="http://127.0.0.1:11434"),
             ProviderConfig(name="claude", kind="cloud"),
+            ProviderConfig(name="openai", kind="cloud"),
         ]
     )
+    custom_commands: list[CustomCommand] = Field(default_factory=list)
     allow_cloud: bool = True
     force_offline: bool = False  # kill-switch: block ALL outbound network calls
     workspace_allowlist: list[str] = Field(default_factory=list)
@@ -346,6 +368,18 @@ def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
         cfg.aegis.osv_ttl_seconds = max(3600, int(ag["osv_ttl_seconds"]))
     if "score_threshold" in ag:
         cfg.aegis.score_threshold = max(0, min(100, int(ag["score_threshold"])))
+    cmds = data.get("custom_commands")
+    if isinstance(cmds, list):
+        parsed: list[CustomCommand] = []
+        for c in cmds:
+            if isinstance(c, dict) and c.get("name") and c.get("trigger") and c.get("prompt_template"):
+                parsed.append(CustomCommand(
+                    name=str(c["name"]),
+                    description=str(c.get("description", "")),
+                    trigger=str(c["trigger"])[:1],
+                    prompt_template=str(c["prompt_template"]),
+                ))
+        cfg.custom_commands = parsed
 
 
 def load_config() -> EngineConfig:
@@ -433,5 +467,14 @@ def save_overrides(cfg: EngineConfig) -> None:
             "osv_ttl_seconds": cfg.aegis.osv_ttl_seconds,
             "score_threshold": cfg.aegis.score_threshold,
         },
+        "custom_commands": [
+            {
+                "name": c.name,
+                "description": c.description,
+                "trigger": c.trigger,
+                "prompt_template": c.prompt_template,
+            }
+            for c in cfg.custom_commands
+        ],
     }
     CONFIG_FILE.write_text(json.dumps(data, indent=2))

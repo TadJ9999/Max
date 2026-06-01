@@ -18,13 +18,35 @@ from pathlib import Path
 
 import httpx
 
+from collections.abc import Callable
+
 from .base import ChatChunk, Provider
 
 _EGRESS_LOG = Path(__file__).resolve().parent.parent.parent / ".egress.log"
 
+# Callback set by main.py at startup to record usage into the analytics store.
+# Signature: (feature, provider, model, in_tokens, out_tokens)
+_usage_callback: Callable[[str, str, str, int, int], None] | None = None
 
-def _log_egress(model: str, action: str, input_tokens: int = 0, output_tokens: int = 0) -> None:
-    """Append one line to the egress audit log."""
+
+def set_usage_callback(cb: Callable[[str, str, str, int, int], None]) -> None:
+    global _usage_callback
+    _usage_callback = cb
+
+
+def clear_usage_callback() -> None:
+    global _usage_callback
+    _usage_callback = None
+
+
+def _log_egress(
+    model: str,
+    action: str,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    feature: str = "system",
+) -> None:
+    """Append one line to the egress audit log; fire usage callback on chat_done."""
     try:
         ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         line = (
@@ -35,6 +57,11 @@ def _log_egress(model: str, action: str, input_tokens: int = 0, output_tokens: i
             f.write(line)
     except OSError:
         pass
+    if action == "chat_done" and _usage_callback is not None:
+        try:
+            _usage_callback(feature, "anthropic", model, input_tokens, output_tokens)
+        except Exception:
+            pass
 
 ANTHROPIC_VERSION = "2023-06-01"
 
@@ -51,12 +78,13 @@ def _api_error_message(status: int, body: bytes) -> str:
 
 
 def _split_system(messages: list[dict]) -> tuple[str | None, list[dict]]:
-    """Separate system messages (top-level in the Anthropic API) from the turns."""
+    """Separate system messages from the turns. content may be str or list (vision)."""
     system_parts: list[str] = []
     convo: list[dict] = []
     for m in messages:
         if m.get("role") == "system":
-            system_parts.append(m.get("content", ""))
+            c = m.get("content", "")
+            system_parts.append(c if isinstance(c, str) else "")
         else:
             convo.append({"role": m["role"], "content": m["content"]})
     return ("\n\n".join(system_parts) if system_parts else None), convo
@@ -80,6 +108,8 @@ class AnthropicProvider(Provider):
         self.max_tokens = max_tokens
 
     async def chat(self, model: str, messages: list[dict], **params) -> AsyncIterator[ChatChunk]:
+        feature = params.pop("_feature", "system")
+
         if not self.api_key:
             raise RuntimeError(
                 "ANTHROPIC_API_KEY is not set; the cloud (!) provider is unavailable"
@@ -108,7 +138,7 @@ class AnthropicProvider(Provider):
         owns_client = self._client is None
         output_tokens = 0
         input_tokens_reported = 0
-        _log_egress(model, "chat_start")
+        _log_egress(model, "chat_start", feature=feature)
         try:
             async with client.stream(
                 "POST", f"{self.base_url}/v1/messages", json=payload, headers=headers
@@ -138,6 +168,6 @@ class AnthropicProvider(Provider):
                     elif etype == "message_stop":
                         yield ChatChunk(text="", done=True)
         finally:
-            _log_egress(model, "chat_done", input_tokens_reported, output_tokens)
+            _log_egress(model, "chat_done", input_tokens_reported, output_tokens, feature=feature)
             if owns_client:
                 await client.aclose()

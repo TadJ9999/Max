@@ -70,10 +70,13 @@ async def fetch_url(url: str, socks_port: int = 9050, engine_base: str = "http:/
         # Handle srcset too
         if tag.get("srcset"):
             tag["srcset"] = ""
+    # Strip external stylesheets — their url() references still point to .onion
+    # paths the browser can't reach, which breaks layout. Our injected dark
+    # theme handles basic styling instead.
     for tag in soup.find_all("link"):
         rel = tag.get("rel") or []
-        if "stylesheet" in rel and tag.get("href"):
-            tag["href"] = _res_base + _url_quote(urljoin(url, tag["href"]), safe="")
+        if "stylesheet" in rel:
+            tag.decompose()
 
     # Remove scripts (security) and inline style conflicts
     for script in soup.find_all("script"):

@@ -23,8 +23,12 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import datetime as _dt
+import time as _time
+
 from . import __version__
 from .aegis import AegisCapture, AegisService, AegisStore, ScanService
+from .analytics.store import UsageStore
 from .darknet import TorService
 from .darknet.client import make_tor_client as _make_tor_client
 from .darknet.fetcher import fetch_url as tor_fetch_url
@@ -143,6 +147,7 @@ _aegis_store = AegisStore(config.apollo.db_path)
 _aegis_capture = AegisCapture(_aegis_store)
 _profile_store = UserProfileStore(config.apollo.db_path)
 _prediction_history = PredictionHistory(config.apollo.db_path)
+_usage_store = UsageStore(config.apollo.db_path)
 _repo_root = str(Path(__file__).resolve().parent.parent.parent)
 aegis_svc = AegisService(
     store=_aegis_store,
@@ -159,6 +164,42 @@ dark_svc = TorService(
     control_port=config.darknet.control_port,
 )
 _benchmark_store = BenchmarkStore(config.apollo.db_path.replace(".apollo.db", ".apollo.db"))
+
+# ── Analytics: usage tracking ────────────────────────────────────────────────
+
+_FEATURE_MAP: list[tuple[str, str]] = [
+    ("/apollo/",      "apollo"),
+    ("/osint/",       "osint"),
+    ("/market/",      "market"),
+    ("/polymarket/",  "polymarket"),
+    ("/sentinel/",    "sentinel"),
+    ("/voice/",       "voice"),
+    ("/rag/",         "rag"),
+    ("/sessions/",    "delegate"),
+    ("/command",      "chat"),
+    ("/chat",         "chat"),
+    ("/v1/chat/",     "api"),
+]
+
+
+def _feature_from_path(path: str) -> str:
+    for prefix, feat in _FEATURE_MAP:
+        if path.startswith(prefix):
+            return feat
+    return "system"
+
+
+def _on_usage(feature: str, provider: str, model: str, in_tok: int, out_tok: int) -> None:
+    ts = int(_time.time())
+    day = _dt.date.today().isoformat()
+    cost = _usage_store.calc_cost(provider, model, in_tok, out_tok)
+    _usage_store.record(ts, day, feature, provider, model, in_tok, out_tok, cost)
+
+
+from .providers.anthropic import set_usage_callback as _set_ant_cb
+from .providers.ollama import set_usage_callback as _set_oll_cb
+_set_ant_cb(_on_usage)
+_set_oll_cb(_on_usage)
 
 # Register Aegis as the global FastAPI exception handler so unhandled errors
 # are captured into the event store before the 500 response is returned.
@@ -233,6 +274,7 @@ def _config_view() -> dict:
         "allow_cloud": config.allow_cloud,
         "force_offline": config.force_offline,
         "cloud_key_set": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "openai_key_set": bool(os.environ.get("OPENAI_API_KEY")),
         "finnhub_key_set": bool(os.environ.get("FINNHUB_API_KEY")),
         "delegate": {
             "mode": config.delegate.mode,
@@ -674,7 +716,7 @@ class ParseRequest(BaseModel):
 def parse(req: ParseRequest) -> dict:
     """Parse a Max command and show how it would be routed (no inference yet)."""
     try:
-        cmd = parse_command(req.text, sigils=config.sigils)
+        cmd = parse_command(req.text, sigils=config.sigils, custom_commands=config.custom_commands)
     except ParseError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     route = resolve(cmd, config)
@@ -693,6 +735,7 @@ def _sse_stream(
     model: str,
     messages: list[dict],
     on_done: Callable[[str], None] | None = None,
+    feature: str = "system",
 ) -> StreamingResponse:
     """Stream a provider response as OpenAI-compatible SSE chunks. If ``on_done``
     is given, it's called with the full assembled text after a clean finish (used
@@ -701,7 +744,7 @@ def _sse_stream(
     async def event_stream() -> AsyncIterator[str]:
         parts: list[str] = []
         try:
-            async for chunk in provider.chat(model, messages):
+            async for chunk in provider.chat(model, messages, _feature=feature):
                 parts.append(chunk.text)
                 delta = {"content": chunk.text} if chunk.text else {}
                 payload = {
@@ -751,10 +794,10 @@ async def chat_completions(req: ChatRequest):
     messages = [m.model_dump() for m in req.messages]
 
     if req.stream:
-        return _sse_stream(provider, req.model, messages)
+        return _sse_stream(provider, req.model, messages, feature="api")
 
     text = ""
-    async for chunk in provider.chat(req.model, messages):
+    async for chunk in provider.chat(req.model, messages, _feature="api"):
         text += chunk.text
     return {
         "object": "chat.completion",
@@ -776,7 +819,7 @@ async def command(req: CommandRequest):
     The ``!`` sigil routes to the cloud (blocked if ``allow_cloud`` is off).
     """
     try:
-        cmd = parse_command(req.text, sigils=config.sigils)
+        cmd = parse_command(req.text, sigils=config.sigils, custom_commands=config.custom_commands)
     except ParseError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     try:
@@ -785,8 +828,8 @@ async def command(req: CommandRequest):
         raise HTTPException(status_code=403, detail=str(e)) from e
 
     provider = build_provider(route.provider, config, model=route.model)
-    messages = messages_for(cmd.action, cmd.body)
-    return _sse_stream(provider, route.model, messages)
+    messages = messages_for(cmd.action, cmd.body, prompt_override=cmd.prompt_override)
+    return _sse_stream(provider, route.model, messages, feature="chat")
 
 
 class CompleteRequest(BaseModel):
@@ -816,17 +859,64 @@ async def complete(req: CompleteRequest) -> dict:
 
 class ChatTextRequest(BaseModel):
     text: str
+    image_base64: str | None = None
+    image_type: str = "image/jpeg"
+    vision_provider: str = "claude"
 
 
 @app.post("/chat")
 async def chat(req: ChatTextRequest):
-    """Plain conversational chat (no DSL operators required). Routes to the
-    default local provider with the configured chat model and streams the reply.
-    Use the ``/command`` endpoint for DSL commands (``.``/``..``/``~`` + sigils)."""
+    """Plain conversational chat. When ``image_base64`` is set the request is
+    routed to a vision-capable cloud provider (Claude or OpenAI)."""
+    if req.image_base64:
+        _check_network()
+        vp = req.vision_provider if req.vision_provider in {"claude", "openai"} else "claude"
+        if not config.allow_cloud:
+            raise HTTPException(status_code=403, detail="vision requires cloud; allow_cloud is off")
+        provider = build_provider(vp, config)
+        if vp == "openai":
+            content: list[dict] = [
+                {"type": "text", "text": req.text},
+                {"type": "image_url", "image_url": {"url": f"data:{req.image_type};base64,{req.image_base64}"}},
+            ]
+        else:
+            content = [
+                {"type": "text", "text": req.text},
+                {"type": "image", "source": {"type": "base64", "media_type": req.image_type, "data": req.image_base64}},
+            ]
+        pm = config.provider_models.get(vp, {})
+        model = pm.get("chat") or config.task_models.get("chat", "claude-sonnet-4-6")
+        messages = [
+            {"role": "system", "content": "You are Max, a helpful assistant that can analyse images."},
+            {"role": "user", "content": content},
+        ]
+        return _sse_stream(provider, model, messages, feature="vision")
     provider = build_provider("ollama", config)
     model = config.task_models.get("chat", "qwen2.5-coder:14b")
     messages = messages_for("chat", req.text)
-    return _sse_stream(provider, model, messages)
+    return _sse_stream(provider, model, messages, feature="chat")
+
+
+# ---- Custom commands config --------------------------------------------
+
+
+class CustomCommandsRequest(BaseModel):
+    commands: list[dict]
+
+
+@app.get("/config/commands")
+def get_commands():
+    """Return the current list of user-defined custom commands."""
+    return {"commands": [c.model_dump() for c in config.custom_commands]}
+
+
+@app.put("/config/commands")
+def put_commands(req: CustomCommandsRequest):
+    """Replace the custom commands list and persist to .maxconfig.json."""
+    from .config import _apply_overrides, save_overrides
+    _apply_overrides(config, {"custom_commands": req.commands})
+    save_overrides(config)
+    return {"commands": [c.model_dump() for c in config.custom_commands]}
 
 
 # ---- Delegate system: parallel sessions --------------------------------
@@ -1034,7 +1124,7 @@ async def rag_ask(req: RagAskRequest):
             rag_memory.append(sid, "user", req.question)
             rag_memory.append(sid, "assistant", answer)
 
-    return _sse_stream(provider, model, rag_messages(context, req.question, history), on_done)
+    return _sse_stream(provider, model, rag_messages(context, req.question, history), on_done, feature="rag")
 
 
 @app.get("/rag/memory/{session_id}")
@@ -1137,7 +1227,7 @@ async def osint_chat(req: OsintChatRequest):
         {"role": "system", "content": apply_persona(system, config.personality, _profile_store.to_context_block())},
         *history,
     ]
-    return _sse_stream(provider, model, messages)
+    return _sse_stream(provider, model, messages, feature="osint")
 
 
 # ---- Market: live US-stock board + AI "Ingest" -------------------------
@@ -1153,7 +1243,7 @@ def _ai_route() -> tuple[str, str]:
     return "ollama", config.task_models.get("chat", "qwen2.5-coder:14b")
 
 
-def _stream_ai(action: str, payload: dict) -> StreamingResponse:
+def _stream_ai(action: str, payload: dict, feature: str = "system") -> StreamingResponse:
     """Route to cloud/local, build messages for ``action`` from a JSON payload,
     and stream the reply. The shared path behind Market analyze + Apollo reports."""
     provider_name, model = _ai_route()
@@ -1165,7 +1255,7 @@ def _stream_ai(action: str, payload: dict) -> StreamingResponse:
     msgs[0]["content"] = apply_persona(
         msgs[0]["content"], config.personality, _profile_store.to_context_block()
     )
-    return _sse_stream(provider, model, msgs)
+    return _sse_stream(provider, model, msgs, feature=feature)
 
 
 @app.get("/market/quotes")
@@ -1211,7 +1301,7 @@ async def market_analyze():
     board = await market.get_board()
     news = await market.get_news(count=8)
     payload = {"board": board.to_dict(), "stats": board_digest(board), "news": news}
-    return _stream_ai("market", payload)
+    return _stream_ai("market", payload, feature="market")
 
 
 class MarketChatRequest(BaseModel):
@@ -1233,7 +1323,7 @@ async def market_chat_endpoint(req: MarketChatRequest):
     history = [msg.model_dump() for msg in req.messages]
     messages = market_chat_messages(snapshot, history)
     messages[0]["content"] = apply_persona(messages[0]["content"], config.personality, _profile_store.to_context_block())
-    return _sse_stream(provider, model, messages)
+    return _sse_stream(provider, model, messages, feature="market")
 
 
 @app.get("/market/candles/{symbol}")
@@ -1383,7 +1473,7 @@ async def polymarket_analyze() -> StreamingResponse:
     only — not financial advice."""
     board = await polymarket_svc.get_board()
     payload = {"markets": [m.to_dict() for m in board.markets[:30]]}
-    return _stream_ai("polymarket", payload)
+    return _stream_ai("polymarket", payload, feature="polymarket")
 
 
 class PolymarketChatRequest(BaseModel):
@@ -1405,7 +1495,7 @@ async def polymarket_chat(req: PolymarketChatRequest) -> StreamingResponse:
     history = [msg.model_dump() for msg in req.messages]
     messages = polymarket_chat_messages(snapshot, history)
     messages[0]["content"] = apply_persona(messages[0]["content"], config.personality, _profile_store.to_context_block())
-    return _sse_stream(provider, model, messages)
+    return _sse_stream(provider, model, messages, feature="polymarket")
 
 
 # ---- Local model lifecycle + VRAM management ---------------------------
@@ -1482,6 +1572,35 @@ def egress_log_clear() -> dict:
     if _EGRESS_LOG_PATH.exists():
         _EGRESS_LOG_PATH.write_text("", encoding="utf-8")
     return {"cleared": True}
+
+
+# ---- Analytics: token usage & cost ----------------------------------------
+
+@app.get("/analytics/summary")
+def analytics_summary(days: int = 30) -> dict:
+    """Total token usage and cost summary for the given time window."""
+    return _usage_store.summary(max(1, min(90, days)))
+
+
+@app.get("/analytics/daily")
+def analytics_daily(days: int = 30) -> dict:
+    """Per-day per-feature token breakdown for the stacked bar chart."""
+    d = max(1, min(90, days))
+    return {"days": d, "series": _usage_store.daily(d)}
+
+
+@app.get("/analytics/breakdown")
+def analytics_breakdown(days: int = 30) -> dict:
+    """Aggregated breakdown by feature × model × provider, sorted by cost."""
+    d = max(1, min(90, days))
+    return {"days": d, "rows": _usage_store.breakdown(d)}
+
+
+@app.delete("/analytics/reset")
+def analytics_reset() -> dict:
+    """Clear all token usage history."""
+    n = _usage_store.reset()
+    return {"cleared": True, "rows_deleted": n}
 
 
 # ---- Aegis: self-repair console ----------------------------------------
@@ -1726,7 +1845,7 @@ def sentinel_sources() -> dict:
 async def sentinel_analyze() -> StreamingResponse:
     """AI brief grounded in the live space snapshot (SSE)."""
     payload = await sentinel_svc.analyze_payload()
-    return _stream_ai("sentinel", payload)
+    return _stream_ai("sentinel", payload, feature="sentinel")
 
 
 class SentinelChatRequest(BaseModel):
@@ -1746,7 +1865,7 @@ async def sentinel_chat(req: SentinelChatRequest) -> StreamingResponse:
     messages[0]["content"] = apply_persona(
         messages[0]["content"], config.personality, _profile_store.to_context_block()
     )
-    return _sse_stream(provider, model, messages)
+    return _sse_stream(provider, model, messages, feature="sentinel")
 
 
 # ---- Apollo: prediction engine -----------------------------------------
@@ -1811,7 +1930,7 @@ async def _apollo_run(kind: str):
             provider_name, model = _ai_route()
             yield _status_ev(f"Generating via {provider_name} · {model}…")
             provider = build_provider(provider_name, config)
-            async for chunk in provider.chat(model, messages_for(action, json.dumps(payload))):
+            async for chunk in provider.chat(model, messages_for(action, json.dumps(payload)), _feature="apollo"):
                 if chunk.text:
                     yield _delta_ev(chunk.text, model)
             yield "data: [DONE]\n\n"
@@ -1894,7 +2013,7 @@ async def apollo_chat(req: ApolloChatRequest) -> StreamingResponse:
     except KeyError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     messages = [{"role": "system", "content": system}, *history]
-    return _sse_stream(provider, model, messages)
+    return _sse_stream(provider, model, messages, feature="apollo")
 
 
 # ---- User profile: persistent personal memory --------------------------
@@ -2058,6 +2177,158 @@ def lan_status() -> dict:
         "cert_ready": cert_ready,
     }
 
+
+
+# ---- Code tab: file browser + AI edit planner ---------------------------
+
+from .code import FileManager
+from .code.planner import stream_plan as _stream_plan
+
+_file_mgr: FileManager | None = None
+
+
+def _get_file_mgr() -> FileManager:
+    global _file_mgr
+    if _file_mgr is None or set(str(r) for r in _file_mgr._roots) != set(config.workspace_allowlist):
+        _file_mgr = FileManager(config.workspace_allowlist)
+    return _file_mgr
+
+
+@app.get("/code/files")
+def code_list_files(path: str = ""):
+    """List files/dirs in the workspace. Empty path returns root entries."""
+    fm = _get_file_mgr()
+    if not config.workspace_allowlist:
+        raise HTTPException(status_code=400, detail="No workspace paths allow-listed in settings")
+    try:
+        if not path:
+            entries = fm.list_root()
+        else:
+            entries = fm.list_dir(path)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    return {"entries": [{"name": e.name, "path": e.path, "is_dir": e.is_dir} for e in entries]}
+
+
+@app.get("/code/file")
+def code_read_file(path: str):
+    """Read a single file's content (text only, <= 500 KB)."""
+    fm = _get_file_mgr()
+    try:
+        content = fm.read_file(path)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"file not found: {path}")
+    except ValueError as e:
+        raise HTTPException(status_code=413, detail=str(e)) from e
+    return {"path": path, "content": content}
+
+
+class WriteFileRequest(BaseModel):
+    path: str
+    content: str
+
+
+@app.put("/code/file")
+def code_write_file(req: WriteFileRequest):
+    """Write (overwrite) a file within the workspace allowlist."""
+    fm = _get_file_mgr()
+    try:
+        fm.write_file(req.path, req.content)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    return {"ok": True, "path": req.path}
+
+
+class PlanRequest(BaseModel):
+    request: str
+    file_paths: list[str] = []  # specific files to include; empty = let AI decide from context
+    provider: str = "claude"    # vision-capable model; defaults to Claude
+
+
+@app.post("/code/plan")
+async def code_plan(req: PlanRequest):
+    """Stream a multi-file AI edit plan for the given natural-language request."""
+    _check_network()
+    if not config.allow_cloud:
+        raise HTTPException(status_code=403, detail="code planning uses a cloud provider; allow_cloud is off")
+    fm = _get_file_mgr()
+    prov_name = req.provider if req.provider in {"claude", "openai"} else "claude"
+    try:
+        provider = build_provider(prov_name, config)
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    pm = config.provider_models.get(prov_name, {})
+    model = pm.get("generate") or config.task_models.get("generate", "claude-sonnet-4-6")
+
+    file_contexts: list[dict] = []
+    for fp in req.file_paths:
+        try:
+            text = fm.read_file(fp)
+            file_contexts.append({"path": fp, "content": text})
+        except Exception:
+            pass  # skip unreadable files silently
+
+    async def _gen():
+        async for chunk in _stream_plan(req.request, file_contexts, provider, model):
+            yield chunk
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+class ApplyPlanRequest(BaseModel):
+    patches: list[dict]  # [{path, new_content}]
+    take_snapshot: bool = True
+
+
+_last_snapshot_ref: str | None = None
+
+
+@app.post("/code/apply")
+def code_apply(req: ApplyPlanRequest):
+    """Apply a list of file patches (after optional git snapshot)."""
+    global _last_snapshot_ref
+    fm = _get_file_mgr()
+    paths = [p["path"] for p in req.patches if "path" in p]
+
+    snapshot_ref: str | None = None
+    if req.take_snapshot:
+        snapshot_ref = fm.git_snapshot(paths)
+        _last_snapshot_ref = snapshot_ref
+
+    written: list[str] = []
+    errors: list[str] = []
+    for patch in req.patches:
+        path = patch.get("path", "")
+        new_content = patch.get("new_content", "")
+        if not path or new_content is None:
+            continue
+        try:
+            fm.write_file(path, new_content)
+            written.append(path)
+        except Exception as e:
+            errors.append(f"{path}: {e}")
+
+    return {
+        "written": written,
+        "errors": errors,
+        "snapshot_ref": snapshot_ref,
+    }
+
+
+@app.post("/code/rollback")
+def code_rollback():
+    """Rollback the last applied plan using the stored git stash ref."""
+    global _last_snapshot_ref
+    if not _last_snapshot_ref:
+        raise HTTPException(status_code=404, detail="no snapshot available to rollback")
+    fm = _get_file_mgr()
+    ok = fm.git_rollback(_last_snapshot_ref)
+    ref = _last_snapshot_ref
+    if ok:
+        _last_snapshot_ref = None
+    return {"ok": ok, "stash_ref": ref}
 
 # ---- Static files (LAN mobile access) -----------------------------------
 

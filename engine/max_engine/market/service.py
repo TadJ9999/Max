@@ -85,8 +85,12 @@ class MarketService:
             owns = self._client is None
             client = self._client or httpx.AsyncClient(timeout=15.0, headers={"user-agent": _UA})
             try:
+                # with_name=False: skip /stock/profile2 calls to stay within
+                # Finnhub's free-tier rate limit (60 req/min). Names fall back
+                # to the static _NAME_HINTS dict; the budget freed up here lets
+                # candle requests succeed when the user opens a ticker modal.
                 results = await asyncio.gather(
-                    *(fetch_quote(client, sym, self.api_key) for sym in self._symbols)
+                    *(fetch_quote(client, sym, self.api_key, with_name=False) for sym in self._symbols)
                 )
             finally:
                 if owns:

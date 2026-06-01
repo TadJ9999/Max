@@ -79,11 +79,11 @@ async function* streamSSE(
 }
 
 // A DSL command starts with an operator (`.`/`..`/`~`), optionally after a
-// provider sigil (`@`/`#`/`!`). Anything else is treated as plain chat.
+// provider sigil (`@`/`#`/`!`/`%`). Anything else is treated as plain chat.
 export function isDslCommand(text: string): boolean {
   let s = text.trim();
   if (!s) return false;
-  if ("@#!".includes(s[0])) s = s.slice(1);
+  if ("@#!%".includes(s[0])) s = s.slice(1);
   return s.startsWith(".") || s.startsWith("~");
 }
 
@@ -95,6 +95,25 @@ export function streamCommand(text: string, signal?: AbortSignal): AsyncGenerato
 // Stream a plain conversational reply via /chat (no DSL operators needed).
 export function streamChat(text: string, signal?: AbortSignal): AsyncGenerator<string> {
   return streamSSE("/chat", { text }, signal);
+}
+
+// Stream a vision (image + text) reply. Encodes the image to base64 and routes
+// to a cloud vision provider (Claude by default).
+export function streamChatVision(
+  text: string,
+  imageBase64: string,
+  imageType: string,
+  signal?: AbortSignal,
+): AsyncGenerator<string> {
+  return streamSSE("/chat", { text, image_base64: imageBase64, image_type: imageType }, signal);
+}
+
+// DSL check also matches OpenAI (%) and custom triggers.
+export function isDslCommandExtended(text: string): boolean {
+  let s = text.trim();
+  if (!s) return false;
+  if ("@#!%".includes(s[0])) s = s.slice(1);
+  return s.startsWith(".") || s.startsWith("~");
 }
 
 // ---- Codebase RAG -------------------------------------------------------

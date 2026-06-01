@@ -15,6 +15,7 @@ import {
   type ProfileItem,
 } from "../config";
 import { ModelManager } from "./ModelManager";
+import { ENGINE_URL } from "../engine";
 import "./Settings.css";
 import "./ModelManager.css";
 
@@ -340,6 +341,325 @@ function EgressLogSection() {
   );
 }
 
+// ── Analytics section ─────────────────────────────────────────────────────────
+
+type AnalyticsSummary = {
+  days: number;
+  total_in_tokens: number;
+  total_out_tokens: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  requests: number;
+  top_feature: string;
+  top_model: string;
+};
+
+type DailyPoint = {
+  day: string;
+  total_tokens: number;
+  total_cost_usd: number;
+  by_feature: Record<string, number>;
+};
+
+type BreakdownRow = {
+  feature: string;
+  model: string;
+  provider: string;
+  in_tokens: number;
+  out_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+  requests: number;
+};
+
+const FEATURE_ORDER = [
+  "apollo", "osint", "market", "polymarket", "sentinel", "voice", "rag", "chat", "delegate", "api", "system",
+];
+
+const FEATURE_COLOR: Record<string, string> = {
+  apollo:     "var(--ana-apollo)",
+  osint:      "var(--ana-osint)",
+  market:     "var(--ana-market)",
+  polymarket: "var(--ana-polymarket)",
+  sentinel:   "var(--ana-sentinel)",
+  voice:      "var(--ana-voice)",
+  rag:        "var(--ana-rag)",
+  chat:       "var(--ana-chat)",
+  delegate:   "var(--ana-delegate)",
+  api:        "var(--ana-api)",
+  system:     "var(--stg-muted)",
+};
+
+function fmtNum(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + "k";
+  return String(n);
+}
+
+function fmtCost(usd: number): string {
+  if (usd === 0) return "$0.00";
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
+// ── Pure SVG stacked bar chart ───────────────────────────────────────────────
+
+type TooltipState = { x: number; y: number; day: string; feature: string; tokens: number } | null;
+
+function StackedBarChart({ series, days }: { series: DailyPoint[]; days: number }) {
+  const [tip, setTip] = useState<TooltipState>(null);
+
+  // For 90d, bin into weekly groups
+  const bins: DailyPoint[] = (() => {
+    if (days <= 30 || series.length <= 30) return series;
+    const result: DailyPoint[] = [];
+    for (let i = 0; i < series.length; i += 7) {
+      const week = series.slice(i, i + 7);
+      const merged: DailyPoint = {
+        day: week[0].day,
+        total_tokens: week.reduce((s, d) => s + d.total_tokens, 0),
+        total_cost_usd: week.reduce((s, d) => s + d.total_cost_usd, 0),
+        by_feature: {},
+      };
+      for (const d of week) {
+        for (const [feat, tok] of Object.entries(d.by_feature)) {
+          merged.by_feature[feat] = (merged.by_feature[feat] || 0) + tok;
+        }
+      }
+      result.push(merged);
+    }
+    return result;
+  })();
+
+  if (bins.length === 0) return null;
+
+  const W = 700, H = 96, LABEL_H = 16, BAR_H = H - LABEL_H;
+  const maxTok = Math.max(...bins.map((b) => b.total_tokens), 1);
+  const barW = Math.max(4, Math.floor((W - 8) / bins.length) - 2);
+  const gap = Math.floor((W - 8) / bins.length);
+
+  const features = FEATURE_ORDER.filter((f) => bins.some((b) => b.by_feature[f]));
+
+  return (
+    <div className="ana-chart-wrap" onMouseLeave={() => setTip(null)}>
+      <svg className="ana-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+        {bins.map((b, bi) => {
+          const x = 4 + bi * gap;
+          let stackY = BAR_H;
+          return (
+            <g key={bi}>
+              {features.map((feat) => {
+                const tok = b.by_feature[feat] || 0;
+                if (!tok) return null;
+                const barPx = Math.max(2, Math.round((tok / maxTok) * BAR_H));
+                stackY -= barPx;
+                const color = FEATURE_COLOR[feat] || "var(--stg-muted)";
+                return (
+                  <rect
+                    key={feat}
+                    x={x}
+                    y={stackY}
+                    width={barW}
+                    height={barPx}
+                    fill={color}
+                    opacity={0.85}
+                    rx={1}
+                    onMouseEnter={(e) => {
+                      const rect = (e.currentTarget as SVGRectElement).closest(".ana-chart-wrap")?.getBoundingClientRect();
+                      const svgRect = (e.currentTarget as SVGRectElement).getBoundingClientRect();
+                      if (rect) {
+                        setTip({
+                          x: svgRect.left - rect.left + barW / 2,
+                          y: svgRect.top - rect.top - 4,
+                          day: b.day,
+                          feature: feat,
+                          tokens: tok,
+                        });
+                      }
+                    }}
+                  />
+                );
+              })}
+              {bi % 7 === 0 && (
+                <text
+                  x={x + barW / 2}
+                  y={H - 2}
+                  textAnchor="middle"
+                  fontSize={9}
+                  fill="var(--stg-muted)"
+                >
+                  {b.day.slice(5)}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+      {tip && (
+        <div
+          className="ana-tooltip"
+          style={{ left: tip.x, top: tip.y, transform: "translate(-50%, -100%)" }}
+        >
+          {tip.day} · {tip.feature} · {fmtNum(tip.tokens)} tokens
+        </div>
+      )}
+      <div className="ana-legend">
+        {features.map((f) => (
+          <span key={f} className="ana-legend__item">
+            <span className="ana-legend__dot" style={{ background: FEATURE_COLOR[f] }} />
+            {f}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── AnalyticsSection ─────────────────────────────────────────────────────────
+
+function AnalyticsSection() {
+  const [range, setRange] = useState<7 | 30 | 90>(30);
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [daily, setDaily] = useState<DailyPoint[]>([]);
+  const [rows, setRows] = useState<BreakdownRow[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [clearing, setClearing] = useState(false);
+
+  const load = useCallback(async (d: number) => {
+    setBusy(true);
+    try {
+      const { ENGINE_URL } = await import("../engine");
+      const [sum, day, brk] = await Promise.all([
+        fetch(`${ENGINE_URL}/analytics/summary?days=${d}`).then((r) => r.ok ? r.json() as Promise<AnalyticsSummary> : null),
+        fetch(`${ENGINE_URL}/analytics/daily?days=${d}`).then((r) => r.ok ? r.json() as Promise<{ series: DailyPoint[] }> : null),
+        fetch(`${ENGINE_URL}/analytics/breakdown?days=${d}`).then((r) => r.ok ? r.json() as Promise<{ rows: BreakdownRow[] }> : null),
+      ]);
+      if (sum) setSummary(sum);
+      if (day) setDaily(day.series);
+      if (brk) setRows(brk.rows);
+    } catch { /* offline */ }
+    finally { setBusy(false); }
+  }, []);
+
+  useEffect(() => { void load(range); }, [load, range]);
+
+  const reset = async () => {
+    if (!confirm("Clear all token usage history? This cannot be undone.")) return;
+    setClearing(true);
+    try {
+      const { ENGINE_URL } = await import("../engine");
+      await fetch(`${ENGINE_URL}/analytics/reset`, { method: "DELETE" });
+      setSummary(null);
+      setDaily([]);
+      setRows([]);
+    } finally { setClearing(false); }
+  };
+
+  return (
+    <div className="stg-row-group" style={{ flexDirection: "column", gap: 12 }}>
+      {/* controls row */}
+      <div className="ana-controls">
+        <div className="stg-seg">
+          {([7, 30, 90] as const).map((d) => (
+            <button
+              key={d}
+              className={`stg-seg__btn${range === d ? " stg-seg__btn--on" : ""}`}
+              onClick={() => setRange(d)}
+            >
+              {d}d
+            </button>
+          ))}
+        </div>
+        <button
+          className="stg-btn stg-btn--sm"
+          onClick={() => void load(range)}
+          disabled={busy}
+        >
+          ↻ refresh
+        </button>
+      </div>
+
+      {/* stat cards */}
+      <div className="ana-stats">
+        <div className="ana-stat">
+          <div className="ana-stat__label">Total Tokens</div>
+          <div className="ana-stat__value">{summary ? fmtNum(summary.total_tokens) : "—"}</div>
+        </div>
+        <div className="ana-stat">
+          <div className="ana-stat__label">Total Cost</div>
+          <div className="ana-stat__value">{summary ? fmtCost(summary.total_cost_usd) : "—"}</div>
+        </div>
+        <div className="ana-stat">
+          <div className="ana-stat__label">Top Feature</div>
+          <div className="ana-stat__value" style={{ fontSize: 13 }}>
+            {summary?.top_feature ? (
+              <>
+                <span className="ana-feature-dot" style={{ background: FEATURE_COLOR[summary.top_feature] }} />
+                {summary.top_feature}
+              </>
+            ) : "—"}
+          </div>
+        </div>
+        <div className="ana-stat">
+          <div className="ana-stat__label">Requests</div>
+          <div className="ana-stat__value">{summary ? fmtNum(summary.requests) : "—"}</div>
+        </div>
+      </div>
+
+      {/* bar chart */}
+      {daily.length > 0 ? (
+        <StackedBarChart series={daily} days={range} />
+      ) : (
+        <p className="stg-hint">Usage data accumulates as you use AI features.</p>
+      )}
+
+      {/* breakdown table */}
+      {rows.length > 0 && (
+        <table className="stg-egress-log__table">
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Provider</th>
+              <th>Model</th>
+              <th style={{ textAlign: "right" }}>In</th>
+              <th style={{ textAlign: "right" }}>Out</th>
+              <th style={{ textAlign: "right" }}>Cost</th>
+              <th style={{ textAlign: "right" }}>Reqs</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td>
+                  <span className="ana-feature-dot" style={{ background: FEATURE_COLOR[r.feature] }} />
+                  {r.feature}
+                </td>
+                <td>{r.provider}</td>
+                <td className="stg-egress-log__model">{r.model}</td>
+                <td className="stg-egress-log__tok">{fmtNum(r.in_tokens)}</td>
+                <td className="stg-egress-log__tok">{fmtNum(r.out_tokens)}</td>
+                <td className="stg-egress-log__tok">{fmtCost(r.cost_usd)}</td>
+                <td className="stg-egress-log__tok">{r.requests}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {/* reset */}
+      <div>
+        <button
+          className="stg-btn stg-btn--sm stg-btn--danger"
+          onClick={() => void reset()}
+          disabled={clearing}
+        >
+          clear history
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── User Profile section ──────────────────────────────────────────────────────
 
 const KIND_OPTIONS = ["fact", "preference", "interest", "style"] as const;
@@ -614,6 +934,119 @@ function LanSection() {
   );
 }
 
+// ── Custom Commands section ───────────────────────────────────────────────────
+
+interface CustomCmd {
+  name: string;
+  description: string;
+  trigger: string;
+  prompt_template: string;
+}
+
+function CustomCommandsSection() {
+  const [commands, setCommands] = useState<CustomCmd[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editIdx, setEditIdx] = useState<number | null>(null);
+  const [draft, setDraft] = useState<CustomCmd>({ name: "", description: "", trigger: "", prompt_template: "" });
+
+  useEffect(() => {
+    fetch(`${ENGINE_URL}/config/commands`)
+      .then((r) => r.json() as Promise<{ commands: CustomCmd[] }>)
+      .then((d) => { setCommands(d.commands); setLoaded(true); })
+      .catch(() => setLoaded(true));
+  }, []);
+
+  const save = async (cmds: CustomCmd[]) => {
+    setSaving(true);
+    try {
+      await fetch(`${ENGINE_URL}/config/commands`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ commands: cmds }),
+      });
+      setCommands(cmds);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const startNew = () => {
+    setDraft({ name: "", description: "", trigger: "?", prompt_template: "{body}" });
+    setEditIdx(-1);
+  };
+
+  const commitDraft = () => {
+    if (!draft.name.trim() || !draft.trigger.trim() || !draft.prompt_template.trim()) return;
+    const updated = editIdx === -1
+      ? [...commands, draft]
+      : commands.map((c, i) => (i === editIdx ? draft : c));
+    void save(updated);
+    setEditIdx(null);
+  };
+
+  const remove = (idx: number) => {
+    void save(commands.filter((_, i) => i !== idx));
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <Section title="Custom Commands" glyph="⌘" defaultOpen={false}>
+      <p className="stg-hint">
+        Define your own DSL commands. Use a single trigger character (e.g. <code>?</code>), then type{" "}
+        <code>? your text ?</code> in the chat bar. Use <code>{"{{body}}"}</code> in the template.
+      </p>
+      {commands.map((cmd, i) => (
+        <div key={i} className="stg-row">
+          <span className="stg-row__label">
+            <code>{cmd.trigger} … {cmd.trigger}</code> → <strong>{cmd.name}</strong>
+            {cmd.description && <span className="stg-row__muted"> — {cmd.description}</span>}
+          </span>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button className="stg-btn stg-btn--sm" onClick={() => { setDraft(cmd); setEditIdx(i); }}>Edit</button>
+            <button className="stg-btn stg-btn--sm stg-btn--danger" onClick={() => remove(i)}>✕</button>
+          </div>
+        </div>
+      ))}
+      {editIdx !== null ? (
+        <div className="stg-cmd-editor">
+          <div className="stg-row">
+            <span className="stg-row__label">Name</span>
+            <input className="stg-text__input" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="explain" />
+          </div>
+          <div className="stg-row">
+            <span className="stg-row__label">Trigger char</span>
+            <input className="stg-text__input" maxLength={1} style={{ width: 48 }} value={draft.trigger} onChange={(e) => setDraft({ ...draft, trigger: e.target.value.slice(-1) })} placeholder="?" />
+          </div>
+          <div className="stg-row">
+            <span className="stg-row__label">Description</span>
+            <input className="stg-text__input" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="Explain in plain English" />
+          </div>
+          <div className="stg-row" style={{ flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
+            <span className="stg-row__label">Prompt template <span className="stg-row__muted">(use {"{body}"})</span></span>
+            <textarea
+              className="stg-text__input"
+              style={{ width: "100%", minHeight: 72, resize: "vertical", fontFamily: "monospace", fontSize: 12 }}
+              value={draft.prompt_template}
+              onChange={(e) => setDraft({ ...draft, prompt_template: e.target.value })}
+              placeholder={"Explain the following in plain English:\n\n{body}"}
+            />
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="stg-btn" onClick={commitDraft} disabled={saving}>
+              {saving ? "Saving…" : "Save command"}
+            </button>
+            <button className="stg-btn stg-btn--ghost" onClick={() => setEditIdx(null)}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <button className="stg-btn" onClick={startNew}>+ New command</button>
+      )}
+    </Section>
+  );
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export function SettingsView() {
@@ -771,6 +1204,12 @@ export function SettingsView() {
             onSaved={setCfg}
           />
           <ApiKeyField
+            label="OpenAI (GPT-4o, % sigil)"
+            envName="OPENAI_API_KEY"
+            isSet={cfg.openai_key_set ?? false}
+            onSaved={setCfg}
+          />
+          <ApiKeyField
             label="Finnhub (Market data)"
             envName="FINNHUB_API_KEY"
             isSet={cfg.finnhub_key_set}
@@ -882,6 +1321,12 @@ export function SettingsView() {
         <Section title="Egress Audit Log" glyph="↑" defaultOpen={false}>
           <p className="stg-hint">Every outbound cloud-API call logged for privacy auditing. Local Ollama calls are never logged.</p>
           <EgressLogSection />
+        </Section>
+
+        {/* ── Analytics ────────────────────────────────────────────── */}
+        <Section title="Analytics" glyph="◈" defaultOpen={false}>
+          <p className="stg-hint">Token usage and estimated cost by feature, model, and day. Data accumulates automatically.</p>
+          <AnalyticsSection />
         </Section>
 
         {/* ── Providers ────────────────────────────────────────────── */}
@@ -1123,6 +1568,9 @@ export function SettingsView() {
 
         {/* ── Share on LAN ─────────────────────────────────────────── */}
         <LanSection />
+
+        {/* ── Custom Commands ──────────────────────────────────────── */}
+        <CustomCommandsSection />
 
         {/* ── Workspace Allowlist ───────────────────────────────────── */}
         <Section title="Workspace Allowlist" glyph="📁" defaultOpen={false}>

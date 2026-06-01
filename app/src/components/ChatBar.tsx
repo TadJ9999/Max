@@ -11,6 +11,7 @@ import {
   isDslCommand,
   streamAsk,
   streamChat,
+  streamChatVision,
   streamCommand,
   type RagStatus,
 } from "../engine";
@@ -32,6 +33,10 @@ export function ChatBar({
   const [err, setErr] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [inputFocused, setInputFocused] = useState(false);
+  // Vision: attached image (base64 + MIME type).
+  const [imageBase64, setImageBase64] = useState<string | null>(null);
+  const [imageType, setImageType] = useState<string>("image/jpeg");
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
   // "Knows your code" mode: plain questions are answered from the indexed workspace.
   const [codeMode, setCodeMode] = useState(false);
   const [rag, setRag] = useState<RagStatus | null>(null);
@@ -73,12 +78,33 @@ export function ChatBar({
     };
   }, []);
 
-  const isCloud = text.trimStart().startsWith("!");
+  const isCloud = text.trimStart().startsWith("!") || text.trimStart().startsWith("%") || !!imageBase64;
+
+  const attachImage = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // result = "data:image/jpeg;base64,<data>"
+      const commaIdx = result.indexOf(",");
+      setImageBase64(result.slice(commaIdx + 1));
+      setImageType(file.type || "image/jpeg");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const clearImage = () => {
+    setImageBase64(null);
+    if (imageInputRef.current) imageInputRef.current.value = "";
+  };
 
   const send = async () => {
     const q = text.trim();
     if (!q || busy) return;
+    const capturedImage = imageBase64;
+    const capturedType = imageType;
     setText("");
+    setImageBase64(null);
+    if (imageInputRef.current) imageInputRef.current.value = "";
     setBusy(true);
     onBusyChange?.(true); // mascot: enter "thinking" until the reply finishes
     setErr(null);
@@ -86,13 +112,16 @@ export function ChatBar({
     onRequest?.(); // fire a request comet on the mascot
     const ac = new AbortController();
     abortRef.current = ac;
-    // DSL command (`. … .`, `!. … .`, `~ … ~`) → /command. Plain text → /chat,
-    // or /rag/ask (grounded in the indexed workspace, with memory) in code mode.
-    const iterator = isDslCommand(q)
-      ? streamCommand(q, ac.signal)
-      : codeMode
-        ? streamAsk(q, sessionId, ac.signal)
-        : streamChat(q, ac.signal);
+    // Vision path: image attached → route to cloud vision provider.
+    // DSL command (`. … .`, `!. … .`, `~ … ~`, `%…`) → /command.
+    // Plain text → /chat or /rag/ask in code mode.
+    const iterator = capturedImage
+      ? streamChatVision(q, capturedImage, capturedType, ac.signal)
+      : isDslCommand(q)
+        ? streamCommand(q, ac.signal)
+        : codeMode
+          ? streamAsk(q, sessionId, ac.signal)
+          : streamChat(q, ac.signal);
     try {
       for await (const delta of iterator) {
         setOutput((o) => o + delta);
@@ -133,6 +162,17 @@ export function ChatBar({
           )}
         </div>
       )}
+      {imageBase64 && (
+        <div className="chat__image-preview">
+          <img
+            src={`data:${imageType};base64,${imageBase64}`}
+            alt="attached"
+            className="chat__image-thumb"
+          />
+          <button className="chat__image-clear" onClick={clearImage} title="Remove image">×</button>
+          <span className="chat__image-label">☁ Claude Vision</span>
+        </div>
+      )}
       <div className="chat__row">
         <span
           className={`dot ${online == null ? "dot--unknown" : online ? "dot--on" : "dot--off"}`}
@@ -150,6 +190,23 @@ export function ChatBar({
             onBlur={() => setInputFocused(false)}
           />
         </div>
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          className="chat__image-input"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) attachImage(f);
+          }}
+        />
+        <button
+          className="chat__attach"
+          onClick={() => imageInputRef.current?.click()}
+          title="Attach image (routes to Claude Vision)"
+        >
+          🖼
+        </button>
         {isCloud && (
           <span className="chat__cloud" title="cloud ( ! ) — this leaves your machine">
             ☁

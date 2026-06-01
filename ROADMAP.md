@@ -171,7 +171,7 @@ Parser rules:
 - [ ] Multi-file / repo-wide edits with plan + approval
 - [ ] User-defined custom commands & template library
 - [ ] More providers (OpenAI, local llama.cpp/vLLM) + more clients (CLI, Neovim, LAN)
-- [ ] Vision models  *(voice + tool-calling/agents → **Phase 9** capability platform)*
+- [x] Vision models — image attach in chat bar, routes to Claude or OpenAI vision
 
 ### Phase 9 — Capability platform & general assistant (beyond coding)  🎯 *add skills, not rewrite the core* ([architecture](docs/architecture.md))
 *Turns Max from a coding assistant into a general personal assistant. Layered so each new ability is a plug-in, not a core change. Builds on the engine/delegate already in place — keeps 100% of current functionality.*
@@ -450,3 +450,18 @@ Parser rules:
 - [x] **Security Posture UI** (`app/src/aegis/SecurityPostureView.tsx`): circular score gauge, at-risk banner, history strip, SAST/SCA finding list + detail, fix/approve/ignore/reopen, report export; `Runtime Errors | Security Posture` sub-tab toggle in `AegisView.tsx`; styles in `Aegis.css`.
 - [x] **Config + Settings**: `AegisConfig` scan/OSV/threshold fields in `config.py` exposed via `/config`; scan controls in `settings/SettingsView.tsx`; `aegis_security` prompt in `prompts.py`.
 - [x] **Tests**: `test_aegis_scanner.py`, `test_aegis_deps_osv.py` (mocked httpx), `test_aegis_scan_store.py` — 69 new tests, 268 total green.
+
+---
+
+### Phase 18 — Analytics: Token Usage & Cost Dashboard  📊 *see exactly how many tokens and dollars every AI feature spends*
+
+*Adds a persistent `token_usage` table in `.apollo.db`, write hooks in both the Anthropic and Ollama providers, and a rich **Analytics** collapsible section inside the Settings tab. Every completed AI call (cloud or local) is recorded with its feature tag, provider, model, token counts, and estimated USD cost. No new runtime dependencies — chart is pure SVG.*
+
+**Decisions locked:** SQLite `token_usage` table in shared `.apollo.db` · feature tag inferred from HTTP path at the engine layer (no client changes) · cost calculated at write-time from `CLOUD_MODELS` catalog prices · local Ollama calls included with $0.00 cost · pure SVG stacked bar chart (no chart deps) · 7d / 30d / 90d time-range selector · 90d view auto-bins into weekly groups.
+
+- [x] **`UsageStore`** (`engine/max_engine/analytics/store.py`): `token_usage` table with indexes on `day` and `feature`; `record()`, `summary()`, `daily()`, `breakdown()`, `reset()` methods; `calc_cost()` helper using `CLOUD_MODELS` catalog.
+- [x] **Provider hooks** (`providers/anthropic.py`, `providers/ollama.py`): `_usage_callback` module-level hook + `set_usage_callback()` / `clear_usage_callback()`; Anthropic fires callback on `chat_done` with actual token counts from API events; Ollama captures `eval_count` / `prompt_eval_count` from the final `done:true` streaming line; `_feature` kwarg stripped before payload construction.
+- [x] **Wiring** (`main.py`): `UsageStore` instantiated at startup; `_on_usage` callback registered for both providers; `_feature_from_path()` helper maps URL paths to feature strings (apollo/osint/market/polymarket/sentinel/voice/rag/chat/delegate/api); `_sse_stream()` + `_stream_ai()` + `_apollo_run()` + direct `provider.chat()` call sites updated with `feature=` / `_feature=` args.
+- [x] **API endpoints** (`main.py`): `GET /analytics/summary?days=`, `GET /analytics/daily?days=`, `GET /analytics/breakdown?days=`, `DELETE /analytics/reset` — all clamped to [1, 90] days.
+- [x] **Analytics UI** (`app/src/settings/SettingsView.tsx`): `AnalyticsSection` with time-range segmented control, 4 stat cards (Total Tokens · Total Cost · Top Feature · Requests), pure-SVG `StackedBarChart` with hover tooltips + feature legend, reused egress-log table for breakdown, reset button with confirm dialog; inserted as collapsible `Section` between Egress Audit Log and Providers.
+- [x] **Styles** (`app/src/settings/Settings.css`): `--ana-*` color palette (9 feature colors) + `.ana-stat`, `.ana-chart-wrap`, `.ana-tooltip`, `.ana-legend`, `.ana-feature-dot`, `.ana-controls` classes.

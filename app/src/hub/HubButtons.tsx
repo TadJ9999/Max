@@ -93,6 +93,13 @@ const ICONS: Record<HubTab, React.ReactNode> = {
       <circle cx="17.2" cy="6.2" r="1.2" fill="currentColor" />
     </svg>
   ),
+  code: (
+    <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="2" y="4" width="16" height="12" rx="2" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M7 8l-3 2 3 2M13 8l3 2-3 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M11 7l-2 6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+    </svg>
+  ),
   settings: (
     <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
       <circle cx="10" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.2" />
@@ -109,6 +116,7 @@ const META: { id: HubTab; title: string; cls: string }[] = [
   { id: "aegis", title: "Aegis — Self-Repair Console", cls: "widget-action-btn--aegis" },
   { id: "shadow", title: "Shadow Net — Tor Browser", cls: "widget-action-btn--shadow" },
   { id: "sentinel", title: "Sentinel — 3D Space Intelligence", cls: "widget-action-btn--sentinel" },
+  { id: "code", title: "Code — AI Editor", cls: "widget-action-btn--code" },
 ];
 
 export function HubButtons() {

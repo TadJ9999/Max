@@ -87,6 +87,14 @@
   border-color: rgba(0, 255, 200, 0.4);
   background: rgba(0, 255, 200, 0.1);
 }
+.hub__tab--code.is-active {
+  color: #60a5fa;
+  border-color: rgba(96, 165, 250, 0.4);
+  background: rgba(96, 165, 250, 0.1);
+}
+.widget-action-btn--code {
+  color: #60a5fa;
+}
 .hub__tab--settings {
   margin-left: auto;
 }

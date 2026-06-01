@@ -10,11 +10,25 @@ An ``httpx.AsyncClient`` can be injected for testing.
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 
 import httpx
 
 from .base import ChatChunk, Provider
+
+# Callback set by main.py at startup to record usage into the analytics store.
+# Signature: (feature, provider, model, in_tokens, out_tokens)
+_usage_callback: Callable[[str, str, str, int, int], None] | None = None
+
+
+def set_usage_callback(cb: Callable[[str, str, str, int, int], None]) -> None:
+    global _usage_callback
+    _usage_callback = cb
+
+
+def clear_usage_callback() -> None:
+    global _usage_callback
+    _usage_callback = None
 
 
 class OllamaProvider(Provider):
@@ -35,6 +49,8 @@ class OllamaProvider(Provider):
         self.keep_alive = keep_alive
 
     async def chat(self, model: str, messages: list[dict], **params) -> AsyncIterator[ChatChunk]:
+        feature = params.pop("_feature", "system")
+
         payload: dict = {"model": model, "messages": messages, "stream": True}
         if self.keep_alive is not None:
             payload["keep_alive"] = self.keep_alive
@@ -53,6 +69,14 @@ class OllamaProvider(Provider):
                     data = json.loads(line)
                     text = data.get("message", {}).get("content", "")
                     done = bool(data.get("done"))
+                    if done and _usage_callback is not None:
+                        in_tok = data.get("prompt_eval_count", 0) or 0
+                        out_tok = data.get("eval_count", 0) or 0
+                        if in_tok or out_tok:
+                            try:
+                                _usage_callback(feature, "ollama", model, in_tok, out_tok)
+                            except Exception:
+                                pass
                     if text or done:
                         yield ChatChunk(text=text, done=done)
         finally:

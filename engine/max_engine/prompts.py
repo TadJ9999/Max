@@ -221,8 +221,19 @@ SYSTEM_PROMPTS: dict[str, str] = {
 }
 
 
-def messages_for(action: str, body: str) -> list[dict]:
-    """Build chat messages for a parsed DSL command."""
+def messages_for(
+    action: str, body: str, prompt_override: str | None = None
+) -> list[dict]:
+    """Build chat messages for a parsed DSL command.
+
+    When ``prompt_override`` is set (custom commands), the override is used as
+    the full user message and a generic assistant system prompt is applied.
+    """
+    if prompt_override is not None:
+        return [
+            {"role": "system", "content": SYSTEM_PROMPTS["chat"]},
+            {"role": "user", "content": prompt_override},
+        ]
     system = SYSTEM_PROMPTS.get(action, SYSTEM_PROMPTS["chat"])
     return [
         {"role": "system", "content": system},

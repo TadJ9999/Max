@@ -8,6 +8,7 @@ A command is::
     - ``@`` -> ollama (local)
     - ``#`` -> qwen   (local)
     - ``!`` -> claude (cloud, opt-in)
+    - ``%`` -> openai (cloud, opt-in)
     - (none) -> the per-task default provider
 * **operator** selects the action and delimits the body:
     - ``.``  ... ``.``   -> generate code
@@ -20,17 +21,23 @@ Examples::
     @.. def foo(): pass ..                     -> document via Ollama (local)
     #. refactor this loop .                    -> generate via Qwen (local)
     ~ tidy this messy block ~                  -> fix / refactor (default provider)
+    ? explain this ?                           -> custom command (if configured)
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..config import CustomCommand
 
 # Default sigil -> provider map (overridable via config).
 DEFAULT_SIGILS: dict[str, str] = {
     "@": "ollama",
     "#": "qwen",
     "!": "claude",
+    "%": "openai",
 }
 
 # Operator token -> action name. Longest token is matched first, so ".." is
@@ -50,20 +57,26 @@ class ParseError(ValueError):
 class Command:
     """A parsed Max command."""
 
-    action: str  # "generate" | "summarize" | "fix"
+    action: str  # "generate" | "summarize" | "fix" | "custom:<name>"
     body: str  # the instruction or code, trimmed
     sigil: str | None  # the raw sigil char, or None for default
     provider: str  # resolved provider name (e.g. "ollama", "claude", "default")
     is_cloud: bool  # True when this routes off-machine
+    prompt_override: str | None = field(default=None)  # set by custom commands
 
 
-def parse_command(text: str, sigils: dict[str, str] | None = None) -> Command:
+def parse_command(
+    text: str,
+    sigils: dict[str, str] | None = None,
+    custom_commands: "list[CustomCommand] | None" = None,
+) -> Command:
     """Parse a single Max command string into a :class:`Command`.
 
-    Raises :class:`ParseError` if the text is not a valid command.
+    Raises :class:`ParseError` if the text is not a valid command. Custom
+    command triggers (e.g. ``?``) are tried after built-in operators.
     """
     sigil_map = sigils if sigils is not None else DEFAULT_SIGILS
-    cloud_providers = {"claude"}  # extend as more cloud adapters are added
+    cloud_providers = {"claude", "openai"}
 
     s = text.strip()
     if not s:
@@ -85,10 +98,25 @@ def parse_command(text: str, sigils: dict[str, str] | None = None) -> Command:
             action = OPERATORS[tok]
             open_tok = tok
             break
+
+    # 3. Custom command trigger (single char delimiter, e.g. "? … ?").
+    prompt_override: str | None = None
+    if action is None and custom_commands:
+        for cmd in custom_commands:
+            tok = cmd.trigger
+            if len(s) > len(tok) * 2 and s.startswith(tok) and s.endswith(tok):
+                body_raw = s[len(tok) : -len(tok)].strip()
+                if body_raw:
+                    action = f"custom:{cmd.name}"
+                    open_tok = tok
+                    prompt_override = cmd.prompt_template.replace("{body}", body_raw)
+                    s = tok + body_raw + tok
+                    break
+
     if action is None:
         raise ParseError(f"no operator found at start of {text!r}")
 
-    # 3. Body must be closed by the same operator token.
+    # 4. Body — strip operator delimiters.
     rest = s[len(open_tok) :]
     if not rest.endswith(open_tok):
         raise ParseError(f"command not closed with {open_tok!r}: {text!r}")
@@ -102,4 +130,5 @@ def parse_command(text: str, sigils: dict[str, str] | None = None) -> Command:
         sigil=sigil,
         provider=provider,
         is_cloud=provider in cloud_providers,
+        prompt_override=prompt_override,
     )
