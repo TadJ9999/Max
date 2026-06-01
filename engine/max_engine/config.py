@@ -145,6 +145,23 @@ class SkillsConfig(BaseModel):
     intent_router_model: str = ""  # empty = use resident model
 
 
+class MCPServerConfig(BaseModel):
+    """One external MCP server Max can connect to as a host/client."""
+
+    name: str
+    transport: str = "stdio"  # "stdio" | "http"
+    command: list[str] = Field(default_factory=list)  # stdio: argv
+    cwd: str = ""  # stdio: working dir (optional)
+    url: str = ""  # http: server URL
+    enabled: bool = True
+
+
+class MCPConfig(BaseModel):
+    """Phase 9 (stretch) — MCP host: external servers Max connects to."""
+
+    servers: list[MCPServerConfig] = Field(default_factory=list)
+
+
 class SpotifyConfig(BaseModel):
     """Spotify OAuth PKCE. client_id/secret from env; tokens persisted here."""
 
@@ -277,6 +294,7 @@ class EngineConfig(BaseModel):
     darknet: DarkNetConfig = Field(default_factory=DarkNetConfig)
     lan: LanConfig = Field(default_factory=LanConfig)
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
+    mcp: MCPConfig = Field(default_factory=MCPConfig)
     spotify: SpotifyConfig = Field(default_factory=SpotifyConfig)
     gcal: GoogleCalendarConfig = Field(default_factory=GoogleCalendarConfig)
 
@@ -404,6 +422,20 @@ def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
         cfg.skills.intent_router_enabled = bool(sk["intent_router_enabled"])
     if "intent_router_model" in sk:
         cfg.skills.intent_router_model = str(sk["intent_router_model"])
+    mcp = data.get("mcp") or {}
+    if isinstance(mcp.get("servers"), list):
+        servers: list[MCPServerConfig] = []
+        for s in mcp["servers"]:
+            if isinstance(s, dict) and s.get("name"):
+                servers.append(MCPServerConfig(
+                    name=str(s["name"]),
+                    transport=str(s.get("transport", "stdio")),
+                    command=[str(x) for x in (s.get("command") or [])],
+                    cwd=str(s.get("cwd", "")),
+                    url=str(s.get("url", "")),
+                    enabled=bool(s.get("enabled", True)),
+                ))
+        cfg.mcp.servers = servers
     sp = data.get("spotify") or {}
     if "client_id" in sp:
         cfg.spotify.client_id = str(sp["client_id"])
@@ -549,5 +581,18 @@ def save_overrides(cfg: EngineConfig) -> None:
             }
             for c in cfg.custom_commands
         ],
+        "mcp": {
+            "servers": [
+                {
+                    "name": s.name,
+                    "transport": s.transport,
+                    "command": s.command,
+                    "cwd": s.cwd,
+                    "url": s.url,
+                    "enabled": s.enabled,
+                }
+                for s in cfg.mcp.servers
+            ],
+        },
     }
     CONFIG_FILE.write_text(json.dumps(data, indent=2))

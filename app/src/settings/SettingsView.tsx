@@ -16,6 +16,17 @@ import {
 } from "../config";
 import { ModelManager } from "./ModelManager";
 import { ENGINE_URL } from "../engine";
+import {
+  addMcpServer,
+  callMcpTool,
+  connectMcpServer,
+  disconnectMcpServer,
+  getMcpFacade,
+  getMcpServers,
+  removeMcpServer,
+  type McpFacade,
+  type McpServer,
+} from "../mcp";
 import "./Settings.css";
 import "./ModelManager.css";
 
@@ -1176,6 +1187,163 @@ function CustomCommandsSection() {
   );
 }
 
+// ── MCP host + façade ─────────────────────────────────────────────────────────
+function McpSection() {
+  const [servers, setServers] = useState<McpServer[]>([]);
+  const [facade, setFacade] = useState<McpFacade | null>(null);
+  const [busy, setBusy] = useState<string>("");
+  const [err, setErr] = useState<string>("");
+  const [showFacade, setShowFacade] = useState(false);
+
+  // add-server draft
+  const [name, setName] = useState("");
+  const [transport, setTransport] = useState<"stdio" | "http">("stdio");
+  const [command, setCommand] = useState("");
+  const [url, setUrl] = useState("");
+
+  useEffect(() => {
+    void getMcpServers().then(setServers);
+    void getMcpFacade().then(setFacade);
+  }, []);
+
+  const add = async () => {
+    if (!name.trim()) return;
+    setErr("");
+    try {
+      const next = await addMcpServer({
+        name: name.trim(),
+        transport,
+        command: transport === "stdio" ? command.trim().split(/\s+/).filter(Boolean) : [],
+        url: transport === "http" ? url.trim() : "",
+      });
+      setServers(next);
+      setName(""); setCommand(""); setUrl("");
+    } catch (e) { setErr(String((e as Error).message)); }
+  };
+
+  const connect = async (s: McpServer) => {
+    setBusy(s.name); setErr("");
+    try {
+      const updated = await connectMcpServer(s.name);
+      setServers((prev) => prev.map((x) => (x.name === s.name ? updated : x)));
+    } catch (e) { setErr(`${s.name}: ${(e as Error).message}`); }
+    finally { setBusy(""); }
+  };
+
+  const disconnect = async (s: McpServer) => {
+    await disconnectMcpServer(s.name);
+    setServers(await getMcpServers());
+  };
+
+  const remove = async (s: McpServer) => {
+    setServers(await removeMcpServer(s.name));
+  };
+
+  const probe = async (s: McpServer, tool: string) => {
+    setBusy(`${s.name}:${tool}`); setErr("");
+    try {
+      const { text } = await callMcpTool(s.name, tool, {});
+      setErr(`${tool} → ${text.slice(0, 200)}`);
+    } catch (e) { setErr(`${tool}: ${(e as Error).message}`); }
+    finally { setBusy(""); }
+  };
+
+  const cfgJson = facade ? JSON.stringify(facade.claudeDesktopConfig, null, 2) : "";
+
+  return (
+    <Section title="MCP (Model Context Protocol)" glyph="🔗" defaultOpen={false}>
+      <p className="stg-hint">
+        Connect Max to external <strong>MCP servers</strong> (it acts as a host), and expose Max's
+        own skills to Claude Desktop / Cursor via the inbound façade below.
+      </p>
+
+      {err && <div className="stg-row stg-row__muted" style={{ wordBreak: "break-word" }}>{err}</div>}
+
+      {servers.map((s) => (
+        <div key={s.name} className="stg-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className={`stg-dot${s.connected ? " stg-dot--on" : ""}`} />
+            <strong>{s.name}</strong>
+            <span className="stg-row__muted">
+              {s.transport}{s.transport === "stdio" ? ` · ${s.command.join(" ")}` : ` · ${s.url}`}
+              {s.connected ? ` · ${s.tools.length} tools` : ""}
+            </span>
+            <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+              {s.connected ? (
+                <button className="stg-btn stg-btn--sm" onClick={() => void disconnect(s)}>Disconnect</button>
+              ) : (
+                <button className="stg-btn stg-btn--sm" disabled={busy === s.name} onClick={() => void connect(s)}>
+                  {busy === s.name ? "…" : "Connect"}
+                </button>
+              )}
+              <button className="stg-btn stg-btn--sm stg-btn--danger" onClick={() => void remove(s)}>✕</button>
+            </div>
+          </div>
+          {s.connected && s.tools.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, paddingLeft: 18 }}>
+              {s.tools.map((t) => (
+                <button key={t.name} className="stg-btn stg-btn--sm stg-btn--ghost"
+                  disabled={busy === `${s.name}:${t.name}`}
+                  title={t.description || t.name}
+                  onClick={() => void probe(s, t.name)}>
+                  {t.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {s.error && <span className="stg-row__muted" style={{ paddingLeft: 18, color: "#f87171" }}>{s.error}</span>}
+        </div>
+      ))}
+
+      <div className="stg-cmd-editor">
+        <div className="stg-row">
+          <span className="stg-row__label">Name</span>
+          <input className="stg-text__input" value={name} onChange={(e) => setName(e.target.value)} placeholder="filesystem" />
+        </div>
+        <div className="stg-row">
+          <span className="stg-row__label">Transport</span>
+          <select className="stg-text__input" value={transport} onChange={(e) => setTransport(e.target.value as "stdio" | "http")}>
+            <option value="stdio">stdio (local subprocess)</option>
+            <option value="http">http (remote URL)</option>
+          </select>
+        </div>
+        {transport === "stdio" ? (
+          <div className="stg-row">
+            <span className="stg-row__label">Command</span>
+            <input className="stg-text__input" value={command} onChange={(e) => setCommand(e.target.value)}
+              placeholder="npx -y @modelcontextprotocol/server-filesystem /path" />
+          </div>
+        ) : (
+          <div className="stg-row">
+            <span className="stg-row__label">URL</span>
+            <input className="stg-text__input" value={url} onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://host/mcp" />
+          </div>
+        )}
+        <button className="stg-btn" onClick={() => void add()}>+ Add server</button>
+      </div>
+
+      <div className="stg-row" style={{ marginTop: 10 }}>
+        <span className="stg-row__label">Expose Max to Claude Desktop / Cursor</span>
+        <button className="stg-btn stg-btn--sm" onClick={() => setShowFacade((v) => !v)}>
+          {showFacade ? "Hide" : "Show config"}
+        </button>
+      </div>
+      {showFacade && facade && (
+        <>
+          <p className="stg-hint">
+            Max exposes {facade.tools.length} tools ({facade.tools.map((t) => t.name).join(", ")}). Paste this into
+            your <code>claude_desktop_config.json</code> (engine must be running):
+          </p>
+          <textarea className="stg-text__input" readOnly value={cfgJson}
+            style={{ width: "100%", minHeight: 120, fontFamily: "monospace", fontSize: 11, resize: "vertical" }} />
+          <button className="stg-btn stg-btn--sm" onClick={() => void navigator.clipboard.writeText(cfgJson)}>Copy config</button>
+        </>
+      )}
+    </Section>
+  );
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export function SettingsView() {
@@ -1703,6 +1871,9 @@ export function SettingsView() {
 
         {/* ── Custom Commands ──────────────────────────────────────── */}
         <CustomCommandsSection />
+
+        {/* ── MCP host + façade ────────────────────────────────────── */}
+        <McpSection />
 
         {/* ── Workspace Allowlist ───────────────────────────────────── */}
         <Section title="Workspace Allowlist" glyph="📁" defaultOpen={false}>

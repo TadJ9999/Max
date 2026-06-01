@@ -30,6 +30,13 @@ import time as _time
 
 from . import __version__
 from .capabilities import CapabilityRegistry, classify_intent
+from .mcp import (
+    FACADE_TOOLS,
+    MCPError,
+    MCPManager,
+    claude_desktop_config,
+    tool_result_text,
+)
 from .skills import (
     CalendarCapability, CalendarService,
     FilesCapability, FilesService,
@@ -217,6 +224,9 @@ def _register_capabilities() -> None:
 
 
 _register_capabilities()
+
+# ── MCP host: external servers Max connects to (Phase 9 stretch) ─────────────
+mcp_manager = MCPManager([s.model_dump() for s in config.mcp.servers])
 
 # ── Analytics: usage tracking ────────────────────────────────────────────────
 
@@ -2776,6 +2786,104 @@ async def capabilities_route(req: RouteRequest):
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+# ── MCP host + façade (Phase 9 stretch) ──────────────────────────────────────
+
+
+def _persist_mcp_servers() -> None:
+    """Sync the manager's server list back into config + persist to disk."""
+    from .config import MCPServerConfig
+    config.mcp.servers = [
+        MCPServerConfig(
+            name=c["name"],
+            transport=c.get("transport", "stdio"),
+            command=c.get("command", []),
+            cwd=c.get("cwd", ""),
+            url=c.get("url", ""),
+            enabled=c.get("enabled", True),
+        )
+        for c in mcp_manager.server_configs()
+    ]
+    save_overrides(config)
+
+
+@app.get("/mcp/servers")
+def mcp_servers() -> dict:
+    """Configured external MCP servers + live connection status and tools."""
+    return {"servers": mcp_manager.list_servers()}
+
+
+class MCPServerPatch(BaseModel):
+    name: str
+    transport: str = "stdio"
+    command: list[str] = []
+    cwd: str = ""
+    url: str = ""
+    enabled: bool = True
+
+
+@app.post("/mcp/servers")
+def mcp_add_server(req: MCPServerPatch) -> dict:
+    """Add (or replace) an external MCP server definition and persist it."""
+    mcp_manager.add_server(req.model_dump())
+    _persist_mcp_servers()
+    return {"servers": mcp_manager.list_servers()}
+
+
+@app.delete("/mcp/servers/{name}")
+async def mcp_remove_server(name: str) -> dict:
+    """Remove an MCP server (disconnects it first) and persist."""
+    await mcp_manager.remove_server(name)
+    _persist_mcp_servers()
+    return {"servers": mcp_manager.list_servers()}
+
+
+@app.post("/mcp/servers/{name}/connect")
+async def mcp_connect(name: str) -> dict:
+    """Connect to a server, run initialize + tools/list, and return its tools."""
+    _check_network()
+    try:
+        return await mcp_manager.connect(name)
+    except MCPError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@app.post("/mcp/servers/{name}/disconnect")
+async def mcp_disconnect(name: str) -> dict:
+    await mcp_manager.disconnect(name)
+    return {"ok": True}
+
+
+class MCPCallRequest(BaseModel):
+    server: str
+    tool: str
+    arguments: dict = {}
+
+
+@app.post("/mcp/call")
+async def mcp_call(req: MCPCallRequest) -> dict:
+    """Invoke a tool on a connected MCP server; returns the raw result + flat text."""
+    _check_network()
+    try:
+        result = await mcp_manager.call(req.server, req.tool, req.arguments)
+    except MCPError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return {"result": result, "text": tool_result_text(result)}
+
+
+@app.get("/mcp/facade")
+def mcp_facade() -> dict:
+    """Inbound façade manifest + a ready-to-paste Claude Desktop config snippet so
+    external MCP hosts (Claude Desktop / Cursor) can call Max."""
+    import sys as _sys
+    from pathlib import Path as _Path
+    engine_dir = str(_Path(__file__).resolve().parent.parent)
+    return {
+        "tools": FACADE_TOOLS,
+        "command": [_sys.executable, "-m", "max_engine.mcp_server"],
+        "claudeDesktopConfig": claude_desktop_config(_sys.executable, engine_dir),
+    }
 
 
 # -- Web Search ---------------------------------------------------------------

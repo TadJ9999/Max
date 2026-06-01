@@ -183,7 +183,7 @@ Parser rules:
 - [x] **49 new tests** green (web search, reports, files, Spotify, Calendar, registry + router); total **349 passing, tsc clean**
 - [x] **Voice** — already complete in Phase 14 (Web Speech API + Whisper); Phase 9 WebSocket re-architecture not needed
 - [x] **Auth for home/LAN** — home-network firewall rule (Phase 17) is sufficient; bearer tokens deferred
-- [ ] *(stretch)* **MCP host** — discover/manage external MCP servers; outward façade so Claude Desktop/Cursor can call Max
+- [x] *(stretch)* **MCP host — both directions** (`engine/max_engine/mcp/`): **outbound** — `MCPManager` connects Max to external MCP servers over **stdio** (`MCPStdioClient`) or **HTTP** (`MCPHttpClient`), runs `initialize`→`tools/list`, and routes `tools/call`; managed via `GET/POST/DELETE /mcp/servers`, `/mcp/servers/{name}/connect|disconnect`, `POST /mcp/call`; server list persisted in `.maxconfig.json` (`MCPConfig`). **Inbound façade** — `MaxFacade` exposes Max's skills as MCP tools (`max_ask` routes through the intent router, `max_market_board`, `max_osint_hotspots`); `python -m max_engine.mcp_server` is a stdio entrypoint Claude Desktop/Cursor launch (cross-platform stdin via executor — `connect_read_pipe` is unsupported on Windows); `GET /mcp/facade` returns the manifest + a paste-ready `claude_desktop_config.json`. Settings **🔗 MCP** section (add/connect/probe servers + façade config). No new deps (stdlib + httpx). **18 tests** (stdio framing, manager, HTTP client, façade dispatch, endpoints).
 
 ### Phase 17 — LAN Access: Max on your iPhone & Mac over WiFi  📱 *open Max in a phone/Mac browser on the same network — all compute stays on this PC* — ✅
 
