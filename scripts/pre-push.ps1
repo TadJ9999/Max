@@ -1,7 +1,5 @@
-# Max pre-push hook
-# Runs engine pytest + frontend tsc before every git push.
-# Blocks the push if either suite fails, and reports the failure to Aegis
-# (if the local engine is reachable) so you can review it in the 🛡 tab.
+# Max pre-push hook — runs pytest + tsc before every git push.
+# Blocks the push on failure and reports to Aegis if the engine is running.
 
 param()
 
@@ -22,38 +20,38 @@ function Report-To-Aegis {
         Invoke-RestMethod -Uri $AEGIS -Method POST `
             -ContentType "application/json" -Body $body `
             -TimeoutSec 3 | Out-Null
-    } catch { <# engine may not be running — silently skip #> }
+    } catch {}
 }
 
 Write-Host "==> [pre-push] Running engine tests..." -ForegroundColor Cyan
 
 Push-Location $ENGINE
-$pytestOut = python -m pytest tests/ -x --timeout=30 -q 2>&1 | Out-String
-$pytestOk  = $LASTEXITCODE -eq 0
+$pytestOut = python -m pytest tests/ -x -q 2>&1 | Out-String
+$pytestOk  = ($LASTEXITCODE -eq 0)
 Pop-Location
 
 if (-not $pytestOk) {
     Write-Host $pytestOut
-    Write-Host "✗  Engine tests FAILED — push blocked." -ForegroundColor Red
+    Write-Host "FAIL: Engine tests failed. Push blocked." -ForegroundColor Red
     Report-To-Aegis -Suite "pytest" -Output $pytestOut
     exit 1
 }
-Write-Host "✓  Engine tests passed." -ForegroundColor Green
+Write-Host "PASS: Engine tests passed." -ForegroundColor Green
 
 Write-Host "==> [pre-push] Running TypeScript check..." -ForegroundColor Cyan
 
 Push-Location $APP
 $tscOut = npx tsc --noEmit 2>&1 | Out-String
-$tscOk  = $LASTEXITCODE -eq 0
+$tscOk  = ($LASTEXITCODE -eq 0)
 Pop-Location
 
 if (-not $tscOk) {
     Write-Host $tscOut
-    Write-Host "✗  TypeScript check FAILED — push blocked." -ForegroundColor Red
+    Write-Host "FAIL: TypeScript check failed. Push blocked." -ForegroundColor Red
     Report-To-Aegis -Suite "tsc" -Output $tscOut
     exit 1
 }
-Write-Host "✓  TypeScript check passed." -ForegroundColor Green
+Write-Host "PASS: TypeScript check passed." -ForegroundColor Green
 
 Write-Host "==> [pre-push] All checks passed. Proceeding with push." -ForegroundColor Green
 exit 0
