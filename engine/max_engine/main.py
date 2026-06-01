@@ -3259,17 +3259,37 @@ def skills_calendar_disconnect() -> dict:
 _dist_path = Path(__file__).resolve().parent.parent.parent / "app" / "dist"
 
 
+# The HTML shell must never be cached: Vite stamps a fresh content hash into the
+# asset filenames on every build, so a phone that cached an old index.html would
+# keep requesting a now-deleted /assets/index-<oldhash>.js and break. The hashed
+# assets themselves are immutable, so we leave those cacheable.
+_NO_CACHE = "no-cache, no-store, must-revalidate"
+
+
 @app.get("/m")
 def mobile_index() -> FileResponse:
     """Serve the mobile-first shell. The path /m tells main.tsx to render MobileApp."""
     html = _dist_path / "index.html"
     if html.exists():
-        return FileResponse(str(html), media_type="text/html")
+        return FileResponse(
+            str(html), media_type="text/html", headers={"Cache-Control": _NO_CACHE}
+        )
     raise HTTPException(status_code=404, detail="UI not built — run npm run build in app/")
+
+
+class _UICacheStaticFiles(StaticFiles):
+    """StaticFiles that forbids caching of the HTML shell (so rebuilds always
+    reach the browser) while letting hash-named assets cache normally."""
+
+    async def get_response(self, path, scope):  # type: ignore[override]
+        response = await super().get_response(path, scope)
+        if getattr(response, "media_type", None) == "text/html":
+            response.headers["Cache-Control"] = _NO_CACHE
+        return response
 
 
 # Serve the built Vite dist/ so mobile browsers hitting https://<pc>.local:8443/
 # get the full Max UI. API routes above take priority; this is the catch-all.
 # Only mounted when the dist/ directory exists (i.e. after `npm run build`).
 if _dist_path.exists():
-    app.mount("/", StaticFiles(directory=str(_dist_path), html=True), name="static")
+    app.mount("/", _UICacheStaticFiles(directory=str(_dist_path), html=True), name="static")
