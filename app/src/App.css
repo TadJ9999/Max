@@ -10,9 +10,16 @@
   --text: #f2f5f7;
   --muted: #aab4bd;
   --muted-2: #7e8a93;
-  /* Apple-glass vibrancy — translucent, hairline white border, heavy blur */
-  --glass-bg: rgba(16, 18, 22, 0.38);
-  --glass-border: rgba(255, 255, 255, 0.12);
+  /* Apple-glass vibrancy — translucent, hairline white border, heavy blur.
+     Tuned toward iOS "liquid glass": low fill opacity, the blur carries
+     legibility. --glass-sheen is the top specular highlight gradient. */
+  --glass-bg: rgba(16, 18, 22, 0.18);
+  --glass-border: rgba(255, 255, 255, 0.18);
+  --glass-sheen: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.07),
+    rgba(255, 255, 255, 0) 42%
+  );
   --rose: #fb7185;
   --green: #34d399;
 
@@ -43,14 +50,16 @@ body {
 .panel,
 .chat__out,
 .chat__row {
-  background: var(--glass-bg);
+  /* sheen gradient layered over the translucent fill for the iOS top-light look */
+  background: var(--glass-sheen), var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: 16px;
-  backdrop-filter: blur(30px) saturate(160%);
-  -webkit-backdrop-filter: blur(30px) saturate(160%);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
   box-shadow:
     0 8px 30px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.04);
 }
 
 .widget {
