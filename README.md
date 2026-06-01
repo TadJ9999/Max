@@ -22,7 +22,11 @@ console, all behind one local API.
 - 🌌 **Sentinel** — 3D interactive Earth globe + heliocentric Solar System view with live satellite tracking (SGP4/CelesTrak), asteroid close-approaches (NASA NeoWs), space weather (NOAA SWPC), rocket launches, and AI chat grounded in live space data.
 - 🎙️ **Voice + Jarvis** — Web Speech API mic button + TTS voice output; configurable Jarvis/Analyst/custom personality injected into every AI call; persistent user-profile memory in `.apollo.db`; Apollo daily predictions with 30-day rolling history.
 - ⬡ **Shadow Net** — a Tor dark-web browser Hub tab: bundled Tor Expert Bundle sidecar, `stem` circuit management, SOCKS5-proxied fetches + BeautifulSoup link rewriter, multi-tab browser, and a TorLock widget always visible above the mascot.
-- 🛡️ **Aegis** — self-repair + security posture: runtime error capture, AI diagnosis, diff preview, apply/rollback with git snapshot + test-verify; **Security Posture** sub-tab runs SAST (10-rule heuristics + AI triage) + SCA (OSV.dev CVE scan over Python/npm/Rust deps), posture score/trend, and "Ask Leo to fix" for any finding.
+- 🛡️ **Aegis** — self-repair + security posture: runtime error capture, AI diagnosis, diff preview, apply/rollback with git snapshot + test-verify; **Security Posture** sub-tab runs SAST (10-rule heuristics + AI triage) + SCA (OSV.dev CVE scan over Python/npm/Rust deps), posture score/trend, and "Ask Leo to fix" for any finding. Leo's boot-rescue diagnosis **streams token-by-token** with one-click **apply suggested commands**.
+- ⚡ **Skills & capability platform** — a capability registry + intent router that turns Max into a general assistant: web search (DuckDuckGo), AI reports, workspace files, Spotify (OAuth PKCE), and Google Calendar (OAuth2), surfaced in a Skills Hub tab.
+- 🔗 **MCP host (both directions)** — Max connects to external **MCP servers** (stdio or HTTP) and routes their tools, **and** exposes its own skills as an MCP server so Claude Desktop / Cursor can call Max (`python -m max_engine.mcp_server`, with a paste-ready config).
+- 📱 **LAN access** — a "Share on LAN" toggle serves the built UI over HTTPS (mkcert) at `https://<pc-name>.local:8443` with a QR code, so you can use Max — voice included — from your iPhone/Mac browser; all compute stays on the desktop.
+- 🧰 **Code Hub** — a Monaco editor + file tree with an AI **multi-file edit planner** (plan → approve → apply behind a git snapshot, with rollback); OpenAI provider (`%` sigil), vision image-attach in chat, and user-defined custom DSL commands.
 - 🎨 **Floating widget UI** — frameless, transparent, always-on-top, top-right, **click-through when idle**, toggled by a global hotkey (`Ctrl+Shift+M`), with a "Jarvis"-style HUD mascot that reacts to engine state.
 
 See **[ROADMAP.md](./ROADMAP.md)** for the phased plan and **[docs/architecture.md](./docs/architecture.md)** for the layered design.
@@ -42,6 +46,7 @@ CLI, LAN) is cheap.
         │  OSINT (GDELT/RSS/naval)   Market (Finnhub)   Apollo (prediction + vector memory) │
         │  Polymarket (Gamma+CLOB)   Aegis (self-repair + Leo boot-rescue + SAST/SCA)     │
         │  Sentinel (3D space · satellites · asteroids)   Dark Net (Tor)   User/Voice     │
+        │  Skills + intent router   MCP host (in/out)   Code Hub (multi-file edit planner) │
         └───────────────────────────────────┬─────────────────────────────────────────────┘
                                              │  HTTP + SSE (CORS: local origins)
                        ┌─────────────────────┴───────────────────┐
@@ -59,6 +64,7 @@ Max/
 ├── engine/          # Python + FastAPI — the brain
 │   └── max_engine/  # dsl · router · providers · delegate · rag · osint · market
 │                    # apollo · polymarket · aegis · sentinel · darknet · user
+│                    # skills · capabilities · mcp (+ mcp_server) · analytics
 ├── app/             # Tauri v2 desktop widget (React + TypeScript)
 ├── extension/       # VS Code extension (DSL commands, inline replace, FIM ghost text)
 ├── docs/            # architecture · ui · mascot · setup · aegis
@@ -89,14 +95,17 @@ Examples: `!. add a retry decorator .` (cloud generate) · `@.. document this ..
 | Chat / DSL | `POST /chat` · `POST /command` · `POST /v1/chat/completions` (OpenAI-compatible, SSE) · `POST /complete` (FIM, for the editor) |
 | Delegate | `POST /sessions` (fan-out) · `POST /sessions/coordinate` (auto-decompose) · `GET /sessions` · `GET /sessions/{id}` · `GET /sessions/{id}/stream` (SSE) · `POST /sessions/{id}/cancel` · `POST /sessions/{id}/promote` |
 | Codebase RAG | `POST /rag/index` (incremental, allowlist-scoped) · `POST /rag/search` · `POST /rag/ask` (SSE, cited by file:line, opt-in `session_id` memory) · `GET /rag/status` · `POST /rag/clear` · `GET /rag/memory/{id}` · `POST /rag/memory/{id}/clear` |
-| OSINT | `GET /osint/heatmap` · `/osint/articles` · `/osint/sources` · `/osint/events` · `/osint/naval` · `POST /osint/chat` (SSE) |
-| Market | `GET /market/quotes` · `GET/PUT /market/watchlist` · `GET /market/sources` · `POST /market/analyze` (SSE) · `POST /market/chat` (SSE) |
-| Polymarket | `GET /polymarket/board` · `/polymarket/markets` · `GET/PUT /polymarket/watchlist` · `GET /polymarket/prices/{id}` · `GET /polymarket/order-book/{id}` · `GET /polymarket/sources` · `POST /polymarket/ingest` (SSE) · `POST /polymarket/analyze` (SSE) · `POST /polymarket/chat` (SSE) |
+| OSINT | `GET /osint/heatmap` · `/osint/articles` · `/osint/sources` · `/osint/events` · `/osint/naval` · `/osint/domains` · `/osint/timeline` (24h heat replay) · `POST /osint/chat` (SSE) |
+| Market | `GET /market/quotes` · `GET/PUT /market/watchlist` · `GET /market/sources` · `GET /market/candles/{symbol}` · `GET /market/stream` (SSE live ticks, Finnhub WS bridge) · `POST /market/analyze` (SSE) · `POST /market/chat` (SSE) |
+| Polymarket | `GET /polymarket/board` · `/polymarket/markets` · `GET/PUT /polymarket/watchlist` · `GET /polymarket/prices/{id}` · `GET /polymarket/order-book/{id}` · `GET /polymarket/news/{id}` · `GET /polymarket/stream` (SSE, CLOB WS bridge) · `GET /polymarket/portfolio` (read-only by wallet) · `GET /polymarket/sources` · `POST /polymarket/ingest` (SSE) · `POST /polymarket/analyze` (SSE) · `POST /polymarket/chat` (SSE) |
 | Apollo | `POST /apollo/osint-report` · `/apollo/market-report` · `/apollo/predict` · `GET /apollo/status` · `POST /apollo/chat` (SSE) |
 | Sentinel | `GET /sentinel/tle` · `/sentinel/satellites/now` · `/sentinel/neo` · `/sentinel/space-weather` · `/sentinel/launches` · `/sentinel/fireballs` · `/sentinel/iss` · `POST /sentinel/chat` (SSE) |
 | Voice / User | `GET/POST/DELETE /user/profile` · `POST /voice/transcribe` |
 | Shadow Net | `GET /dark/status` · `POST /dark/new-circuit` · `GET /dark/fetch` (SSE) · `GET /dark/search` |
-| Aegis | `GET /aegis/events` · `POST /aegis/report` · `POST /aegis/diagnose` (SSE) · `POST /aegis/apply` · `POST /aegis/rollback` · `GET /aegis/log` · `GET /aegis/sources` · `POST /aegis/scan` · `GET /aegis/scan/status` · `GET /aegis/posture` · `GET /aegis/findings` · `GET /aegis/scans` · `POST /aegis/findings/{id}/fix` (SSE) · `POST /aegis/findings/{id}/status` · `GET /aegis/report` |
+| Aegis | `GET /aegis/events` · `POST /aegis/report` · `POST /aegis/diagnose` (SSE) · `POST /aegis/apply` · `POST /aegis/rollback` · `POST /aegis/auto-fix/{id}` (SSE) · `GET /aegis/log` · `GET /aegis/sources` · `POST /aegis/scan` · `GET /aegis/scan/status` · `GET /aegis/posture` · `GET /aegis/findings` · `GET /aegis/scans` · `POST /aegis/findings/{id}/fix` (SSE) · `POST /aegis/findings/{id}/status` · `GET /aegis/report` |
+| Skills / Capabilities | `GET /capabilities` · `POST /capabilities/route` (SSE intent router) · `/skills/*` (web search, reports, files, Spotify + Google Calendar OAuth) |
+| MCP | `GET/POST/DELETE /mcp/servers` · `POST /mcp/servers/{name}/connect` · `/disconnect` · `POST /mcp/call` · `GET /mcp/facade` (inbound manifest + Claude Desktop config) |
+| Code | `GET /code/files` · `/code/file` · `POST /code/plan` (SSE multi-file edit plan) · `/code/apply` (git snapshot) · `/code/rollback` |
 | Lifecycle | `POST /engine/unload` |
 
 ## Quick start
@@ -120,7 +129,7 @@ Then double-click **`Max.cmd`** at the repo root. (Requires the engine venv at
 cd engine
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                  # full suite (268 tests)
+pytest                                  # full suite (360+ tests)
 uvicorn max_engine.main:app --reload    # dev server on :8000
 curl http://127.0.0.1:8000/health
 ```
@@ -139,8 +148,10 @@ curl -s localhost:8000/parse -H 'content-type: application/json' \
 - **Per-task models, sigils, providers**: `engine/max_engine/config.py`.
 - **Secrets** live only in `engine/.env` (gitignored) — never in the UI:
   - `ANTHROPIC_API_KEY` — enables the `!` cloud path.
-  - `FINNHUB_API_KEY` — enables live market quotes (free tier).
+  - `OPENAI_API_KEY` — enables the `%` cloud path (GPT models) + OpenAI vision.
+  - `FINNHUB_API_KEY` — enables live market quotes + the trade-tick stream (free tier).
   - `NASA_API_KEY` — enables Sentinel asteroid close-approach data (free tier).
+  - `GOOGLE_API_KEY` — used by the Google Calendar skill (OAuth client in `.env`).
 
 **Privacy:** local by default. Cloud (`!`) and outbound news/market/space fetches are egress
 points; cloud is opt-in, gated, and clearly marked in the UI. Aegis redacts secrets before
@@ -148,14 +159,20 @@ any diagnosis egress.
 
 ## Status
 
-All sixteen planned phases are built and working: DSL + routing, Ollama/Claude streaming,
-the full delegate system (parallel sessions, Smart-Auto, coordinator, live SSE), workspace
-RAG with session memory, FIM completion, OSINT map, market tape, Apollo prediction engine,
-Polymarket prediction-market intelligence, Sentinel 3D space intelligence, Aegis self-repair
-(Leo boot-rescue + runtime Hub tab + Security Posture SAST/SCA scanner), Voice I/O + Jarvis
-personality + persistent user memory, and Shadow Net Tor dark-web browser. **268 engine tests
-pass**; the app and extension typecheck and build. See [ROADMAP.md](./ROADMAP.md) for
-phase-by-phase detail. Next planned: **Phase 17 — LAN access** (Max on iPhone/Mac over WiFi).
+All planned phases (0–18) and the cross-cutting stretch work are built and working: DSL +
+routing, Ollama/Claude/OpenAI streaming, the full delegate system (parallel sessions,
+Smart-Auto, coordinator, live SSE), workspace RAG with session memory, FIM completion, a
+**capability/skills platform** + intent router, OSINT map (with a 24h heat-replay scrubber),
+market tape (with a live Finnhub WebSocket tick stream), Apollo prediction engine, Polymarket
+intelligence (with live CLOB price streaming + read-only wallet portfolios), Sentinel 3D space
+intelligence, Aegis self-repair (Leo boot-rescue with streaming diagnosis + Security Posture
+SAST/SCA), Voice I/O + Jarvis personality, Shadow Net Tor browser, **LAN access** (Max on
+iPhone/Mac over HTTPS), a **Code Hub** with a multi-file AI edit planner, and an **MCP host**
+(both directions — connect to external MCP servers, and expose Max to Claude Desktop/Cursor).
+**360+ engine tests pass**; the app and extension typecheck and build. See
+[ROADMAP.md](./ROADMAP.md) for phase-by-phase detail. The only open roadmap items are deferred
+performance-measurement tasks (quantization/KV-cache tuning, latency targets) and a
+cross-platform `.sh` launcher.
 
 ---
 
@@ -170,7 +187,10 @@ phase-by-phase detail. Next planned: **Phase 17 — LAN access** (Max on iPhone/
 | 4 | Delegate system | Parallel sessions, Smart-Auto, VRAM-aware scheduler, coordinator, SSE |
 | 5 | VS Code extension | Inline replace, FIM ghost text, sigil routing honored from the editor |
 | 6 | Context & RAG | sqlite-vec workspace indexer, incremental re-index, cited `file:line` answers |
-| 10 | OSINT global news map | GDELT + RSS heat choropleth, severity tiers, terminator, US fleet layer |
+| 7 | Performance & privacy polish | Two-model VRAM routing, keep-alive load/unload, network kill-switch, egress audit log |
+| 8 | Advanced / agentic | Multi-file AI edit planner (Code Hub), custom DSL commands, OpenAI provider (`%`), vision image-attach |
+| 9 | Capability platform & skills | Capability registry + intent router; web search, reports, files, Spotify + Calendar skills; **MCP host both directions** |
+| 10 | OSINT global news map | GDELT + RSS heat choropleth, severity tiers, terminator, US fleet layer; 24h heat-replay scrubber, event clustering, per-source toggles |
 | 11 | Market: live stocks + AI | Finnhub tape, editable watchlist, AI Ingest analysis |
 | 11.5 | Polymarket intelligence | Gamma + CLOB APIs, prediction market UI, Apollo vector embedding |
 | 12 | Sentinel: 3D space intelligence | Three.js globe + solar system, SGP4 Web Worker, CelesTrak/NeoWs/SWPC |
@@ -178,3 +198,5 @@ phase-by-phase detail. Next planned: **Phase 17 — LAN access** (Max on iPhone/
 | 14 | Voice I/O + Jarvis personality | Web Speech mic, TTS, Jarvis persona, persistent user-profile memory |
 | 15 | Shadow Net: Tor dark-web browser | Bundled Tor sidecar, circuit control, proxy renderer, TorLock widget |
 | 16 | Aegis Security Posture | SAST (10-rule heuristics) + SCA (OSV.dev CVE scan), posture score/trend, Ask-Leo-to-fix |
+| 17 | LAN access | "Share on LAN" toggle, engine serves the built UI over HTTPS (mkcert) at `<pc>.local:8443` + QR, mobile-first shell |
+| 18 | Analytics | Token-usage + cost dashboard in Settings (per-feature, SVG charts), write hooks in both providers |
