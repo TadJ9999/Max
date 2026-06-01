@@ -4,6 +4,7 @@ Network is fully mocked via httpx.MockTransport; no real Finnhub calls.
 """
 
 import asyncio
+import json
 from datetime import datetime, timezone
 
 import httpx
@@ -13,6 +14,7 @@ import max_engine.main as m
 from max_engine.market.finnhub import fetch_market_news, fetch_quote
 from max_engine.market.models import MarketBoard, Quote
 from max_engine.market.service import MarketService, board_digest
+from max_engine.market.stream import TradeStream
 from max_engine.providers.base import ChatChunk
 
 API_KEY = "test-key"
@@ -296,3 +298,85 @@ def test_engine_unload(monkeypatch):
     assert r.status_code == 200
     assert r.json()["unloaded"] is True
     assert fake.unloaded is not None
+
+
+# ---- trade WebSocket → SSE bridge ---------------------------------------
+
+
+class _FakeWS:
+    """Async-context-manager stand-in for websockets.connect(url)."""
+
+    def __init__(self, messages):
+        self._messages = list(messages)
+        self.sent: list[str] = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def send(self, data):
+        self.sent.append(data)
+
+    async def recv(self):
+        if self._messages:
+            return self._messages.pop(0)
+        await asyncio.sleep(3600)  # idle → caller's wait_for times out
+
+
+def test_trade_stream_ingest_parses_and_filters():
+    ts = TradeStream(api_key="k")  # no subscribers: _fanout just records _last
+    ts._ingest(json.dumps({"type": "trade", "data": [{"s": "NVDA", "p": 5.0, "v": 1, "t": 9}]}))
+    assert ts._last["NVDA"]["price"] == 5.0 and ts._last["NVDA"]["symbol"] == "NVDA"
+    ts._ingest(json.dumps({"type": "ping"}))  # non-trade ignored
+    ts._ingest("not json")                     # malformed ignored, no raise
+    assert set(ts._last) == {"NVDA"}
+
+
+def test_trade_stream_fanout_and_subscribe():
+    msg = json.dumps({"type": "trade", "data": [{"s": "AAPL", "p": 200.5, "v": 10, "t": 123}]})
+    created: list[_FakeWS] = []
+
+    def fake_connect(url):
+        ws = _FakeWS([msg])
+        created.append(ws)
+        return ws
+
+    async def run():
+        ts = TradeStream(api_key="k", symbols=["AAPL"], connect=fake_connect)
+        q = await ts.subscribe()
+        tick = await asyncio.wait_for(q.get(), timeout=2.0)
+        await ts.unsubscribe(q)
+        return tick
+
+    tick = asyncio.run(run())
+    assert tick["symbol"] == "AAPL" and tick["price"] == 200.5
+    assert any('"subscribe"' in s and "AAPL" in s for s in created[0].sent)
+
+
+def test_trade_stream_dormant_without_key():
+    async def run():
+        ts = TradeStream(api_key=None, symbols=["AAPL"])
+        await ts.subscribe()
+        await asyncio.sleep(0.05)  # _run should return immediately
+        return ts.connected
+
+    assert asyncio.run(run()) is False
+
+
+def test_market_stream_endpoint_nokey(monkeypatch):
+    monkeypatch.setattr(m, "trade_stream", TradeStream(api_key=None))
+    r = TestClient(m.app).get("/market/stream")
+    assert r.status_code == 200
+    assert "nokey" in r.text
+
+
+def test_set_watchlist_updates_trade_stream(monkeypatch, tmp_path):
+    import max_engine.config as cfg
+    monkeypatch.setattr(cfg, "CONFIG_FILE", tmp_path / ".maxconfig.json")
+    monkeypatch.setattr(m, "market", MarketService(symbols=["AAPL"], api_key=API_KEY, client=_mock_client()))
+    ts = TradeStream(api_key=API_KEY, symbols=["AAPL"])
+    monkeypatch.setattr(m, "trade_stream", ts)
+    TestClient(m.app).put("/market/watchlist", json={"symbols": ["nvda", "amd"]})
+    assert ts._symbols == {"NVDA", "AMD"}  # stream re-targeted live

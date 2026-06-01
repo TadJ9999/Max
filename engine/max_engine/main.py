@@ -51,7 +51,7 @@ from .config import load_config, save_overrides
 from .delegate.engine import DelegateEngine
 from .delegate.session import TERMINAL_STATES
 from .dsl import ParseError, parse_command
-from .market import MarketService, board_digest
+from .market import MarketService, TradeStream, board_digest
 from .osint import EventsService, NavalService, OsintService
 from .polymarket import PolymarketService
 from .polymarket.embedder import embed_markets
@@ -110,6 +110,10 @@ market = MarketService(
     symbols=config.market.watchlist,
     api_key=os.environ.get("FINNHUB_API_KEY"),
     ttl_seconds=config.market.ttl_seconds,
+)
+trade_stream = TradeStream(
+    api_key=os.environ.get("FINNHUB_API_KEY"),
+    symbols=config.market.watchlist,
 )
 polymarket_svc = PolymarketService(
     watchlist=config.polymarket.watchlist,
@@ -1419,6 +1423,7 @@ class WatchlistPatch(BaseModel):
 def market_set_watchlist(patch: WatchlistPatch) -> dict:
     """Replace the watchlist and persist it (user-editable, survives restarts)."""
     symbols = market.set_watchlist(patch.symbols)
+    trade_stream.set_symbols(symbols)  # apply live to the trade socket
     config.market.watchlist = symbols
     save_overrides(config)
     return {"watchlist": symbols}
@@ -1477,6 +1482,39 @@ async def market_candles(symbol: str, resolution: str = "D", days: int = 30) -> 
     async with _httpx.AsyncClient(timeout=15.0) as client:
         candles = await fetch_candles(client, symbol, api_key, resolution=resolution, days=days)
     return {"symbol": symbol, "candles": candles}
+
+
+@app.get("/market/stream")
+async def market_stream(request: Request) -> StreamingResponse:
+    """Live trade ticks bridged from Finnhub's WebSocket as SSE.
+
+    Each event is a JSON trade ``{symbol, price, volume, ts}``. The engine holds a
+    single upstream socket and fans out to every connected browser. Emits a
+    one-shot ``{"type":"nokey"}`` and closes when ``FINNHUB_API_KEY`` is unset."""
+    _check_network()
+
+    if not trade_stream.api_key:
+        async def _nokey():
+            yield 'data: {"type":"nokey"}\n\n'
+        return StreamingResponse(_nokey(), media_type="text/event-stream")
+
+    async def _gen():
+        q = await trade_stream.subscribe()
+        try:
+            yield ': connected\n\n'  # comment frame opens the stream immediately
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    tick = await asyncio.wait_for(q.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield ': keepalive\n\n'
+                    continue
+                yield f"data: {json.dumps(tick)}\n\n"
+        finally:
+            await trade_stream.unsubscribe(q)
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
 
 
 # ---- Polymarket: prediction markets ------------------------------------

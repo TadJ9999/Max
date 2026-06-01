@@ -883,3 +883,65 @@
   margin: 0;
   text-align: right;
 }
+
+/* ── live trade-stream indicator ── */
+.market__live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--mkt-up);
+}
+.market__live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mkt-up);
+  box-shadow: 0 0 6px var(--mkt-up);
+  animation: mkt-live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes mkt-live-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+
+/* ── live price flash on each tick ── */
+.mkt-card__price--flash-up  { animation: mkt-flash-up 0.5s ease-out; }
+.mkt-card__price--flash-down { animation: mkt-flash-down 0.5s ease-out; }
+@keyframes mkt-flash-up {
+  0%   { background: var(--mkt-up); color: #04140a; border-radius: 4px; }
+  100% { background: transparent; }
+}
+@keyframes mkt-flash-down {
+  0%   { background: var(--mkt-down); color: #1a0606; border-radius: 4px; }
+  100% { background: transparent; }
+}
+
+/* ── drill-down resolution / range selector ── */
+.mkt-modal__ranges {
+  display: flex;
+  gap: 4px;
+  margin: 6px 0 2px;
+}
+.mkt-modal__range {
+  flex: 1;
+  padding: 4px 0;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--mkt-muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--mkt-border);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.mkt-modal__range:hover { color: var(--mkt-text); }
+.mkt-modal__range.is-on {
+  color: var(--mkt-accent);
+  border-color: color-mix(in srgb, var(--mkt-accent) 55%, transparent);
+  background: rgba(34, 211, 238, 0.1);
+}

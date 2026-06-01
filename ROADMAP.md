@@ -325,7 +325,7 @@ Parser rules:
 - [x] **Desktop board** (`app/src/market/`): `MarketView` (polling stock rows, green-up/red-down, watchlist add/remove, streaming Ingest panel), `MarketButton` (`$` icon, next to OSINT), `market.ts` client; `#market` hash route + `market` Tauri window capability; in-page overlay fallback
 - [x] **Surface egress in settings/privacy guard** — amber egress warning added to Market settings section ✅
 - [x] *(stretch)* **Sparkline charts** (`Sparkline` SVG component, 30-day closing prices, lazy-loaded per ticker); **per-ticker drill-down modal** (price, day stats, full 30-day chart); **intraday history** via `GET /market/candles/{symbol}` (Finnhub `/stock/candle` endpoint)
-- [ ] *(stretch)* WebSocket trade stream for true real-time ticks; per-ticker intraday drill-down with resolution selector
+- [x] *(stretch)* **WebSocket trade stream** for true real-time ticks — `market/stream.py` `TradeStream` holds one upstream Finnhub WS, fans out to browsers via SSE (`GET /market/stream`), auto-reconnects + live watchlist re-subscribe; frontend overlays live ticks on the polled board with a green ● LIVE indicator + per-tick price flash. **Per-ticker intraday drill-down with resolution selector** — drill-down modal gains 1D/1W/1M/3M/1Y buttons (5-min → weekly via `/market/candles` resolution+days)
 
 ---
 

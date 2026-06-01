@@ -11,11 +11,22 @@ import {
   setWatchlist as putWatchlist,
   streamAnalyze,
   streamMarketChat,
+  streamTrades,
   type Candle,
   type ChatTurn,
   type MarketBoard,
   type Quote,
 } from "./market";
+
+// Resolution/range presets for the drill-down chart (intraday → yearly).
+const CHART_RANGES = [
+  { key: "1D", resolution: "5",  days: 1,   label: "1D", desc: "5-min intraday" },
+  { key: "1W", resolution: "30", days: 7,   label: "1W", desc: "30-min" },
+  { key: "1M", resolution: "D",  days: 30,  label: "1M", desc: "daily closes" },
+  { key: "3M", resolution: "D",  days: 90,  label: "3M", desc: "daily closes" },
+  { key: "1Y", resolution: "W",  days: 365, label: "1Y", desc: "weekly closes" },
+] as const;
+type RangeKey = (typeof CHART_RANGES)[number]["key"];
 import { MarkdownView } from "../components/MarkdownView";
 import { CopyButton } from "../components/CopyButton";
 import "./Market.css";
@@ -99,21 +110,29 @@ function DrillDownModal({
   keySet: boolean;
   onClose: () => void;
 }) {
+  const [rangeKey, setRangeKey] = useState<RangeKey>("1M");
+  // Seed the default "1M" view with the sparkline candles already fetched (D/30d).
   const [candles, setCandles] = useState<Candle[]>(initialCandles);
-  const [loadingChart, setLoadingChart] = useState(initialCandles.length === 0 && keySet);
+  const [loadingChart, setLoadingChart] = useState(false);
+  const activeRange = CHART_RANGES.find((r) => r.key === rangeKey)!;
 
-  // Fetch candles on demand if not pre-loaded (e.g. modal opened before background load finished)
+  // (Re)fetch candles whenever the selected range changes. "1M" reuses the
+  // pre-loaded daily candles when present to avoid a redundant request.
   useEffect(() => {
-    if (initialCandles.length > 0 || !keySet) return;
+    if (!keySet) { setCandles([]); return; }
+    if (rangeKey === "1M" && initialCandles.length > 0) {
+      setCandles(initialCandles);
+      return;
+    }
     let alive = true;
     setLoadingChart(true);
-    getCandles(quote.symbol, "D", 30).then((c) => {
+    getCandles(quote.symbol, activeRange.resolution, activeRange.days).then((c) => {
       if (!alive) return;
       setCandles(c);
       setLoadingChart(false);
     });
     return () => { alive = false; };
-  }, [quote.symbol, keySet, initialCandles.length]);
+  }, [quote.symbol, keySet, rangeKey, activeRange.resolution, activeRange.days, initialCandles]);
 
   const dir = dirClass(quote.change);
   const sign = quote.change > 0 ? "+" : "";
@@ -154,6 +173,20 @@ function DrillDownModal({
           </span>
         </div>
 
+        {/* Resolution / range selector */}
+        <div className="mkt-modal__ranges">
+          {CHART_RANGES.map((r) => (
+            <button
+              key={r.key}
+              className={`mkt-modal__range${rangeKey === r.key ? " is-on" : ""}`}
+              onClick={() => setRangeKey(r.key)}
+              title={r.desc}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+
         {loadingChart ? (
           <p className="mkt-modal__no-data" style={{ opacity: 0.55 }}>Loading chart…</p>
         ) : pts ? (
@@ -181,7 +214,7 @@ function DrillDownModal({
         </div>
 
         {candles.length > 0 && (
-          <p className="mkt-modal__hint">30-day closing prices — {candles.length} sessions</p>
+          <p className="mkt-modal__hint">{activeRange.label} · {activeRange.desc} — {candles.length} points</p>
         )}
       </div>
     </div>
@@ -203,6 +236,19 @@ function TickerCard({
   const dir = dirClass(quote.change);
   const sign = quote.change > 0 ? "+" : "";
   const changePct = Math.abs(quote.changePct);
+
+  // Flash the price cell green/red on each live tick.
+  const [flash, setFlash] = useState<"up" | "down" | null>(null);
+  const prevPrice = useRef(quote.price);
+  useEffect(() => {
+    const prev = prevPrice.current;
+    if (quote.price > prev) setFlash("up");
+    else if (quote.price < prev) setFlash("down");
+    prevPrice.current = quote.price;
+    const id = setTimeout(() => setFlash(null), 500);
+    return () => clearTimeout(id);
+  }, [quote.price]);
+
   return (
     <div className={`mkt-card mkt-card--${dir}`} onClick={onDrillDown} style={{ cursor: "pointer" }}>
       <div className="mkt-card__left">
@@ -215,7 +261,7 @@ function TickerCard({
         <Sparkline candles={sparkCandles} dir={dir} />
       </div>
       <div className="mkt-card__right">
-        <div className="mkt-card__price">${fmt(quote.price)}</div>
+        <div className={`mkt-card__price${flash ? ` mkt-card__price--flash-${flash}` : ""}`}>${fmt(quote.price)}</div>
         <div className={`mkt-card__chg mkt-card__chg--${dir}`}>
           <span className="mkt-card__chg-abs">{sign}{fmt(quote.change)}</span>
           <span className={`mkt-card__chg-badge mkt-card__chg-badge--${dir}`}>
@@ -300,7 +346,10 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
   const [add, setAdd]         = useState("");
   const [subTab, setSubTab]   = useState<"board" | "summary">("board");
   const [sparklines, setSparklines] = useState<Record<string, Candle[]>>({});
-  const [drillDown, setDrillDown]   = useState<Quote | null>(null);
+  const [drillSym, setDrillSym]     = useState<string | null>(null);
+  // Live trade ticks from the SSE bridge (overlay the polled board).
+  const [liveTicks, setLiveTicks]   = useState<Record<string, number>>({});
+  const [streamLive, setStreamLive] = useState(false);
 
   // AI panel state (collapsible, slides from right)
   const [panelOpen, setPanelOpen] = useState(false);
@@ -356,6 +405,30 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
     const id = setInterval(() => void refresh(), POLL_MS);
     return () => clearInterval(id);
   }, [refresh]);
+
+  // Live trade-tick stream (Finnhub WS → engine SSE). Reconnects on drop.
+  useEffect(() => {
+    const ctrl = new AbortController();
+    let alive = true;
+    void (async () => {
+      while (alive) {
+        try {
+          for await (const ev of streamTrades(ctrl.signal)) {
+            if ("type" in ev && ev.type === "nokey") { setStreamLive(false); return; }
+            const tr = ev as { symbol: string; price: number };
+            if (tr.symbol && typeof tr.price === "number") {
+              setStreamLive(true);
+              setLiveTicks((prev) => ({ ...prev, [tr.symbol]: tr.price }));
+            }
+          }
+        } catch { /* stream dropped */ }
+        if (!alive) break;
+        setStreamLive(false);
+        await new Promise((r) => setTimeout(r, 2000)); // reconnect backoff
+      }
+    })();
+    return () => { alive = false; ctrl.abort(); };
+  }, []);
 
   const commitWatchlist = useCallback(async (next: string[]) => {
     setList(next);
@@ -437,7 +510,16 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
 
   useEffect(() => () => chatAbortRef.current?.abort(), []);
 
-  const quotes  = board?.quotes ?? [];
+  const rawQuotes = board?.quotes ?? [];
+  // Overlay the latest live tick onto each quote, recomputing change vs prev close.
+  const quotes = rawQuotes.map((q) => {
+    const lp = liveTicks[q.symbol];
+    if (lp == null || lp === q.price) return q;
+    const change = lp - q.prevClose;
+    const changePct = q.prevClose ? (change / q.prevClose) * 100 : q.changePct;
+    return { ...q, price: lp, change, changePct };
+  });
+  const drillQuote = drillSym ? quotes.find((q) => q.symbol === drillSym) ?? null : null;
   const offline = !loading && board === null;
 
   return (
@@ -535,6 +617,11 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
         </div>
 
         <div className="market__bar-right">
+          {streamLive && (
+            <span className="market__live" title="Live trade stream connected (Finnhub)">
+              <span className="market__live-dot" /> LIVE
+            </span>
+          )}
           <span className="market__updated">
             {loading ? "loading…"
               : offline ? "engine offline"
@@ -593,12 +680,12 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
               <div className="market__note">Engine offline — start Max engine for live quotes.</div>
             )}
 
-            {drillDown && (
+            {drillQuote && (
               <DrillDownModal
-                quote={drillDown}
-                candles={sparklines[drillDown.symbol] ?? []}
+                quote={drillQuote}
+                candles={sparklines[drillQuote.symbol] ?? []}
                 keySet={keySet}
-                onClose={() => setDrillDown(null)}
+                onClose={() => setDrillSym(null)}
               />
             )}
 
@@ -612,7 +699,7 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
                   quote={q}
                   sparkCandles={sparklines[q.symbol] ?? []}
                   onRemove={() => onRemove(q.symbol)}
-                  onDrillDown={() => setDrillDown(q)}
+                  onDrillDown={() => setDrillSym(q.symbol)}
                 />
               ))}
             </div>
