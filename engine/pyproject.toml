@@ -17,6 +17,10 @@ dependencies = [
     "beautifulsoup4>=4.12",
 ]
 
+[project.scripts]
+# Terminal client for the engine (talks over HTTP; works local or remote).
+max = "max_engine.cli:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",

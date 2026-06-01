@@ -15,6 +15,9 @@ export type LocalModel = {
   ttft_ms: number | null;
   tokens_per_sec: number | null;
   bench_ran_at: number | null;
+  lat_ttft_ms: number | null;
+  lat_total_ms: number | null;
+  lat_ran_at: number | null;
 };
 
 export type CloudModel = {
@@ -66,6 +69,23 @@ export async function benchmarkModel(model: string): Promise<{
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ model }),
+    });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function latencyProbe(
+  model: string,
+  runs = 3,
+): Promise<{ ttft_ms: number; total_ms: number; runs: number } | null> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/models/latency`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model, runs }),
     });
     if (!r.ok) return null;
     return await r.json();

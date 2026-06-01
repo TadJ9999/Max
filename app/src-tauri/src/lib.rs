@@ -184,6 +184,43 @@ fn read_lan_from_config() -> (bool, u16, String, String) {
     (enabled, port, cert, key)
 }
 
+/// Read the thin-client remote engine URL from .maxconfig.json (`client.remote_url`).
+/// When set, this app is a *thin client*: it does NOT spawn a local engine and
+/// points the WebView at the remote engine instead (e.g. a Windows PC over the
+/// LAN). This is how the macOS/Linux build works — UI here, compute on the PC.
+fn read_remote_engine() -> Option<String> {
+    let path = find_maxconfig_path()?;
+    let text = std::fs::read_to_string(&path).ok()?;
+    let data: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let url = data.get("client")?.get("remote_url")?.as_str()?.trim().to_string();
+    if url.is_empty() {
+        None
+    } else {
+        Some(url.trim_end_matches('/').to_string())
+    }
+}
+
+/// Persist the thin-client remote engine URL into .maxconfig.json (merges).
+fn update_maxconfig_client_url(url: &str) -> Result<(), String> {
+    let cfg_path = maxconfig_path();
+    let mut data: serde_json::Value = if cfg_path.exists() {
+        let text = std::fs::read_to_string(&cfg_path).map_err(|e| e.to_string())?;
+        serde_json::from_str(&text).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+    if data.get("client").is_none() {
+        data["client"] = serde_json::json!({});
+    }
+    let client = data["client"].as_object_mut().ok_or("client not an object")?;
+    client.insert("remote_url".to_string(), serde_json::json!(url));
+    let pretty = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+    if let Some(parent) = cfg_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(&cfg_path, pretty).map_err(|e| e.to_string())
+}
+
 /// Write LAN fields into .maxconfig.json (merges into existing JSON).
 fn update_maxconfig_lan_fields(
     cert_path: Option<&str>,
@@ -369,6 +406,11 @@ fn get_mkcert_caroot(mkcert: &Path) -> Option<String> {
 /// host/port/TLS. Returns the child handle when we spawned it, or `None` when
 /// the engine was already running or we couldn't locate the venv.
 fn spawn_engine() -> Option<Child> {
+    // Thin-client mode: a remote engine is configured, so don't run one locally.
+    if let Some(url) = read_remote_engine() {
+        println!("[engine] thin-client mode — using remote engine at {url}");
+        return None;
+    }
     let (lan_enabled, lan_port, cert_path, key_path) = read_lan_from_config();
     let use_tls = lan_enabled
         && !cert_path.is_empty()
@@ -610,6 +652,10 @@ fn tor_running() -> bool {
 /// Reads .maxconfig.json at call time so it reflects the current LAN state.
 #[tauri::command]
 fn engine_base() -> String {
+    // Thin-client mode: a configured remote engine wins over all local logic.
+    if let Some(url) = read_remote_engine() {
+        return url;
+    }
     let (enabled, port, cert_path, key_path) = read_lan_from_config();
     if enabled
         && !cert_path.is_empty()
@@ -621,6 +667,23 @@ fn engine_base() -> String {
     } else {
         format!("http://127.0.0.1:{ENGINE_PORT}")
     }
+}
+
+/// Return the configured thin-client remote engine URL (empty when this app
+/// owns a local engine). Lets a Settings field show/edit the value.
+#[tauri::command]
+fn get_remote_engine() -> String {
+    read_remote_engine().unwrap_or_default()
+}
+
+/// Set (or clear, with an empty string) the thin-client remote engine URL and
+/// persist it to .maxconfig.json. Takes effect on the next app launch (the
+/// engine is spawned — or not — at startup).
+#[tauri::command]
+fn set_remote_engine(url: String) -> Result<String, String> {
+    let trimmed = url.trim().trim_end_matches('/').to_string();
+    update_maxconfig_client_url(&trimmed)?;
+    Ok(trimmed)
 }
 
 /// Trigger the engine's autonomous Aegis fix for an event via the local HTTP API
@@ -1079,6 +1142,8 @@ pub fn run() {
             stop_tor,
             tor_running,
             engine_base,
+            get_remote_engine,
+            set_remote_engine,
             aegis_auto_fix,
             get_lan_status,
             setup_cert,

@@ -35,4 +35,5 @@ def build_provider(name: str, config: EngineConfig, model: str = "") -> Provider
         name=pc.name,
         base_url=pc.base_url or "http://127.0.0.1:11434",
         keep_alive=ka,
+        default_options=config.tuning.to_options(),
     )

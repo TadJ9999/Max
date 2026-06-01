@@ -11,6 +11,7 @@ export type EngineConfigView = {
   finnhub_key_set: boolean;
   delegate: { mode: string; max_parallel_local: number; max_parallel_cloud: number };
   idle: { keep_alive: string; resident_model: string; resident_keep_alive: string; vram_budget_mb: number };
+  tuning: { num_ctx: number; num_gpu: number; num_batch: number; num_thread: number };
   workspace_allowlist: string[];
   osint: {
     gdelt_query: string;
@@ -78,6 +79,7 @@ export type ConfigPatch = {
   workspace_allowlist?: string[];
   delegate?: { mode?: string; max_parallel_local?: number; max_parallel_cloud?: number };
   idle?: { keep_alive?: string; resident_model?: string; resident_keep_alive?: string; vram_budget_mb?: number };
+  tuning?: { num_ctx?: number; num_gpu?: number; num_batch?: number; num_thread?: number };
   osint?: {
     gdelt_query?: string;
     gdelt_timespan?: string;

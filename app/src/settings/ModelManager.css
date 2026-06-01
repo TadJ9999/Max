@@ -245,6 +245,20 @@
 .mm-bench-btn--running { color: #f0c040; border-color: #f0c040; cursor: wait; }
 .mm-bench-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Row of card actions (benchmark + latency probe) */
+.mm-card__btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Ollama tuning grid (num_ctx / num_gpu / num_batch / num_thread) */
+.mm-tuning-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
 /* Pull button */
 .mm-pull-btn {
   font-size: 10px;

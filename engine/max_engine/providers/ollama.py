@@ -40,6 +40,7 @@ class OllamaProvider(Provider):
         base_url: str = "http://127.0.0.1:11434",
         client: httpx.AsyncClient | None = None,
         keep_alive: str | None = None,
+        default_options: dict | None = None,
     ):
         self.name = name
         self.base_url = base_url.rstrip("/")
@@ -47,6 +48,9 @@ class OllamaProvider(Provider):
         # How long Ollama keeps the model resident after a request (e.g. "10m").
         # When set, idle models unload on their own to free RAM/VRAM.
         self.keep_alive = keep_alive
+        # Tuning knobs (num_ctx / num_gpu / …) applied to every request as
+        # Ollama `options`; per-call params still override these.
+        self.default_options = default_options or {}
 
     async def chat(self, model: str, messages: list[dict], **params) -> AsyncIterator[ChatChunk]:
         feature = params.pop("_feature", "system")
@@ -54,7 +58,9 @@ class OllamaProvider(Provider):
         payload: dict = {"model": model, "messages": messages, "stream": True}
         if self.keep_alive is not None:
             payload["keep_alive"] = self.keep_alive
-        options = {k: v for k, v in params.items() if v is not None}
+        # Start from configured tuning defaults; per-call params take precedence.
+        options = dict(self.default_options)
+        options.update({k: v for k, v in params.items() if v is not None})
         if options:
             payload["options"] = options
 

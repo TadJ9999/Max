@@ -78,7 +78,7 @@ from .providers.openai_compat import list_local_models
 from .providers.vram import VramManager
 from .rag import RagService, RagStore, SessionMemory
 from .router import model_for, resolve
-from .models import BenchmarkStore, CLOUD_MODELS, list_ollama_models, pull_ollama_model, run_benchmark, vram_mb
+from .models import BenchmarkStore, CLOUD_MODELS, list_ollama_models, probe_latency, pull_ollama_model, run_benchmark, vram_mb
 
 # Load engine/.env (e.g. ANTHROPIC_API_KEY) if present, before providers read it.
 # Explicit path so it works regardless of the launch directory; override=True so
@@ -354,6 +354,12 @@ def _config_view() -> dict:
             "resident_model": config.idle.resident_model,
             "resident_keep_alive": config.idle.resident_keep_alive,
             "vram_budget_mb": config.idle.vram_budget_mb,
+        },
+        "tuning": {
+            "num_ctx": config.tuning.num_ctx,
+            "num_gpu": config.tuning.num_gpu,
+            "num_batch": config.tuning.num_batch,
+            "num_thread": config.tuning.num_thread,
         },
         "workspace_allowlist": config.workspace_allowlist,
         "osint": {
@@ -780,6 +786,9 @@ async def list_models() -> dict:
             "ttft_ms": bench["ttft_ms"] if bench else None,
             "tokens_per_sec": bench["tokens_per_sec"] if bench else None,
             "bench_ran_at": bench["ran_at"] if bench else None,
+            "lat_ttft_ms": bench.get("lat_ttft_ms") if bench else None,
+            "lat_total_ms": bench.get("lat_total_ms") if bench else None,
+            "lat_ran_at": bench.get("lat_ran_at") if bench else None,
         })
 
     # Annotate cloud models with key_set status
@@ -829,6 +838,33 @@ async def benchmark_model(req: BenchmarkRequest) -> dict:
         tokens_per_sec=result["tokens_per_sec"],
         prompt_tokens=result.get("prompt_tokens", 0),
         total_tokens=result.get("total_tokens", 0),
+    )
+    return result
+
+
+class LatencyRequest(BaseModel):
+    model: str
+    runs: int = 3
+
+
+@app.post("/models/latency")
+async def latency_model(req: LatencyRequest) -> dict:
+    """Probe a local model's latency: median TTFT + end-to-end time for a short
+    reply over ``runs`` samples. Complements /models/benchmark (throughput)."""
+    ollama_url = next(
+        (p.base_url for p in config.providers if p.name == "ollama"),
+        "http://127.0.0.1:11434",
+    )
+    try:
+        result = await probe_latency(
+            req.model, base_url=ollama_url, runs=max(1, min(10, req.runs))
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    _benchmark_store.upsert_latency(
+        model=result["model"],
+        ttft_ms=result["ttft_ms"],
+        total_ms=result["total_ms"],
     )
     return result
 

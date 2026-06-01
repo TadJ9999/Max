@@ -63,6 +63,35 @@ class IdleConfig(BaseModel):
     vram_budget_mb: int = 11_000
 
 
+class TuningConfig(BaseModel):
+    """Ollama runtime tuning, passed as request ``options`` on every local chat
+    call. A value of ``0`` (or ``-1`` for ``num_gpu``) means "leave it to
+    Ollama's own default", so an untouched config changes nothing.
+
+    Note: model **quantization** is fixed at pull time (it's part of the model
+    tag, e.g. ``:q4_0``), and **KV-cache** quantization is a server-level env var
+    (``OLLAMA_KV_CACHE_TYPE=q8_0``), not a per-request option — both are
+    documented in the Performance settings rather than set here."""
+
+    num_ctx: int = 0      # context window in tokens (0 = model default)
+    num_gpu: int = -1     # layers offloaded to the GPU (-1 = auto-detect)
+    num_batch: int = 0    # prompt batch size (0 = default)
+    num_thread: int = 0   # CPU threads (0 = default)
+
+    def to_options(self) -> dict:
+        """The subset of knobs the user actually set, as Ollama option names."""
+        opts: dict = {}
+        if self.num_ctx > 0:
+            opts["num_ctx"] = self.num_ctx
+        if self.num_gpu >= 0:
+            opts["num_gpu"] = self.num_gpu
+        if self.num_batch > 0:
+            opts["num_batch"] = self.num_batch
+        if self.num_thread > 0:
+            opts["num_thread"] = self.num_thread
+        return opts
+
+
 class OsintConfig(BaseModel):
     """Global news heat map (GDELT + RSS). Egress is outbound to public news."""
 
@@ -286,6 +315,7 @@ class EngineConfig(BaseModel):
     workspace_allowlist: list[str] = Field(default_factory=list)
     delegate: DelegateConfig = Field(default_factory=DelegateConfig)
     idle: IdleConfig = Field(default_factory=IdleConfig)
+    tuning: TuningConfig = Field(default_factory=TuningConfig)
     osint: OsintConfig = Field(default_factory=OsintConfig)
     market: MarketConfig = Field(default_factory=MarketConfig)
     polymarket: PolymarketConfig = Field(default_factory=PolymarketConfig)
@@ -343,6 +373,15 @@ def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
         cfg.idle.resident_keep_alive = str(idle["resident_keep_alive"])
     if "vram_budget_mb" in idle:
         cfg.idle.vram_budget_mb = max(1_000, int(idle["vram_budget_mb"]))
+    tn = data.get("tuning") or {}
+    if "num_ctx" in tn:
+        cfg.tuning.num_ctx = max(0, int(tn["num_ctx"]))
+    if "num_gpu" in tn:
+        cfg.tuning.num_gpu = max(-1, int(tn["num_gpu"]))
+    if "num_batch" in tn:
+        cfg.tuning.num_batch = max(0, int(tn["num_batch"]))
+    if "num_thread" in tn:
+        cfg.tuning.num_thread = max(0, int(tn["num_thread"]))
     mk = data.get("market") or {}
     if "watchlist" in mk:
         cfg.market.watchlist = [str(s) for s in mk["watchlist"]]
@@ -512,6 +551,12 @@ def save_overrides(cfg: EngineConfig) -> None:
             "resident_model": cfg.idle.resident_model,
             "resident_keep_alive": cfg.idle.resident_keep_alive,
             "vram_budget_mb": cfg.idle.vram_budget_mb,
+        },
+        "tuning": {
+            "num_ctx": cfg.tuning.num_ctx,
+            "num_gpu": cfg.tuning.num_gpu,
+            "num_batch": cfg.tuning.num_batch,
+            "num_thread": cfg.tuning.num_thread,
         },
         "market": {
             "watchlist": cfg.market.watchlist,

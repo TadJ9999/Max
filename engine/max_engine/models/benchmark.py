@@ -9,8 +9,10 @@ The prompt is short and deterministic so results are comparable across models.
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import AsyncIterator
+from statistics import median
 
 import httpx
 
@@ -20,6 +22,11 @@ BENCHMARK_PROMPT = (
 )
 
 BENCHMARK_SYSTEM = "You are a helpful coding assistant. Respond immediately and concisely."
+
+# A tiny, fixed prompt for the latency probe. Generation is capped to a handful
+# of tokens so the measurement reflects *latency* (load + first token + a short
+# tail) rather than sustained throughput, which the benchmark already covers.
+LATENCY_PROMPT = "Reply with the single word: ready"
 
 
 async def run_benchmark(
@@ -52,7 +59,6 @@ async def run_benchmark(
             async for line in resp.aiter_lines():
                 if not line.strip():
                     continue
-                import json
                 data = json.loads(line)
                 text: str = data.get("message", {}).get("content", "")
                 if text:
@@ -86,6 +92,62 @@ async def run_benchmark(
         "tokens_per_sec": round(tps, 1),
         "prompt_tokens": prompt_tokens,
         "total_tokens": total_tokens,
+    }
+
+
+async def probe_latency(
+    model: str,
+    base_url: str = "http://127.0.0.1:11434",
+    client: httpx.AsyncClient | None = None,
+    runs: int = 3,
+    max_tokens: int = 16,
+) -> dict:
+    """Probe ``model`` latency: time-to-first-token and end-to-end time for a
+    short reply, repeated ``runs`` times. Returns the median of each to damp
+    noise. Generation is capped at ``max_tokens`` so this isolates latency from
+    throughput (which :func:`run_benchmark` measures)."""
+    owns = client is None
+    client = client or httpx.AsyncClient(timeout=120.0)
+
+    ttfts: list[float] = []
+    totals: list[float] = []
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": LATENCY_PROMPT}],
+        "stream": True,
+        "keep_alive": "5m",
+        "options": {"num_predict": max_tokens},
+    }
+    try:
+        for _ in range(max(1, runs)):
+            start = time.perf_counter()
+            ttft_ms: float | None = None
+            async with client.stream("POST", f"{base_url}/api/chat", json=payload) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line.strip():
+                        continue
+                    data = json.loads(line)
+                    text = data.get("message", {}).get("content", "")
+                    if text and ttft_ms is None:
+                        ttft_ms = (time.perf_counter() - start) * 1000
+                    if data.get("done"):
+                        break
+            total_ms = (time.perf_counter() - start) * 1000
+            if ttft_ms is not None:
+                ttfts.append(ttft_ms)
+                totals.append(total_ms)
+    finally:
+        if owns:
+            await client.aclose()
+
+    if not ttfts:
+        return {"model": model, "ttft_ms": 0.0, "total_ms": 0.0, "runs": 0}
+    return {
+        "model": model,
+        "ttft_ms": round(median(ttfts), 1),
+        "total_ms": round(median(totals), 1),
+        "runs": len(ttfts),
     }
 
 

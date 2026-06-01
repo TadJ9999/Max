@@ -4,10 +4,11 @@
 // Bottom section: task routing matrix (generate/chat/fix/summarize → model selector).
 
 import { useCallback, useEffect, useState } from "react";
-import { updateConfig } from "../config";
+import { getConfig, updateConfig } from "../config";
 import {
   benchmarkModel,
   getModels,
+  latencyProbe,
   streamPullModel,
   type CloudModel,
   type LocalModel,
@@ -148,16 +149,24 @@ function LocalCard({
   model,
   isActive,
   benchmarking,
+  probing,
   onSelect,
   onBenchmark,
+  onProbe,
 }: {
   model: LocalModel;
   isActive: boolean;
   benchmarking: boolean;
+  probing: boolean;
   onSelect: () => void;
   onBenchmark: () => void;
+  onProbe: () => void;
 }) {
   const hasBench = model.tokens_per_sec !== null;
+  // Prefer the dedicated latency probe's median TTFT; fall back to the
+  // benchmark's single-shot TTFT when only that has been run.
+  const ttft = model.lat_ttft_ms ?? model.ttft_ms;
+  const hasLatency = model.lat_total_ms !== null;
 
   return (
     <div
@@ -207,22 +216,38 @@ function LocalCard({
             <span className="mm-card__metric-val mm-card__metric-val--dim">—</span>
           </div>
         )}
-        {hasBench && model.ttft_ms !== null && (
+        {ttft !== null && (
           <div className="mm-card__metric">
             <span className="mm-card__metric-label">TTFT</span>
-            <span className="mm-card__metric-val">{model.ttft_ms!.toFixed(0)}ms</span>
+            <span className="mm-card__metric-val">{ttft.toFixed(0)}ms</span>
+          </div>
+        )}
+        {hasLatency && (
+          <div className="mm-card__metric">
+            <span className="mm-card__metric-label">latency</span>
+            <span className="mm-card__metric-val">{model.lat_total_ms!.toFixed(0)}ms</span>
           </div>
         )}
       </div>
 
-      <button
-        className={`mm-bench-btn${benchmarking ? " mm-bench-btn--running" : ""}`}
-        onClick={(e) => { e.stopPropagation(); onBenchmark(); }}
-        disabled={benchmarking}
-        title="Run live benchmark (fires a timed prompt)"
-      >
-        {benchmarking ? "⏱ Running…" : hasBench ? "↺ Re-benchmark" : "⏱ Benchmark"}
-      </button>
+      <div className="mm-card__btns">
+        <button
+          className={`mm-bench-btn${benchmarking ? " mm-bench-btn--running" : ""}`}
+          onClick={(e) => { e.stopPropagation(); onBenchmark(); }}
+          disabled={benchmarking || probing}
+          title="Run live throughput benchmark (tokens/sec)"
+        >
+          {benchmarking ? "⏱ Running…" : hasBench ? "↺ Re-benchmark" : "⏱ Benchmark"}
+        </button>
+        <button
+          className={`mm-bench-btn${probing ? " mm-bench-btn--running" : ""}`}
+          onClick={(e) => { e.stopPropagation(); onProbe(); }}
+          disabled={benchmarking || probing}
+          title="Probe latency: median time-to-first-token + end-to-end over 3 runs"
+        >
+          {probing ? "⏱ Probing…" : hasLatency ? "↺ Re-probe latency" : "⏱ Probe latency"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -307,6 +332,80 @@ function LocalServerCard({
         title="Save the local server URL"
       >
         {saving ? "Saving…" : dirty ? "Save URL" : "Saved"}
+      </button>
+    </div>
+  );
+}
+
+// ── Ollama tuning card (num_ctx / num_gpu / …) ───────────────────────────────
+
+type Tuning = { num_ctx: number; num_gpu: number; num_batch: number; num_thread: number };
+
+const TUNING_FIELDS: { key: keyof Tuning; label: string; hint: string; min: number }[] = [
+  { key: "num_ctx", label: "Context (num_ctx)", hint: "tokens · 0 = model default", min: 0 },
+  { key: "num_gpu", label: "GPU layers (num_gpu)", hint: "-1 = auto-detect", min: -1 },
+  { key: "num_batch", label: "Batch (num_batch)", hint: "prompt batch · 0 = default", min: 0 },
+  { key: "num_thread", label: "Threads (num_thread)", hint: "CPU threads · 0 = default", min: 0 },
+];
+
+function TuningCard({
+  tuning,
+  onSave,
+}: {
+  tuning: Tuning;
+  onSave: (t: Tuning) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<Tuning>(tuning);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setDraft(tuning), [tuning]);
+  const dirty = (Object.keys(draft) as (keyof Tuning)[]).some((k) => draft[k] !== tuning[k]);
+
+  const save = async () => {
+    setSaving(true);
+    await onSave(draft);
+    setSaving(false);
+  };
+
+  return (
+    <div className="mm-card mm-card--local mm-card--server">
+      <div className="mm-card__top">
+        <OllamaLogo />
+        <div className="mm-card__titles">
+          <span className="mm-card__name">Ollama tuning</span>
+          <span className="mm-card__sub">runtime options applied to every local chat</span>
+        </div>
+      </div>
+
+      <div className="mm-tuning-grid">
+        {TUNING_FIELDS.map((f) => (
+          <label key={f.key} className="mm-server-field">
+            <span className="mm-server-field__label">{f.label}</span>
+            <input
+              className="mm-server-field__input"
+              type="number"
+              min={f.min}
+              value={draft[f.key]}
+              onChange={(e) =>
+                setDraft({ ...draft, [f.key]: parseInt(e.target.value || "0", 10) })
+              }
+            />
+            <span className="mm-card__metric-val--dim" style={{ fontSize: "0.7rem" }}>{f.hint}</span>
+          </label>
+        ))}
+      </div>
+
+      <p className="mm-hint" style={{ marginTop: "0.4rem" }}>
+        Model quantization is set by the model tag at pull time; KV-cache quantization is the
+        server env <code>OLLAMA_KV_CACHE_TYPE</code> (e.g. <code>q8_0</code>).
+      </p>
+
+      <button
+        className="mm-bench-btn"
+        onClick={(e) => { e.stopPropagation(); void save(); }}
+        disabled={saving || !dirty}
+        title="Save Ollama tuning options"
+      >
+        {saving ? "Saving…" : dirty ? "Save tuning" : "Saved"}
       </button>
     </div>
   );
@@ -430,15 +529,27 @@ export function ModelManager() {
   const [tab, setTab] = useState<Tab>("local");
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [benchmarking, setBenchmarking] = useState<string | null>(null);
+  const [probing, setProbing] = useState<string | null>(null);
   const [pulling, setPulling] = useState<string | null>(null);
   const [pullStatus, setPullStatus] = useState("");
   const [saved, setSaved] = useState(false);
+  const [tuning, setTuning] = useState<Tuning | null>(null);
 
   const load = useCallback(async () => {
     const d = await getModels();
     setData(d);
     return d;
   }, []);
+
+  // Tuning lives in /config (not /models); fetch it alongside the model list.
+  useEffect(() => {
+    void getConfig().then((c) => c && setTuning(c.tuning));
+  }, []);
+
+  const handleSaveTuning = async (t: Tuning) => {
+    const updated = await updateConfig({ tuning: t });
+    if (updated) setTuning(updated.tuning);
+  };
 
   // Initial load with retry: poll every 3s until the engine responds.
   useEffect(() => {
@@ -458,6 +569,13 @@ export function ModelManager() {
     await benchmarkModel(modelId);
     await load();
     setBenchmarking(null);
+  };
+
+  const handleProbe = async (modelId: string) => {
+    setProbing(modelId);
+    await latencyProbe(modelId);
+    await load();
+    setProbing(null);
   };
 
   const handlePull = async (tag: string) => {
@@ -528,12 +646,13 @@ export function ModelManager() {
       {/* Local tab */}
       {tab === "local" && (
         <div className="mm__panel">
-          <p className="mm-section-label">Local server</p>
+          <p className="mm-section-label">Local server &amp; tuning</p>
           <div className="mm-grid">
             <LocalServerCard
               server={data.local_server ?? { base_url: null, reachable: false, models: [] }}
               onSave={handleSaveLocalServer}
             />
+            {tuning && <TuningCard tuning={tuning} onSave={handleSaveTuning} />}
           </div>
 
           <p className="mm-section-label">Ollama models</p>
@@ -547,8 +666,10 @@ export function ModelManager() {
                   model={m}
                   isActive={activeModel === m.id}
                   benchmarking={benchmarking === m.id}
+                  probing={probing === m.id}
                   onSelect={() => setSelectedModel(m.id)}
                   onBenchmark={() => void handleBenchmark(m.id)}
+                  onProbe={() => void handleProbe(m.id)}
                 />
               ))}
             </div>
