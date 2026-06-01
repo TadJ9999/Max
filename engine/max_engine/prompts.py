@@ -202,6 +202,39 @@ SYSTEM_PROMPTS: dict[str, str] = {
         "**Risks & what to watch** (catalysts, key levels). Use the numbers. This is "
         "informational only — not financial advice."
     ),
+    # ---- Phase 9: Capability platform ----
+    "intent_router": (
+        "You are an intent classifier. Read the user message and reply with ONLY one "
+        "lowercase word — the domain that best matches:\n"
+        "web_search  (search internet, news, facts, 'what is X', 'find X online', 'look up')\n"
+        "report      (generate a report, document, write-up, summary, paper, article)\n"
+        "spotify     (music, play a song, pause, skip, next track, Spotify, playlist)\n"
+        "calendar    (schedule, meeting, event, Google Calendar, 'what's on my calendar', 'add event')\n"
+        "files       (read a file, write a file, create file, list files, search in files)\n"
+        "code        (programming, fix a bug, generate code, refactor, explain code, write a function)\n"
+        "chat        (general conversation, question, anything else)\n\n"
+        "Reply with exactly one of the words above. No punctuation, no explanation."
+    ),
+    "web_search": (
+        "You are Max, a research assistant. You are given a user's search query and "
+        "a list of web search results (title, URL, snippet). Synthesize the results "
+        "into a clear, concise answer in Markdown. Lead with the direct answer, then "
+        "provide supporting detail. Cite sources inline as [title](url). If the results "
+        "don't contain the answer, say so and share what you found. Be factual and "
+        "concise — no padding."
+    ),
+    "report": (
+        "You are Max, an expert report writer. Given a topic or instructions, produce "
+        "a well-structured Markdown report. Use appropriate headings (##, ###), bullet "
+        "points, and numbered lists. Include an executive summary at the top and a "
+        "conclusion at the end. Be comprehensive but tight — no filler. The report "
+        "should be immediately useful to someone who needs to act on or share it."
+    ),
+    "skills_assistant": (
+        "You are Max, a personal AI assistant with access to web search, calendar, "
+        "music, files, and report generation. Help the user accomplish their task "
+        "efficiently. Be concise and actionable."
+    ),
     "apollo_predict": (
         "You are Apollo, a forecasting engine. You are given a JSON object with "
         "`osint` (a current global-threat brief), `market` (a live market "
@@ -279,6 +312,23 @@ def market_chat_messages(board_json: str, history: list[dict]) -> list[dict]:
         + board_json
     )
     return [{"role": "system", "content": system}, *history]
+
+
+def web_search_messages(query: str, results_json: str, history: list[dict]) -> list[dict]:
+    """System + search results context + prior turns."""
+    system = (
+        SYSTEM_PROMPTS["web_search"]
+        + f"\n\nSearch query: {query}\n\nSearch results (JSON):\n{results_json}"
+    )
+    return [{"role": "system", "content": system}, *history]
+
+
+def skill_messages(skill_context: str, query: str, history: list[dict]) -> list[dict]:
+    """Generic skill chat with optional context."""
+    system = SYSTEM_PROMPTS["skills_assistant"]
+    if skill_context:
+        system += f"\n\nContext:\n{skill_context}"
+    return [{"role": "system", "content": system}, *history, {"role": "user", "content": query}]
 
 
 def sentinel_chat_messages(snapshot_json: str, history: list[dict]) -> list[dict]:

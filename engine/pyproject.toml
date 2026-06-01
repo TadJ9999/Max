@@ -20,6 +20,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-timeout>=2.3",
+    "pytest-asyncio>=0.23",
     "ruff>=0.4",
 ]
 
@@ -32,6 +33,7 @@ include = ["max_engine*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 100

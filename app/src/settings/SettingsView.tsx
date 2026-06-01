@@ -778,6 +778,135 @@ async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Prom
   return invoke<T>(cmd, args ?? {});
 }
 
+// ── Skills & Capabilities settings section ──────────────────────────────────
+
+async function openUrl(url: string) {
+  try {
+    const { openUrl: tauriOpen } = await import("@tauri-apps/plugin-opener");
+    await tauriOpen(url);
+  } catch {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+}
+
+function SkillsSettingsSection({
+  cfg,
+  patch,
+}: {
+  cfg: EngineConfigView;
+  patch: (p: ConfigPatch) => Promise<void>;
+}) {
+  const [spStatus, setSpStatus] = useState<{ configured: boolean; authenticated: boolean } | null>(null);
+  const [calStatus, setCalStatus] = useState<{ configured: boolean; authenticated: boolean } | null>(null);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    void fetch("http://127.0.0.1:8001/skills/spotify/status").then((r) => r.json()).then(setSpStatus).catch(() => {});
+    void fetch("http://127.0.0.1:8001/skills/calendar/status").then((r) => r.json()).then(setCalStatus).catch(() => {});
+  }, []);
+
+  const connectSpotify = async () => {
+    setMsg("");
+    try {
+      const r = await fetch("http://127.0.0.1:8001/skills/spotify/auth").then((res) => res.json()) as { url: string };
+      await openUrl(r.url);
+      setMsg("Browser opened — authorize Spotify then return here.");
+      setTimeout(() => {
+        void fetch("http://127.0.0.1:8001/skills/spotify/status").then((res) => res.json()).then(setSpStatus).catch(() => {});
+      }, 8000);
+    } catch (e) { setMsg(String(e)); }
+  };
+
+  const disconnectSpotify = async () => {
+    await fetch("http://127.0.0.1:8001/skills/spotify/disconnect", { method: "POST" });
+    setSpStatus((p) => p ? { ...p, authenticated: false } : p);
+  };
+
+  const connectCal = async () => {
+    setMsg("");
+    try {
+      const r = await fetch("http://127.0.0.1:8001/skills/calendar/auth").then((res) => res.json()) as { url: string };
+      await openUrl(r.url);
+      setMsg("Browser opened — authorize Google then return here.");
+      setTimeout(() => {
+        void fetch("http://127.0.0.1:8001/skills/calendar/status").then((res) => res.json()).then(setCalStatus).catch(() => {});
+      }, 8000);
+    } catch (e) { setMsg(String(e)); }
+  };
+
+  const disconnectCal = async () => {
+    await fetch("http://127.0.0.1:8001/skills/calendar/disconnect", { method: "POST" });
+    setCalStatus((p) => p ? { ...p, authenticated: false } : p);
+  };
+
+  const skills = cfg.skills;
+
+  return (
+    <Section title="Skills &amp; Capabilities" glyph="⚡" defaultOpen={false}>
+      <p className="stg-hint">
+        Phase 9 capability platform. Skills extend Max with web search, reports,
+        file management, Spotify playback, and Google Calendar.
+        Configure API credentials in <code>engine/.env</code>.
+      </p>
+
+      {/* Intent router */}
+      <label className="stg-row">
+        <span className="stg-row__label">Intent router (auto-route chat to skills)</span>
+        <Toggle
+          on={skills?.intent_router_enabled ?? true}
+          onChange={(v) => void patch({ skills: { intent_router_enabled: v } })}
+        />
+      </label>
+
+      {/* Spotify */}
+      <div style={{ marginTop: 10 }}>
+        <div className="stg-row__label" style={{ marginBottom: 6, fontWeight: 600 }}>🎵 Spotify</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 11, color: spStatus?.authenticated ? "#4caf50" : "rgba(200,200,200,0.45)" }}>
+            {spStatus?.authenticated ? "● Connected" : spStatus?.configured ? "○ Not connected" : "○ Not configured"}
+          </span>
+          {!spStatus?.authenticated ? (
+            <button className="stg-btn" onClick={() => void connectSpotify()} disabled={!spStatus?.configured}>
+              Connect
+            </button>
+          ) : (
+            <button className="stg-btn stg-btn--danger" onClick={() => void disconnectSpotify()}>Disconnect</button>
+          )}
+        </div>
+        {!spStatus?.configured && (
+          <p className="stg-hint">Add <code>SPOTIFY_CLIENT_ID</code> + <code>SPOTIFY_CLIENT_SECRET</code> to <code>engine/.env</code></p>
+        )}
+      </div>
+
+      {/* Google Calendar */}
+      <div style={{ marginTop: 10 }}>
+        <div className="stg-row__label" style={{ marginBottom: 6, fontWeight: 600 }}>📅 Google Calendar</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 11, color: calStatus?.authenticated ? "#4caf50" : "rgba(200,200,200,0.45)" }}>
+            {calStatus?.authenticated ? "● Connected" : calStatus?.configured ? "○ Not connected" : "○ Not configured"}
+          </span>
+          {!calStatus?.authenticated ? (
+            <button className="stg-btn" onClick={() => void connectCal()} disabled={!calStatus?.configured}>
+              Connect
+            </button>
+          ) : (
+            <button className="stg-btn stg-btn--danger" onClick={() => void disconnectCal()}>Disconnect</button>
+          )}
+        </div>
+        {!calStatus?.configured && (
+          <p className="stg-hint">Add <code>GOOGLE_CALENDAR_CLIENT_ID</code> + <code>GOOGLE_CALENDAR_CLIENT_SECRET</code> to <code>engine/.env</code></p>
+        )}
+      </div>
+
+      {msg && <p className="stg-hint" style={{ color: "#4fc3f7" }}>{msg}</p>}
+
+      <p className="stg-hint" style={{ marginTop: 12, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 8 }}>
+        ⚠ Web search, reports, and file operations are always available. Spotify and Google Calendar require OAuth setup.
+      </p>
+    </Section>
+  );
+}
+
 function LanSection() {
   const [status, setStatus] = useState<LanStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1565,6 +1694,9 @@ export function SettingsView() {
             />
           </label>
         </Section>
+
+        {/* ── Skills & Capabilities ────────────────────────────────── */}
+        <SkillsSettingsSection cfg={cfg} patch={patch} />
 
         {/* ── Share on LAN ─────────────────────────────────────────── */}
         <LanSection />

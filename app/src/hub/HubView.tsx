@@ -16,9 +16,10 @@ import { SentinelView } from "../sentinel/SentinelView";
 import { SettingsView } from "../settings/SettingsView";
 import { ShadowNetView } from "../darknet/ShadowNetView";
 import { CodeView } from "../code/CodeView";
+import { SkillsView } from "../skills/SkillsView";
 import "./Hub.css";
 
-export type HubTab = "apollo" | "osint" | "market" | "polymarket" | "aegis" | "shadow" | "sentinel" | "code" | "settings";
+export type HubTab = "apollo" | "osint" | "market" | "polymarket" | "aegis" | "shadow" | "sentinel" | "code" | "skills" | "settings";
 
 const TABS: { id: HubTab; label: string; glyph: string }[] = [
   { id: "apollo", label: "Apollo", glyph: "▲" },
@@ -29,6 +30,7 @@ const TABS: { id: HubTab; label: string; glyph: string }[] = [
   { id: "shadow", label: "Shadow", glyph: "⬡" },
   { id: "sentinel", label: "Sentinel", glyph: "🛰" },
   { id: "code", label: "Code", glyph: "⌨" },
+  { id: "skills", label: "Skills", glyph: "⚡" },
   { id: "settings", label: "Settings", glyph: "⚙" },
 ];
 
@@ -135,6 +137,11 @@ export function HubView({
         {visited.has("code") && (
           <div className="hub__view" hidden={tab !== "code"}>
             <CodeView />
+          </div>
+        )}
+        {visited.has("skills") && (
+          <div className="hub__view" hidden={tab !== "skills"}>
+            <SkillsView />
           </div>
         )}
         {visited.has("settings") && (

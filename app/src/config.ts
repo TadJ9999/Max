@@ -67,6 +67,9 @@ export type EngineConfigView = {
   task_models: Record<string, string>;
   sigils: Record<string, string>;
   provider_models: Record<string, Record<string, string>>;
+  skills?: { intent_router_enabled: boolean; intent_router_model: string };
+  spotify?: { configured: boolean; authenticated: boolean; client_id: string };
+  gcal?: { configured: boolean; authenticated: boolean; calendar_id: string };
 };
 
 export type ConfigPatch = {
@@ -111,6 +114,9 @@ export type ConfigPatch = {
   };
   task_models?: Record<string, string>;
   sigils?: Record<string, string>;
+  skills?: { intent_router_enabled?: boolean; intent_router_model?: string };
+  spotify?: { client_id?: string };
+  gcal?: { client_id?: string; calendar_id?: string };
 };
 
 export async function getConfig(): Promise<EngineConfigView | null> {

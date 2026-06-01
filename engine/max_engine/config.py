@@ -138,6 +138,34 @@ class PersonalityConfig(BaseModel):
     custom_prefix: str = ""      # used verbatim when persona="custom"
 
 
+class SkillsConfig(BaseModel):
+    """Phase 9 — Capability platform & skills."""
+
+    intent_router_enabled: bool = True
+    intent_router_model: str = ""  # empty = use resident model
+
+
+class SpotifyConfig(BaseModel):
+    """Spotify OAuth PKCE. client_id/secret from env; tokens persisted here."""
+
+    client_id: str = ""
+    redirect_uri: str = "http://127.0.0.1:8001/skills/spotify/callback"
+    access_token: str = ""
+    refresh_token: str = ""
+    token_expiry: float = 0.0
+
+
+class GoogleCalendarConfig(BaseModel):
+    """Google Calendar OAuth2. client_id/secret from env; tokens persisted here."""
+
+    client_id: str = ""
+    redirect_uri: str = "http://127.0.0.1:8001/skills/calendar/callback"
+    access_token: str = ""
+    refresh_token: str = ""
+    token_expiry: float = 0.0
+    calendar_id: str = "primary"
+
+
 class LanConfig(BaseModel):
     """Share Max on the local network. When enabled, the engine binds 0.0.0.0
     over HTTPS so phones/Macs on the same WiFi can open Max in a browser.
@@ -248,6 +276,9 @@ class EngineConfig(BaseModel):
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
     darknet: DarkNetConfig = Field(default_factory=DarkNetConfig)
     lan: LanConfig = Field(default_factory=LanConfig)
+    skills: SkillsConfig = Field(default_factory=SkillsConfig)
+    spotify: SpotifyConfig = Field(default_factory=SpotifyConfig)
+    gcal: GoogleCalendarConfig = Field(default_factory=GoogleCalendarConfig)
 
 
 def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
@@ -368,6 +399,31 @@ def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
         cfg.aegis.osv_ttl_seconds = max(3600, int(ag["osv_ttl_seconds"]))
     if "score_threshold" in ag:
         cfg.aegis.score_threshold = max(0, min(100, int(ag["score_threshold"])))
+    sk = data.get("skills") or {}
+    if "intent_router_enabled" in sk:
+        cfg.skills.intent_router_enabled = bool(sk["intent_router_enabled"])
+    if "intent_router_model" in sk:
+        cfg.skills.intent_router_model = str(sk["intent_router_model"])
+    sp = data.get("spotify") or {}
+    if "client_id" in sp:
+        cfg.spotify.client_id = str(sp["client_id"])
+    if "access_token" in sp:
+        cfg.spotify.access_token = str(sp["access_token"])
+    if "refresh_token" in sp:
+        cfg.spotify.refresh_token = str(sp["refresh_token"])
+    if "token_expiry" in sp:
+        cfg.spotify.token_expiry = float(sp["token_expiry"])
+    gc = data.get("gcal") or {}
+    if "client_id" in gc:
+        cfg.gcal.client_id = str(gc["client_id"])
+    if "access_token" in gc:
+        cfg.gcal.access_token = str(gc["access_token"])
+    if "refresh_token" in gc:
+        cfg.gcal.refresh_token = str(gc["refresh_token"])
+    if "token_expiry" in gc:
+        cfg.gcal.token_expiry = float(gc["token_expiry"])
+    if "calendar_id" in gc:
+        cfg.gcal.calendar_id = str(gc["calendar_id"])
     cmds = data.get("custom_commands")
     if isinstance(cmds, list):
         parsed: list[CustomCommand] = []
@@ -466,6 +522,23 @@ def save_overrides(cfg: EngineConfig) -> None:
             "osv_enabled": cfg.aegis.osv_enabled,
             "osv_ttl_seconds": cfg.aegis.osv_ttl_seconds,
             "score_threshold": cfg.aegis.score_threshold,
+        },
+        "skills": {
+            "intent_router_enabled": cfg.skills.intent_router_enabled,
+            "intent_router_model": cfg.skills.intent_router_model,
+        },
+        "spotify": {
+            "client_id": cfg.spotify.client_id,
+            "access_token": cfg.spotify.access_token,
+            "refresh_token": cfg.spotify.refresh_token,
+            "token_expiry": cfg.spotify.token_expiry,
+        },
+        "gcal": {
+            "client_id": cfg.gcal.client_id,
+            "access_token": cfg.gcal.access_token,
+            "refresh_token": cfg.gcal.refresh_token,
+            "token_expiry": cfg.gcal.token_expiry,
+            "calendar_id": cfg.gcal.calendar_id,
         },
         "custom_commands": [
             {

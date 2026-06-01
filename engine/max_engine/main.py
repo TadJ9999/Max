@@ -27,6 +27,15 @@ import datetime as _dt
 import time as _time
 
 from . import __version__
+from .capabilities import CapabilityRegistry, classify_intent
+from .skills import (
+    CalendarCapability, CalendarService,
+    FilesCapability, FilesService,
+    ReportCapability, ReportService,
+    SpotifyCapability, SpotifyService,
+    WebSearchCapability,
+)
+from .skills.web_search import ddg_search, _search_stream
 from .aegis import AegisCapture, AegisService, AegisStore, ScanService
 from .analytics.store import UsageStore
 from .darknet import TorService
@@ -45,7 +54,15 @@ from .osint import EventsService, NavalService, OsintService
 from .polymarket import PolymarketService
 from .polymarket.embedder import embed_markets
 from .sentinel import SentinelService
-from .prompts import apply_persona, market_chat_messages, messages_for, polymarket_chat_messages, rag_messages, sentinel_chat_messages
+from .prompts import (
+    SYSTEM_PROMPTS,
+    apply_persona,
+    market_chat_messages,
+    messages_for,
+    polymarket_chat_messages,
+    rag_messages,
+    sentinel_chat_messages,
+)
 from .providers.base import Provider
 from .providers.factory import build_provider
 from .providers.vram import VramManager
@@ -165,9 +182,41 @@ dark_svc = TorService(
 )
 _benchmark_store = BenchmarkStore(config.apollo.db_path.replace(".apollo.db", ".apollo.db"))
 
+# ── Phase 9 — Capability platform & skills ───────────────────────────────────
+
+_report_svc = ReportService()
+_files_svc = FilesService(config.workspace_allowlist)
+_spotify_svc = SpotifyService(
+    config.spotify,
+    client_id=os.environ.get("SPOTIFY_CLIENT_ID", ""),
+    client_secret=os.environ.get("SPOTIFY_CLIENT_SECRET", ""),
+)
+_calendar_svc = CalendarService(
+    config.gcal,
+    client_id=os.environ.get("GOOGLE_CALENDAR_CLIENT_ID", ""),
+    client_secret=os.environ.get("GOOGLE_CALENDAR_CLIENT_SECRET", ""),
+)
+
+
+def _register_capabilities() -> None:
+    """Register all skill capabilities into the global registry."""
+    registry = CapabilityRegistry.get()
+    _provider = build_provider("ollama", config)
+    _model = config.task_models.get("chat", "qwen2.5-coder:14b")
+    registry.register(WebSearchCapability(_provider, _model))
+    registry.register(ReportCapability(_report_svc, _provider, _model))
+    registry.register(FilesCapability(_files_svc, _provider, _model))
+    registry.register(SpotifyCapability(_spotify_svc))
+    registry.register(CalendarCapability(_calendar_svc))
+
+
+_register_capabilities()
+
 # ── Analytics: usage tracking ────────────────────────────────────────────────
 
 _FEATURE_MAP: list[tuple[str, str]] = [
+    ("/skills/",      "skills"),
+    ("/capabilities/","skills"),
     ("/apollo/",      "apollo"),
     ("/osint/",       "osint"),
     ("/market/",      "market"),
@@ -346,6 +395,24 @@ def _config_view() -> dict:
         "task_models": config.task_models,
         "sigils": config.sigils,
         "provider_models": config.provider_models,
+        "skills": {
+            "intent_router_enabled": config.skills.intent_router_enabled,
+            "intent_router_model": config.skills.intent_router_model,
+        },
+        "spotify": {
+            "configured": bool(os.environ.get("SPOTIFY_CLIENT_ID") or config.spotify.client_id),
+            "authenticated": bool(config.spotify.access_token),
+            "client_id": (os.environ.get("SPOTIFY_CLIENT_ID") or config.spotify.client_id)[:8] + "..."
+            if (os.environ.get("SPOTIFY_CLIENT_ID") or config.spotify.client_id) else "",
+        },
+        "gcal": {
+            "configured": bool(
+                (os.environ.get("GOOGLE_CALENDAR_CLIENT_ID") or config.gcal.client_id)
+                and (os.environ.get("GOOGLE_CALENDAR_CLIENT_SECRET") or "")
+            ),
+            "authenticated": bool(config.gcal.access_token),
+            "calendar_id": config.gcal.calendar_id,
+        },
     }
 
 
@@ -424,6 +491,20 @@ class AegisPatch(BaseModel):
     autonomy: str | None = None
 
 
+class SkillsPatch(BaseModel):
+    intent_router_enabled: bool | None = None
+    intent_router_model: str | None = None
+
+
+class SpotifyPatch(BaseModel):
+    client_id: str | None = None
+
+
+class GcalPatch(BaseModel):
+    client_id: str | None = None
+    calendar_id: str | None = None
+
+
 class ConfigPatch(BaseModel):
     allow_cloud: bool | None = None
     force_offline: bool | None = None
@@ -439,6 +520,9 @@ class ConfigPatch(BaseModel):
     aegis: AegisPatch | None = None
     task_models: dict[str, str] | None = None
     sigils: dict[str, str] | None = None
+    skills: SkillsPatch | None = None
+    spotify: SpotifyPatch | None = None
+    gcal: GcalPatch | None = None
 
 
 @app.put("/config")
@@ -574,6 +658,24 @@ def update_config(patch: ConfigPatch) -> dict:
     if patch.sigils is not None:
         for sigil, provider in patch.sigils.items():
             config.sigils[sigil] = provider
+    if patch.skills is not None:
+        sk = patch.skills
+        if sk.intent_router_enabled is not None:
+            config.skills.intent_router_enabled = sk.intent_router_enabled
+        if sk.intent_router_model is not None:
+            config.skills.intent_router_model = sk.intent_router_model
+    if patch.spotify is not None:
+        sp = patch.spotify
+        if sp.client_id is not None:
+            config.spotify.client_id = sp.client_id
+            _spotify_svc._client_id = sp.client_id
+    if patch.gcal is not None:
+        gc = patch.gcal
+        if gc.client_id is not None:
+            config.gcal.client_id = gc.client_id
+            _calendar_svc._client_id = gc.client_id
+        if gc.calendar_id is not None:
+            config.gcal.calendar_id = gc.calendar_id
     save_overrides(config)
     return _config_view()
 
@@ -586,7 +688,12 @@ class KeyPatch(BaseModel):
 @app.post("/config/key")
 def set_api_key(patch: KeyPatch) -> dict:
     """Write an API key to engine/.env and reload it into the running process."""
-    allowed = {"ANTHROPIC_API_KEY", "FINNHUB_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "NASA_API_KEY"}
+    allowed = {
+        "ANTHROPIC_API_KEY", "FINNHUB_API_KEY", "OPENAI_API_KEY",
+        "GOOGLE_API_KEY", "NASA_API_KEY",
+        "SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET",
+        "GOOGLE_CALENDAR_CLIENT_ID", "GOOGLE_CALENDAR_CLIENT_SECRET",
+    }
     if patch.name not in allowed:
         raise HTTPException(status_code=400, detail=f"Unknown key name '{patch.name}'")
     env_path = Path(__file__).resolve().parent.parent / ".env"
@@ -2329,6 +2436,444 @@ def code_rollback():
     if ok:
         _last_snapshot_ref = None
     return {"ok": ok, "stash_ref": ref}
+
+# ── Phase 9: Capabilities & Skills ──────────────────────────────────────────
+
+
+@app.get("/capabilities")
+def list_capabilities() -> dict:
+    """List all registered skill capabilities and their connection status."""
+    return {"capabilities": CapabilityRegistry.get().list_capabilities()}
+
+
+class RouteRequest(BaseModel):
+    message: str
+    provider: str | None = None  # override AI provider for synthesis
+
+
+@app.post("/capabilities/route")
+async def capabilities_route(req: RouteRequest):
+    """Classify the message → pick a skill → stream the response (SSE).
+    Falls back to a plain chat reply when no skill matches."""
+    prov_name, model = _ai_route()
+    try:
+        provider = build_provider(req.provider or prov_name, config)
+    except KeyError:
+        provider = build_provider("ollama", config)
+        model = config.task_models.get("chat", "qwen2.5-coder:14b")
+
+    # Use resident model for fast classification
+    classifier_model = (
+        config.skills.intent_router_model or config.idle.resident_model
+        or config.task_models.get("chat", "qwen2.5-coder:14b")
+    )
+    try:
+        classifier_provider = build_provider("ollama", config)
+    except KeyError:
+        classifier_provider = provider
+
+    domain = await classify_intent(req.message, classifier_provider, classifier_model)
+
+    async def _gen():
+        # Emit the routing decision so the UI can display it
+        yield f"data: {json.dumps({'object': 'route', 'domain': domain})}\n\n"
+
+        if domain == "web_search":
+            _check_network()
+            async for chunk in _search_stream(req.message, provider, model):
+                yield f"data: {json.dumps({'object': 'chat.completion.chunk', 'choices': [{'delta': {'content': chunk}}]})}\n\n"
+
+        elif domain == "report":
+            async for chunk in _report_svc.generate_stream(req.message, req.message, provider, model):
+                yield f"data: {json.dumps({'object': 'chat.completion.chunk', 'choices': [{'delta': {'content': chunk}}]})}\n\n"
+
+        elif domain == "spotify":
+            status = await _spotify_svc.get_status(lambda: save_overrides(config))
+            context = json.dumps(status)
+            from .prompts import skill_messages
+            msgs = skill_messages(context, req.message, [])
+            async for chunk in provider.chat(model, msgs, _feature="skills"):
+                if not chunk.done:
+                    yield f"data: {json.dumps({'object': 'chat.completion.chunk', 'choices': [{'delta': {'content': chunk.text}}]})}\n\n"
+
+        elif domain == "calendar":
+            try:
+                events = await _calendar_svc.list_events(lambda: save_overrides(config))
+                context = json.dumps(events[:10])
+            except Exception:
+                context = "[]"
+            from .prompts import skill_messages
+            msgs = skill_messages(context, req.message, [])
+            async for chunk in provider.chat(model, msgs, _feature="skills"):
+                if not chunk.done:
+                    yield f"data: {json.dumps({'object': 'chat.completion.chunk', 'choices': [{'delta': {'content': chunk.text}}]})}\n\n"
+
+        elif domain == "files":
+            from .prompts import skill_messages
+            msgs = skill_messages("", req.message, [])
+            async for chunk in provider.chat(model, msgs, _feature="skills"):
+                if not chunk.done:
+                    yield f"data: {json.dumps({'object': 'chat.completion.chunk', 'choices': [{'delta': {'content': chunk.text}}]})}\n\n"
+
+        else:
+            # code / chat — plain response
+            from .prompts import apply_persona
+            msgs = [
+                {"role": "system", "content": apply_persona(
+                    SYSTEM_PROMPTS["chat"], config.personality, _profile_store.to_context_block()
+                )},
+                {"role": "user", "content": req.message},
+            ]
+            async for chunk in provider.chat(model, msgs, _feature="skills"):
+                if not chunk.done:
+                    yield f"data: {json.dumps({'object': 'chat.completion.chunk', 'choices': [{'delta': {'content': chunk.text}}]})}\n\n"
+
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+# -- Web Search ---------------------------------------------------------------
+
+class SearchRequest(BaseModel):
+    query: str
+    max_results: int = 6
+    provider: str | None = None
+
+
+@app.get("/skills/search/raw")
+async def skills_search_raw(q: str, max_results: int = 6) -> dict:
+    """DuckDuckGo search results without AI synthesis."""
+    _check_network()
+    try:
+        results = await ddg_search(q, max_results=max_results)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Search error: {e}") from e
+    return {"query": q, "results": [r.to_dict() for r in results]}
+
+
+@app.post("/skills/search")
+async def skills_search(req: SearchRequest):
+    """DDG search + AI synthesis streamed as SSE."""
+    _check_network()
+    prov_name, model = _ai_route()
+    try:
+        provider = build_provider(req.provider or prov_name, config)
+    except KeyError:
+        provider = build_provider("ollama", config)
+        model = config.task_models.get("chat", "qwen2.5-coder:14b")
+
+    async def _gen():
+        async for chunk in _search_stream(req.query, provider, model):
+            payload = {"object": "chat.completion.chunk", "choices": [{"delta": {"content": chunk}}]}
+            yield f"data: {json.dumps(payload)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+# -- Reports ------------------------------------------------------------------
+
+class ReportGenerateRequest(BaseModel):
+    title: str
+    instructions: str
+    provider: str | None = None
+
+
+@app.post("/skills/report/generate")
+async def skills_report_generate(req: ReportGenerateRequest):
+    """Generate a structured markdown report (SSE)."""
+    prov_name, model = _ai_route()
+    try:
+        provider = build_provider(req.provider or prov_name, config)
+    except KeyError:
+        provider = build_provider("ollama", config)
+        model = config.task_models.get("chat", "qwen2.5-coder:14b")
+
+    async def _gen():
+        async for chunk in _report_svc.generate_stream(req.title, req.instructions, provider, model):
+            payload = {"object": "chat.completion.chunk", "choices": [{"delta": {"content": chunk}}]}
+            yield f"data: {json.dumps(payload)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+@app.get("/skills/report/list")
+def skills_report_list() -> dict:
+    return {"reports": _report_svc.list_reports()}
+
+
+@app.get("/skills/report/{report_id}")
+def skills_report_get(report_id: str) -> dict:
+    r = _report_svc.get_report(report_id)
+    if r is None:
+        raise HTTPException(status_code=404, detail="report not found")
+    return r
+
+
+@app.delete("/skills/report/{report_id}")
+def skills_report_delete(report_id: str) -> dict:
+    if not _report_svc.delete_report(report_id):
+        raise HTTPException(status_code=404, detail="report not found")
+    return {"ok": True}
+
+
+# -- Files --------------------------------------------------------------------
+
+class FilesReadRequest(BaseModel):
+    path: str
+
+
+class FilesSearchRequest(BaseModel):
+    query: str
+    path: str | None = None
+    max_results: int = 50
+    case_sensitive: bool = False
+
+
+class FilesWriteRequest(BaseModel):
+    path: str
+    content: str
+    preview: bool = False  # when True, returns diff info without writing
+
+
+@app.get("/skills/files/list")
+def skills_files_list(path: str | None = None) -> dict:
+    if not config.workspace_allowlist:
+        raise HTTPException(status_code=400, detail="No workspace paths allow-listed in settings")
+    target = path or config.workspace_allowlist[0]
+    try:
+        entries = _files_svc.list_dir(target)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return {"path": target, "entries": entries}
+
+
+@app.post("/skills/files/read")
+def skills_files_read(req: FilesReadRequest) -> dict:
+    try:
+        content = _files_svc.read_file(req.path)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return {"path": req.path, "content": content}
+
+
+@app.post("/skills/files/search")
+def skills_files_search(req: FilesSearchRequest) -> dict:
+    try:
+        hits = _files_svc.search_content(
+            req.query,
+            path=req.path,
+            max_results=req.max_results,
+            case_sensitive=req.case_sensitive,
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    return {"query": req.query, "hits": hits}
+
+
+@app.post("/skills/files/write")
+def skills_files_write(req: FilesWriteRequest) -> dict:
+    try:
+        if req.preview:
+            return _files_svc.write_preview(req.path, req.content)
+        return _files_svc.write_file(req.path, req.content)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+
+
+# -- Spotify ------------------------------------------------------------------
+
+@app.get("/skills/spotify/auth")
+def skills_spotify_auth() -> dict:
+    """Start the Spotify OAuth PKCE flow. Returns {url, configured}."""
+    if not _spotify_svc._is_configured:
+        raise HTTPException(
+            status_code=400,
+            detail="Spotify not configured — set SPOTIFY_CLIENT_ID in engine/.env",
+        )
+    url = _spotify_svc.start_auth()
+    return {"url": url, "configured": True}
+
+
+_OAUTH_SUCCESS_HTML = """<!DOCTYPE html><html><body style="font-family:sans-serif;text-align:center;padding:3rem;background:#0a0a0a;color:#ccc">
+<h2 style="color:#1DB954">&#9654; Connected to Spotify</h2>
+<p>You can close this tab and return to Max.</p>
+<script>window.close();</script></body></html>"""
+
+_OAUTH_ERROR_HTML = """<!DOCTYPE html><html><body style="font-family:sans-serif;text-align:center;padding:3rem;background:#0a0a0a;color:#ccc">
+<h2 style="color:#e74c3c">&#10060; Spotify auth failed</h2>
+<p>Please try again from Max settings.</p></body></html>"""
+
+
+@app.get("/skills/spotify/callback")
+async def skills_spotify_callback(code: str | None = None, error: str | None = None):
+    """Spotify OAuth callback — exchanges code for tokens and closes the browser tab."""
+    from fastapi.responses import HTMLResponse
+    if error or not code:
+        return HTMLResponse(_OAUTH_ERROR_HTML)
+    ok = await _spotify_svc.handle_callback(code, lambda: save_overrides(config))
+    if not ok:
+        return HTMLResponse(_OAUTH_ERROR_HTML)
+    return HTMLResponse(_OAUTH_SUCCESS_HTML)
+
+
+@app.get("/skills/spotify/status")
+async def skills_spotify_status() -> dict:
+    """Auth status + currently-playing track (if authenticated)."""
+    return await _spotify_svc.get_status(lambda: save_overrides(config))
+
+
+class SpotifyControlRequest(BaseModel):
+    action: str  # play | pause | next | prev
+
+
+@app.post("/skills/spotify/control")
+async def skills_spotify_control(req: SpotifyControlRequest) -> dict:
+    if not _spotify_svc._is_authenticated:
+        raise HTTPException(status_code=401, detail="Spotify not authenticated")
+    return await _spotify_svc.control(req.action, lambda: save_overrides(config))
+
+
+class SpotifyPlayRequest(BaseModel):
+    uri: str  # spotify:track:... or spotify:playlist:...
+
+
+@app.post("/skills/spotify/play")
+async def skills_spotify_play(req: SpotifyPlayRequest) -> dict:
+    if not _spotify_svc._is_authenticated:
+        raise HTTPException(status_code=401, detail="Spotify not authenticated")
+    return await _spotify_svc.play_uri(req.uri, lambda: save_overrides(config))
+
+
+class SpotifySearchRequest(BaseModel):
+    query: str
+    types: str = "track"
+    limit: int = 10
+
+
+@app.post("/skills/spotify/search")
+async def skills_spotify_search(req: SpotifySearchRequest) -> dict:
+    if not _spotify_svc._is_authenticated:
+        raise HTTPException(status_code=401, detail="Spotify not authenticated")
+    results = await _spotify_svc.search(req.query, req.types, req.limit, lambda: save_overrides(config))
+    return {"results": results}
+
+
+@app.post("/skills/spotify/disconnect")
+def skills_spotify_disconnect() -> dict:
+    config.spotify.access_token = ""
+    config.spotify.refresh_token = ""
+    config.spotify.token_expiry = 0.0
+    _spotify_svc._cfg.access_token = ""
+    _spotify_svc._cfg.refresh_token = ""
+    _spotify_svc._cfg.token_expiry = 0.0
+    save_overrides(config)
+    return {"ok": True}
+
+
+# -- Google Calendar ----------------------------------------------------------
+
+@app.get("/skills/calendar/auth")
+def skills_calendar_auth() -> dict:
+    """Start the Google Calendar OAuth2 PKCE flow. Returns {url, configured}."""
+    if not _calendar_svc._is_configured:
+        raise HTTPException(
+            status_code=400,
+            detail="Google Calendar not configured — set GOOGLE_CALENDAR_CLIENT_ID and GOOGLE_CALENDAR_CLIENT_SECRET in engine/.env",
+        )
+    url = _calendar_svc.start_auth()
+    return {"url": url, "configured": True}
+
+
+_GCAL_SUCCESS_HTML = """<!DOCTYPE html><html><body style="font-family:sans-serif;text-align:center;padding:3rem;background:#0a0a0a;color:#ccc">
+<h2 style="color:#4285F4">&#128197; Connected to Google Calendar</h2>
+<p>You can close this tab and return to Max.</p>
+<script>window.close();</script></body></html>"""
+
+_GCAL_ERROR_HTML = """<!DOCTYPE html><html><body style="font-family:sans-serif;text-align:center;padding:3rem;background:#0a0a0a;color:#ccc">
+<h2 style="color:#e74c3c">&#10060; Google Calendar auth failed</h2>
+<p>Please try again from Max settings.</p></body></html>"""
+
+
+@app.get("/skills/calendar/callback")
+async def skills_calendar_callback(code: str | None = None, error: str | None = None):
+    """Google OAuth2 callback — exchanges code for tokens."""
+    from fastapi.responses import HTMLResponse
+    if error or not code:
+        return HTMLResponse(_GCAL_ERROR_HTML)
+    ok = await _calendar_svc.handle_callback(code, lambda: save_overrides(config))
+    if not ok:
+        return HTMLResponse(_GCAL_ERROR_HTML)
+    return HTMLResponse(_GCAL_SUCCESS_HTML)
+
+
+@app.get("/skills/calendar/status")
+def skills_calendar_status() -> dict:
+    return _calendar_svc.get_status()
+
+
+@app.get("/skills/calendar/events")
+async def skills_calendar_events(max_results: int = 15, days_ahead: int = 14) -> dict:
+    if not _calendar_svc._is_authenticated:
+        raise HTTPException(status_code=401, detail="Google Calendar not authenticated")
+    events = await _calendar_svc.list_events(
+        lambda: save_overrides(config),
+        max_results=max_results,
+        days_ahead=days_ahead,
+    )
+    return {"events": events}
+
+
+class CalendarEventRequest(BaseModel):
+    summary: str
+    start_dt: str   # ISO 8601, e.g. "2026-06-01T10:00:00Z"
+    end_dt: str
+    description: str = ""
+    location: str = ""
+
+
+@app.post("/skills/calendar/event")
+async def skills_calendar_create_event(req: CalendarEventRequest) -> dict:
+    if not _calendar_svc._is_authenticated:
+        raise HTTPException(status_code=401, detail="Google Calendar not authenticated")
+    try:
+        event = await _calendar_svc.create_event(
+            req.summary, req.start_dt, req.end_dt,
+            req.description, req.location,
+            lambda: save_overrides(config),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return event
+
+
+@app.delete("/skills/calendar/event/{event_id}")
+async def skills_calendar_delete_event(event_id: str) -> dict:
+    if not _calendar_svc._is_authenticated:
+        raise HTTPException(status_code=401, detail="Google Calendar not authenticated")
+    ok = await _calendar_svc.delete_event(event_id, lambda: save_overrides(config))
+    if not ok:
+        raise HTTPException(status_code=404, detail="event not found or could not be deleted")
+    return {"ok": True}
+
+
+@app.post("/skills/calendar/disconnect")
+def skills_calendar_disconnect() -> dict:
+    config.gcal.access_token = ""
+    config.gcal.refresh_token = ""
+    config.gcal.token_expiry = 0.0
+    _calendar_svc._cfg.access_token = ""
+    _calendar_svc._cfg.refresh_token = ""
+    _calendar_svc._cfg.token_expiry = 0.0
+    save_overrides(config)
+    return {"ok": True}
+
 
 # ---- Static files (LAN mobile access) -----------------------------------
 

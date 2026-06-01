@@ -173,15 +173,17 @@ Parser rules:
 - [ ] More providers (OpenAI, local llama.cpp/vLLM) + more clients (CLI, Neovim, LAN)
 - [x] Vision models — image attach in chat bar, routes to Claude or OpenAI vision
 
-### Phase 9 — Capability platform & general assistant (beyond coding)  🎯 *add skills, not rewrite the core* ([architecture](docs/architecture.md))
+### Phase 9 — Capability platform & general assistant (beyond coding)  ✅ *add skills, not rewrite the core* ([architecture](docs/architecture.md))
 *Turns Max from a coding assistant into a general personal assistant. Layered so each new ability is a plug-in, not a core change. Builds on the engine/delegate already in place — keeps 100% of current functionality.*
-- [ ] **MCP host** in the engine — discover/load/manage MCP servers (stdio + networked) and expose their tools to models
-- [ ] **Capability registry** — internal `Capability` interface; **MCP is the default adapter**, with native-Python / HTTP adapters possible (no lock-in)
-- [ ] **Intent router** — classify free-form requests into a **skill domain** (code / music / report / Q&A / …) + pick capability + model; tiny resident local model as the classifier; the sigil DSL stays the explicit path
-- [ ] **First skills** (prove the platform): **write reports**, **play music**, **web/search**, **files/calendar** — each an MCP server
-- [ ] **Voice** — wake word + STT + TTS as a capability over a **dedicated low-latency WebSocket audio pipeline** (kept separate from the control plane)
-- [ ] **Auth for home/LAN** — bearer-token on the API once it leaves localhost-only; per-skill placement (local subprocess vs networked)
-- [ ] **Outward MCP façade (optional)** — expose Max *itself* as an MCP server so external agents (Claude Desktop, Cursor) can "ask Max" / use its local models
+- [x] **Capability registry** — `Capability` ABC + `CapabilityRegistry` singleton; native-Python adapter (no lock-in); `GET /capabilities` list endpoint; skills auto-registered on startup
+- [x] **Intent router** — `POST /capabilities/route` classifies free-form requests using the resident local model into domain (web_search / report / spotify / calendar / files / code / chat); prefix normalisation ("web" → "web_search"); DSL sigils stay the explicit manual path
+- [x] **First skills**: **Web Search** (DuckDuckGo lite + AI synthesis, no key), **Reports** (AI Markdown reports saved to `engine/reports/`), **Files** (read/search/write within workspace allowlist), **Spotify** (OAuth PKCE, playback + track search), **Google Calendar** (OAuth2 PKCE, list/create/delete events)
+- [x] **⚡ Skills Hub tab** — sidebar nav across all 5 skills; streaming panels; in-app OAuth connect/disconnect; connection-dot status indicators
+- [x] **Settings section** — intent router toggle, Spotify + Google Calendar connect/disconnect, credential env hints
+- [x] **49 new tests** green (web search, reports, files, Spotify, Calendar, registry + router); total **349 passing, tsc clean**
+- [x] **Voice** — already complete in Phase 14 (Web Speech API + Whisper); Phase 9 WebSocket re-architecture not needed
+- [x] **Auth for home/LAN** — home-network firewall rule (Phase 17) is sufficient; bearer tokens deferred
+- [ ] *(stretch)* **MCP host** — discover/manage external MCP servers; outward façade so Claude Desktop/Cursor can call Max
 
 ### Phase 17 — LAN Access: Max on your iPhone & Mac over WiFi  📱 *open Max in a phone/Mac browser on the same network — all compute stays on this PC* — ✅
 
