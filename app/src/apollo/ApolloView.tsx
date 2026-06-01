@@ -19,6 +19,7 @@ import {
   type ApolloEvent,
   type ApolloChatTurn,
 } from "./apollo";
+import { HindsightPanel } from "../oracle/HindsightPanel";
 import "./Apollo.css";
 
 async function emitMascotEvent(name: string, payload?: unknown) {
@@ -170,6 +171,15 @@ export function ApolloView({ onClose }: { onClose?: () => void } = {}) {
   const [predictRun, setPredictRun] = useState(0); // predictions wait for Ingest
   const [ingesting, setIngesting] = useState(false);
 
+  // Latest report text per box → drives the inline Oracle hindsight panels
+  // ("what we previously called right / wrong on this"). Memoised onComplete
+  // callbacks so the ReportBox stream effect (which deps on onComplete) is stable.
+  const [osintText, setOsintText] = useState("");
+  const [marketText, setMarketText] = useState("");
+  const [predictText, setPredictText] = useState("");
+  const onOsintComplete = useCallback((t: string) => setOsintText(t), []);
+  const onMarketComplete = useCallback((t: string) => setMarketText(t), []);
+
   // ── Apollo chat ──────────────────────────────────────────────────────────
   const [chatMsgs, setChatMsgs] = useState<ApolloChatTurn[]>([]);
   const [chatInput, setChatInput] = useState("");
@@ -188,6 +198,7 @@ export function ApolloView({ onClose }: { onClose?: () => void } = {}) {
   // the user types in the chat box below (which re-renders ApolloView).
   const onPredictComplete = useCallback((text: string) => {
     void savePrediction(text);
+    setPredictText(text);
     setChatMsgs([{ role: "assistant", content: text }]);
   }, []);
 
@@ -256,7 +267,9 @@ export function ApolloView({ onClose }: { onClose?: () => void } = {}) {
             badge="GLOBAL THREATS"
             stream={streamOsintReport}
             run={reportRun}
+            onComplete={onOsintComplete}
           />
+          {osintText && <HindsightPanel feature="osint" query={osintText} />}
           <button
             className={`apollo__ingest${ingesting ? " is-busy" : ""}`}
             onClick={onIngest}
@@ -272,7 +285,9 @@ export function ApolloView({ onClose }: { onClose?: () => void } = {}) {
             badge="LIVE MARKETS"
             stream={streamMarketReport}
             run={reportRun}
+            onComplete={onMarketComplete}
           />
+          {marketText && <HindsightPanel feature="market" query={marketText} />}
         </div>
 
         {/* right column: predictions + inline chat */}
@@ -284,6 +299,7 @@ export function ApolloView({ onClose }: { onClose?: () => void } = {}) {
             run={predictRun}
             onComplete={onPredictComplete}
           />
+          {predictText && <HindsightPanel feature="apollo" query={predictText} />}
 
           {/* Chat panel — appears once predictions have run */}
           {chatMsgs.length > 0 && (

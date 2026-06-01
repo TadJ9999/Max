@@ -25,6 +25,7 @@ import {
 import { MarketOverview } from "./MarketOverview";
 import { MarkdownView } from "../components/MarkdownView";
 import { CopyButton } from "../components/CopyButton";
+import { HindsightPanel } from "../oracle/HindsightPanel";
 import "./Market.css";
 
 type MarketViewMode = "overview" | "terminal";
@@ -560,6 +561,9 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
           )}
           {analysis && <MarkdownView source={analysis} />}
           {ingesting && <span className="market__cursor">▍</span>}
+          {analysis && !ingesting && (
+            <HindsightPanel feature="market" entity={focused ?? undefined} query={analysis} />
+          )}
         </div>
         <div className="market__ai-section-head market__ai-section-head--chat">Ask the board</div>
         <div className="market__ai-chat">

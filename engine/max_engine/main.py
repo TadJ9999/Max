@@ -51,7 +51,9 @@ from .darknet import TorService
 from .darknet.client import make_tor_client as _make_tor_client
 from .darknet.fetcher import fetch_url as tor_fetch_url
 from .apollo import ApolloService, VectorStore
+from .apollo.embed import embed_texts
 from .apollo.predictions import PredictionHistory
+from .oracle import OracleCalibrator, OracleService, OracleStore
 from .user import UserProfileStore
 from .complete import fim_complete
 from .config import load_config, save_overrides
@@ -175,6 +177,56 @@ apollo = ApolloService(
     retrieve_k=config.apollo.retrieve_k,
 )
 
+# ── Oracle — self-grading prediction track record (Phase 20) ─────────────────
+# Reuses Apollo's vector store (shared in-process lock) so graded "lessons" live
+# in the same memories table and are recallable by the hindsight panel.
+
+
+async def _oracle_llm(messages: list[dict], *, provider: str, model: str) -> str:
+    """Collect a full (non-streamed) completion for extraction/judging."""
+    prov = build_provider(provider, config)
+    parts: list[str] = []
+    async for chunk in prov.chat(model, messages, _feature="oracle"):
+        parts.append(chunk.text)
+    return "".join(parts)
+
+
+async def _oracle_embed(texts: list[str]) -> list[list[float]]:
+    return await embed_texts(texts, model=config.apollo.embed_model, base_url=_ollama_base)
+
+
+def _oracle_local_route(kind: str) -> tuple[str, str]:
+    chosen = (config.oracle.extract_model if kind == "extract" else config.oracle.judge_model)
+    model = chosen or config.task_models.get("chat", "qwen2.5-coder:14b")
+    return ("ollama", model)
+
+
+def _oracle_cloud_route() -> tuple[str, str] | None:
+    if config.allow_cloud and not config.force_offline and config.oracle.judge_cloud_escalate:
+        return ("claude", config.provider_models.get("claude", {}).get("chat", "claude-sonnet-4-6"))
+    return None
+
+
+_oracle_calibrator = OracleCalibrator(
+    config.oracle.model_path, min_samples=config.oracle.min_samples_to_calibrate
+)
+oracle = OracleService(
+    store=OracleStore(config.apollo.db_path),
+    vector=apollo._store,
+    llm=_oracle_llm,
+    embed_fn=_oracle_embed,
+    market=market,
+    osint=osint,
+    calibrator=_oracle_calibrator,
+    extract_route=lambda: _oracle_local_route("extract"),
+    judge_local_route=lambda: _oracle_local_route("judge"),
+    judge_cloud_route=_oracle_cloud_route,
+    horizons_hours=config.oracle.horizons_hours,
+    enabled=config.oracle.enabled,
+    escalate=config.oracle.judge_cloud_escalate,
+    max_per_run=config.oracle.max_per_run,
+)
+
 _aegis_store = AegisStore(config.apollo.db_path)
 _aegis_capture = AegisCapture(_aegis_store)
 _profile_store = UserProfileStore(config.apollo.db_path)
@@ -236,6 +288,7 @@ _FEATURE_MAP: list[tuple[str, str]] = [
     ("/skills/",      "skills"),
     ("/capabilities/","skills"),
     ("/apollo/",      "apollo"),
+    ("/oracle/",      "oracle"),
     ("/osint/",       "osint"),
     ("/market/",      "market"),
     ("/polymarket/",  "polymarket"),
@@ -335,10 +388,36 @@ async def _startup() -> None:
                 pass
             await asyncio.sleep(max(300, config.apollo.ingest_interval_seconds))
 
+    async def _oracle_grading() -> None:
+        """Grade Oracle claims whose 24h/7d/30d checkpoints have elapsed, against
+        real outcomes. Best-effort: a failed cycle is swallowed and retried."""
+        await asyncio.sleep(45)  # let feeds + Ollama settle past startup
+        while True:
+            try:
+                if config.oracle.enabled:
+                    await oracle.grade_due()
+            except Exception:
+                pass
+            await asyncio.sleep(max(300, config.oracle.grade_interval_seconds))
+
+    async def _oracle_retrain() -> None:
+        """Nightly retrain of the calibrator on the graded history (blocking
+        sklearn work offloaded to a thread). Dormant below the sample gate."""
+        await asyncio.sleep(120)
+        while True:
+            try:
+                if config.oracle.enabled:
+                    await asyncio.to_thread(oracle.retrain)
+            except Exception:
+                pass
+            await asyncio.sleep(max(3600, config.oracle.retrain_interval_hours * 3600))
+
     asyncio.create_task(_scan_scheduler())
     asyncio.create_task(_config_hot_reload())
     asyncio.create_task(_warmup_resident())
     asyncio.create_task(_knowledge_ingest())
+    asyncio.create_task(_oracle_grading())
+    asyncio.create_task(_oracle_retrain())
 
 
 @app.get("/health")
@@ -1499,7 +1578,12 @@ def _ai_route() -> tuple[str, str]:
     return "ollama", config.task_models.get("chat", "qwen2.5-coder:14b")
 
 
-def _stream_ai(action: str, payload: dict, feature: str = "system") -> StreamingResponse:
+def _stream_ai(
+    action: str,
+    payload: dict,
+    feature: str = "system",
+    on_done: Callable[[str], None] | None = None,
+) -> StreamingResponse:
     """Route to cloud/local, build messages for ``action`` from a JSON payload,
     and stream the reply. The shared path behind Market analyze + Apollo reports."""
     provider_name, model = _ai_route()
@@ -1511,7 +1595,7 @@ def _stream_ai(action: str, payload: dict, feature: str = "system") -> Streaming
     msgs[0]["content"] = apply_persona(
         msgs[0]["content"], config.personality, _profile_store.to_context_block()
     )
-    return _sse_stream(provider, model, msgs, feature=feature)
+    return _sse_stream(provider, model, msgs, on_done=on_done, feature=feature)
 
 
 @app.get("/market/quotes")
@@ -1564,7 +1648,16 @@ async def market_analyze():
     board = await market.get_board()
     news = await market.get_news(count=8)
     payload = {"board": board.to_dict(), "stats": board_digest(board), "news": news}
-    return _stream_ai("market", payload, feature="market")
+    day = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
+
+    def _capture(text: str) -> None:
+        if text and text.strip():
+            asyncio.create_task(oracle.capture(
+                feature="market", kind="market_report",
+                title=f"Market analysis — {day}", body=text, context=payload,
+            ))
+
+    return _stream_ai("market", payload, feature="market", on_done=_capture)
 
 
 class MarketChatRequest(BaseModel):
@@ -2372,6 +2465,17 @@ async def _apollo_run(kind: str):
                 await apollo.ingest_report(
                     rkind, f"apollo:{kind}:{day}", f"{title} — {day}", report_text
                 )
+                # Oracle: persist the report + extract its checkable claims so they
+                # can be graded against reality later. Fire-and-forget; never blocks
+                # the stream, swallows its own failures.
+                _orc_feature = {"osint": "osint", "market": "market", "predict": "apollo"}[kind]
+                _orc_kind = {
+                    "osint": "osint_report", "market": "market_report", "predict": "prediction"
+                }[kind]
+                asyncio.create_task(oracle.capture(
+                    feature=_orc_feature, kind=_orc_kind,
+                    title=f"{title} — {day}", body=report_text, context=payload,
+                ))
             yield "data: [DONE]\n\n"
         except Exception as e:  # surface backend errors to the client
             yield _ev({"error": {"message": str(e), "type": type(e).__name__}})
@@ -2459,6 +2563,80 @@ async def apollo_chat(req: ApolloChatRequest) -> StreamingResponse:
         raise HTTPException(status_code=400, detail=str(e)) from e
     messages = [{"role": "system", "content": system}, *history]
     return _sse_stream(provider, model, messages, feature="apollo")
+
+
+# ---- Oracle: self-grading prediction track record ----------------------
+
+
+@app.get("/oracle/claims")
+def oracle_claims(
+    status: str | None = None, feature: str | None = None,
+    entity: str | None = None, limit: int = 200,
+) -> dict:
+    """List claims (graded + pending) with grade summaries — the Learning tab table."""
+    return {"claims": oracle.list_claims(
+        status=status, feature=feature, entity=entity, limit=max(1, min(500, limit))
+    )}
+
+
+@app.get("/oracle/claims/{claim_id}")
+def oracle_claim(claim_id: int) -> dict:
+    """One claim with its source report and every checkpoint grade (drill-down)."""
+    claim = oracle.get_claim(claim_id)
+    if not claim:
+        raise HTTPException(status_code=404, detail="claim not found")
+    return claim
+
+
+@app.get("/oracle/stats")
+def oracle_stats() -> dict:
+    """Dashboard payload: accuracy, Brier, calibration curve, failure modes,
+    per-entity track record, and calibrator readiness."""
+    return oracle.stats()
+
+
+@app.get("/oracle/hindsight")
+async def oracle_hindsight(
+    feature: str | None = None, entity: str | None = None,
+    query: str | None = None, k: int = 6,
+) -> dict:
+    """Related graded claims for a new report — the inline 'called right / missed'
+    panel. Matched by entity tag + vector similarity over graded lessons."""
+    return await oracle.hindsight(
+        feature=feature, entity=entity, query=query, k=max(1, min(12, k))
+    )
+
+
+class OracleOverrideRequest(BaseModel):
+    score: int
+    outcome: str  # hit | partial | miss | too-early
+    failure_tag: str | None = None
+    reason: str = ""
+
+
+@app.post("/oracle/grade/{claim_id}")
+def oracle_override(claim_id: int, req: OracleOverrideRequest) -> dict:
+    """Manually override a claim's grade (user-verified; weighted higher in training)."""
+    claim = oracle.override_grade(
+        claim_id, score=max(0, min(100, req.score)), outcome=req.outcome,
+        failure_tag=req.failure_tag, reason=req.reason,
+    )
+    if not claim:
+        raise HTTPException(status_code=404, detail="claim not found")
+    return claim
+
+
+@app.post("/oracle/grade-now")
+async def oracle_grade_now() -> dict:
+    """Trigger a grading pass immediately (covers any elapsed checkpoints)."""
+    n = await oracle.grade_due()
+    return {"graded": n}
+
+
+@app.post("/oracle/retrain")
+async def oracle_retrain() -> dict:
+    """Retrain the calibrator on the full graded history right now."""
+    return await asyncio.to_thread(oracle.retrain)
 
 
 # ---- User profile: persistent personal memory --------------------------

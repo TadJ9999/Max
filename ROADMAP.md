@@ -498,39 +498,41 @@ Parser rules:
 
 ---
 
-### Phase 20 — Oracle: Local Machine Learning & Self-Grading Track Record  🧠 *Max checks its own past predictions against reality, learns from the hits and misses, and shows you the receipts*
+### Phase 20 — Oracle: Local Machine Learning & Self-Grading Track Record  ✅ 🦉 *Max checks its own past predictions against reality, learns from the hits and misses, and shows you the receipts*
+
+*BUILT — engine package `engine/max_engine/oracle/` (store/extract/objective/judge/grading/calibrator/hindsight/service), 7 `/oracle/*` endpoints, two background loops (grade + nightly retrain), capture hooks in the Apollo report generator + `/market/analyze`. Frontend `app/src/oracle/` — 🦉 Owl-of-Athena Learning tab with stat cards, calibration + per-entity charts, filterable claims table, click-through drawer with a **grade flow chart** (call → expectation → checkpoints → verdict/why) + manual override; inline `HindsightPanel` under Apollo (OSINT/Market/Predict) + Market reports. Deps `numpy`+`scikit-learn` (lazy). Verified: 436 engine tests pass (~30 new), `tsc` + vite build clean, all `/oracle/*` serve 200, Learning tab preview-rendered.*
 
 *Closes the feedback loop that turns a report generator into an intelligence that learns. Today Apollo predictions, Market analyses, and OSINT reports vanish into a 30-day vector TTL and are **never checked against what actually happened**. Phase 20 persists the checkable claims inside every report, grades them against real outcomes once their horizon elapses (objective price data where possible, local-Ollama LLM-judge for soft geopolitical claims), and learns from the graded history two ways: **in-context lessons** (embedded, recalled at report time) **and** a trained **scikit-learn calibrator** (confidence calibration + signal/source reliability + per-domain difficulty). The payoff surfaces both **inline under every new report** ("we called X right — here's why; we expected Y, it didn't happen — here's why") and in a polished **🧠 Learning Hub tab** (track-record dashboard, calibration charts, per-claim drill-down, manual grade override). Full plan: `C:\Users\tadjo\.claude\plans\lets-throghly-plan-this-glimmering-lamport.md`.*
 
 **Decisions locked:** Hybrid learning — graded outcomes feed BOTH retrieval-of-lessons AND a trained sklearn model · grading = objective-where-possible (real ticker moves via existing Market candles) + LLM-as-judge for soft claims · scope = all three features (Apollo / Market / OSINT) · claim unit = **extract atomic claims** `{claim, entity, direction, horizon, confidence}` per report · **multi-horizon 24h / 7d / 30d** checkpoints · scoring = graded 0–100 + Brier calibration · judge = **local Ollama, escalate hard cases to cloud** (logged in egress audit) · calibrator learns confidence-calibration + signal/source-reliability + per-domain-difficulty · retention = **new long-term tables kept indefinitely** (separate from the 30-day vector TTL) · **nightly** retrain (existing background-job pattern) with 30-sample cold-start gate · failure attribution = **fixed taxonomy + free-text reason** · matching = **vector similarity + entity tags** · surface = inline panels **and** a glowing 🧠 tab · manual grade override (flagged user-verified, weighted higher in training). New deps: `numpy`, `scikit-learn` (lazy-imported, graceful-degrade if absent). New engine package `engine/max_engine/oracle/`; new tables in shared `.apollo.db`; reuses `apollo.embed` + `apollo.store` vector infra.
 
 **Phase 20A — Persistence & claim extraction (the data layer)**
-- [ ] **`OracleStore`** (`oracle/store.py`): `oracle_reports` / `oracle_claims` / `oracle_grades` tables in `.apollo.db` (lock/connect pattern from `apollo/predictions.py`), kept indefinitely (no TTL purge); indexes on `(status, created_at)` and `entity`; failure-tag taxonomy constant.
-- [ ] **Claim extraction** (`oracle/extract.py` + `oracle_extract` prompt in `prompts.py`): one local-LLM JSON call → atomic `{claim, entity, direction, magnitude, horizon_hours, confidence}`; canonicalize entities (uppercase tickers, country→ISO via OSINT `models.py` tables).
-- [ ] **Capture hooks** (`main.py`): fire-and-forget `asyncio.create_task(oracle.capture(...))` after each report stream completes (Apollo predict/report sites, `/market/analyze`, OSINT report path); non-blocking, failure-swallowing.
-- [ ] **Config** (`config.py`): `OracleConfig` — `enabled`, `extract_model`, `judge_model`, `judge_cloud_escalate`, `grade_interval_seconds`, `min_samples_to_calibrate=30`, `horizons_hours=[24,168,720]`, `model_path`.
-- [ ] **Tests**: `test_oracle_store.py`, `test_oracle_extract.py` (mock embed/LLM).
+- [x] **`OracleStore`** (`oracle/store.py`): `oracle_reports` / `oracle_claims` / `oracle_grades` tables in `.apollo.db` (lock/connect pattern from `apollo/predictions.py`), kept indefinitely (no TTL purge); indexes on `(status, created_at)` and `entity`; failure-tag taxonomy constant.
+- [x] **Claim extraction** (`oracle/extract.py` + `oracle_extract` prompt in `prompts.py`): one local-LLM JSON call → atomic `{claim, entity, direction, magnitude, horizon_hours, confidence}`; canonicalize entities (uppercase tickers, country→ISO via OSINT `models.py` tables).
+- [x] **Capture hooks** (`main.py`): fire-and-forget `asyncio.create_task(oracle.capture(...))` after each report stream completes (Apollo predict/report sites, `/market/analyze`, OSINT report path); non-blocking, failure-swallowing.
+- [x] **Config** (`config.py`): `OracleConfig` — `enabled`, `extract_model`, `judge_model`, `judge_cloud_escalate`, `grade_interval_seconds`, `min_samples_to_calibrate=30`, `horizons_hours=[24,168,720]`, `model_path`.
+- [x] **Tests**: `test_oracle_store.py`, `test_oracle_extract.py` (mock embed/LLM).
 
 **Phase 20B — Background grading (objective + LLM judge)**
-- [ ] **Grader** (`oracle/grade.py` `grade_due(now)`): select claims whose checkpoint horizon has elapsed and isn't yet graded; write `oracle_grades`; flip claim `status='graded'` on terminal 30d checkpoint; compute Brier.
-- [ ] **Objective path** (`oracle/objective.py`): ticker claims graded deterministically from price-at-claim-time vs now via `market/service.py` board/candles — no LLM, no cost.
-- [ ] **LLM-judge path** (`oracle/judge.py` + `oracle_judge` prompt): gather fresh evidence (OSINT `get_articles(iso=…)`, market news), local-Ollama judge → `{outcome, score, failure_tag, reason}`; escalate low-confidence/high-stakes to cloud via provider router (egress-logged).
-- [ ] **Lesson embedding**: on each grade, upsert into Apollo vector store with `kind="lesson"` (reuse `apollo.store.upsert` + `apollo.embed.embed_texts`) for later recall.
-- [ ] **Scheduler** (`main.py:_startup`): `_oracle_grading()` background loop + `asyncio.create_task`, settle-delay then every `grade_interval_seconds`; idempotent.
-- [ ] **Endpoints** (`main.py`): `GET /oracle/claims`, `GET /oracle/claims/{id}`, `GET /oracle/hindsight`, `POST /oracle/grade/{id}` (manual override), `POST /oracle/grade-now` (debug trigger).
-- [ ] **Tests**: `test_oracle_grade.py` (stubbed candles), `test_oracle_judge.py` (mock LLM), checkpoint-due selection.
+- [x] **Grader** (`oracle/grade.py` `grade_due(now)`): select claims whose checkpoint horizon has elapsed and isn't yet graded; write `oracle_grades`; flip claim `status='graded'` on terminal 30d checkpoint; compute Brier.
+- [x] **Objective path** (`oracle/objective.py`): ticker claims graded deterministically from price-at-claim-time vs now via `market/service.py` board/candles — no LLM, no cost.
+- [x] **LLM-judge path** (`oracle/judge.py` + `oracle_judge` prompt): gather fresh evidence (OSINT `get_articles(iso=…)`, market news), local-Ollama judge → `{outcome, score, failure_tag, reason}`; escalate low-confidence/high-stakes to cloud via provider router (egress-logged).
+- [x] **Lesson embedding**: on each grade, upsert into Apollo vector store with `kind="lesson"` (reuse `apollo.store.upsert` + `apollo.embed.embed_texts`) for later recall.
+- [x] **Scheduler** (`main.py:_startup`): `_oracle_grading()` background loop + `asyncio.create_task`, settle-delay then every `grade_interval_seconds`; idempotent.
+- [x] **Endpoints** (`main.py`): `GET /oracle/claims`, `GET /oracle/claims/{id}`, `GET /oracle/hindsight`, `POST /oracle/grade/{id}` (manual override), `POST /oracle/grade-now` (debug trigger).
+- [x] **Tests**: `test_oracle_grade.py` (stubbed candles), `test_oracle_judge.py` (mock LLM), checkpoint-due selection.
 
 **Phase 20C — The trained calibrator (scikit-learn)**
-- [ ] **Deps**: add `numpy`, `scikit-learn` to `engine/pyproject.toml`; lazy-import so calibration silently disables if absent (raw stats still shown); document in README.
-- [ ] **`OracleCalibrator`** (`oracle/calibrator.py`): `train()` builds feature matrix → IsotonicRegression confidence calibration + logistic-regression signal/source reliability + shrunk per-entity difficulty priors; user-verified grades weighted higher; persist `.oracle_model.pkl` (joblib) + JSON metrics sidecar; `correct(claim)` for report-time confidence correction; min-samples gate advertises `ready:false` + progress.
-- [ ] **Nightly retrain** (`main.py:_startup`): `_oracle_retrain()` daily loop (aegis scan-scheduler interval style).
-- [ ] **Endpoints**: `GET /oracle/stats` (accuracy, Brier, calibration curve, failure-mode breakdown, per-entity track record, model ready/last-trained), `POST /oracle/retrain`.
-- [ ] **Tests**: `test_oracle_calibrator.py` — synthetic set trains, overconfident call shrinks toward empirical rate, min-samples gate.
+- [x] **Deps**: add `numpy`, `scikit-learn` to `engine/pyproject.toml`; lazy-import so calibration silently disables if absent (raw stats still shown); document in README.
+- [x] **`OracleCalibrator`** (`oracle/calibrator.py`): `train()` builds feature matrix → IsotonicRegression confidence calibration + logistic-regression signal/source reliability + shrunk per-entity difficulty priors; user-verified grades weighted higher; persist `.oracle_model.pkl` (joblib) + JSON metrics sidecar; `correct(claim)` for report-time confidence correction; min-samples gate advertises `ready:false` + progress.
+- [x] **Nightly retrain** (`main.py:_startup`): `_oracle_retrain()` daily loop (aegis scan-scheduler interval style).
+- [x] **Endpoints**: `GET /oracle/stats` (accuracy, Brier, calibration curve, failure-mode breakdown, per-entity track record, model ready/last-trained), `POST /oracle/retrain`.
+- [x] **Tests**: `test_oracle_calibrator.py` — synthetic set trains, overconfident call shrinks toward empirical rate, min-samples gate.
 
 **Phase 20D — Surfacing: inline hindsight panel + 🧠 Learning Hub tab**
-- [ ] **Matching** (`oracle/hindsight.py` `related(feature, entity, query)`): union of entity-tag matches + vector similarity (`apollo.store.search(kind="lesson")`), dedupe, rank by recency × relevance, split into "called right" / "missed" buckets with reasons.
-- [ ] **Learning tab** (`app/src/oracle/OracleView.tsx` + `oracle.ts`): track-record header stats, filterable/sortable claims table (graded + pending, status chips), row-click detail drawer (source report, 24h/7d/30d checkpoints, evidence, failure tag + reason, manual-override control).
-- [ ] **Charts** (`CalibrationChart.tsx`, `TrackRecordChart.tsx`): pure-SVG, matching `polymarket/PriceChart.tsx` style.
-- [ ] **Inline hindsight** (`HindsightPanel.tsx`): two-column "Called right ✓ / Didn't pan out ✗" panel mounted under Apollo / Market / OSINT report output (`getHindsight(feature, entity)` after render); glass styling + glowing tab icon.
-- [ ] **Hub registration**: `HubView.tsx` add `"oracle"` to `HubTab` + TABS `{ id:"oracle", label:"Learning", glyph:"🧠" }` + lazy-mount; `HubButtons.tsx` META entry + SVG icon.
-- [ ] **Tests**: `test_oracle_hindsight.py` (matching union + bucketing); frontend `tsc --noEmit` + production build clean.
+- [x] **Matching** (`oracle/hindsight.py` `related(feature, entity, query)`): union of entity-tag matches + vector similarity (`apollo.store.search(kind="lesson")`), dedupe, rank by recency × relevance, split into "called right" / "missed" buckets with reasons.
+- [x] **Learning tab** (`app/src/oracle/OracleView.tsx` + `oracle.ts`): track-record header stats, filterable/sortable claims table (graded + pending, status chips), row-click detail drawer (source report, 24h/7d/30d checkpoints, evidence, failure tag + reason, manual-override control).
+- [x] **Charts** (`CalibrationChart.tsx`, `TrackRecordChart.tsx`): pure-SVG, matching `polymarket/PriceChart.tsx` style.
+- [x] **Inline hindsight** (`HindsightPanel.tsx`): two-column "Called right ✓ / Didn't pan out ✗" panel mounted under Apollo / Market / OSINT report output (`getHindsight(feature, entity)` after render); glass styling + glowing tab icon.
+- [x] **Hub registration**: `HubView.tsx` add `"oracle"` to `HubTab` + TABS `{ id:"oracle", label:"Learning", glyph:"🧠" }` + lazy-mount; `HubButtons.tsx` META entry + SVG icon.
+- [x] **Tests**: `test_oracle_hindsight.py` (matching union + bucketing); frontend `tsc --noEmit` + production build clean.

@@ -12,10 +12,17 @@ $AEGIS  = "http://127.0.0.1:8001/aegis/report"
 function Report-To-Aegis {
     param([string]$Suite, [string]$Output)
     try {
+        # NOTE: the /aegis/report endpoint only persists these fields:
+        # source, severity, kind, message, traceback, context. Anything else
+        # (e.g. a "detail" key) is silently dropped by Pydantic — which is why
+        # the suite output must go into `traceback` to be captured/diagnosable.
         $body = @{
-            source  = "pre-push-hook"
-            message = "[$Suite] pre-push check FAILED"
-            detail  = $Output
+            source    = "pre-push-hook"
+            severity  = "Medium"
+            kind      = "PrePushCheckFailed"
+            message   = "[$Suite] pre-push check FAILED"
+            traceback = $Output
+            context   = @{ suite = $Suite }
         } | ConvertTo-Json -Compress
         Invoke-RestMethod -Uri $AEGIS -Method POST `
             -ContentType "application/json" -Body $body `

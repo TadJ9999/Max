@@ -253,6 +253,23 @@ class ApolloConfig(BaseModel):
     ingest_interval_seconds: int = 1_800  # background KB refresh cadence (news + market)
 
 
+class OracleConfig(BaseModel):
+    """Oracle — self-grading prediction track record (Phase 20). Long-term tables
+    in ``.apollo.db`` (kept indefinitely); local Ollama for extraction/judging with
+    optional cloud escalation; a scikit-learn calibrator persisted to ``model_path``."""
+
+    enabled: bool = True
+    extract_model: str = ""  # empty = use the chat task model (local)
+    judge_model: str = ""    # empty = use the chat task model (local)
+    judge_cloud_escalate: bool = True   # escalate low-confidence judgments to cloud
+    grade_interval_seconds: int = 3_600  # background grading cadence
+    retrain_interval_hours: int = 24     # nightly calibrator retrain
+    min_samples_to_calibrate: int = 30   # cold-start gate
+    max_per_run: int = 25                # claims graded per cycle (bounds cost)
+    horizons_hours: list[int] = Field(default_factory=lambda: [24, 168, 720])
+    model_path: str = str(Path(__file__).resolve().parent.parent / ".oracle_model.pkl")
+
+
 class RagConfig(BaseModel):
     """Codebase RAG. Local sqlite-vec index of the workspace allowlist + Ollama
     embeddings. Indexing only ever touches allowlisted paths; nothing leaves the
@@ -340,6 +357,7 @@ class EngineConfig(BaseModel):
     market: MarketConfig = Field(default_factory=MarketConfig)
     polymarket: PolymarketConfig = Field(default_factory=PolymarketConfig)
     apollo: ApolloConfig = Field(default_factory=ApolloConfig)
+    oracle: OracleConfig = Field(default_factory=OracleConfig)
     rag: RagConfig = Field(default_factory=RagConfig)
     aegis: AegisConfig = Field(default_factory=AegisConfig)
     sentinel: SentinelConfig = Field(default_factory=SentinelConfig)
@@ -448,6 +466,27 @@ def _apply_overrides(cfg: EngineConfig, data: dict) -> None:
         cfg.apollo.retrieve_k = max(1, int(ap["retrieve_k"]))
     if "ingest_interval_seconds" in ap:
         cfg.apollo.ingest_interval_seconds = max(300, int(ap["ingest_interval_seconds"]))
+    orc = data.get("oracle") or {}
+    if "enabled" in orc:
+        cfg.oracle.enabled = bool(orc["enabled"])
+    if "extract_model" in orc:
+        cfg.oracle.extract_model = str(orc["extract_model"])
+    if "judge_model" in orc:
+        cfg.oracle.judge_model = str(orc["judge_model"])
+    if "judge_cloud_escalate" in orc:
+        cfg.oracle.judge_cloud_escalate = bool(orc["judge_cloud_escalate"])
+    if "grade_interval_seconds" in orc:
+        cfg.oracle.grade_interval_seconds = max(300, int(orc["grade_interval_seconds"]))
+    if "retrain_interval_hours" in orc:
+        cfg.oracle.retrain_interval_hours = max(1, int(orc["retrain_interval_hours"]))
+    if "min_samples_to_calibrate" in orc:
+        cfg.oracle.min_samples_to_calibrate = max(5, int(orc["min_samples_to_calibrate"]))
+    if "max_per_run" in orc:
+        cfg.oracle.max_per_run = max(1, int(orc["max_per_run"]))
+    if isinstance(orc.get("horizons_hours"), list):
+        hrs = [int(h) for h in orc["horizons_hours"] if int(h) > 0]
+        if hrs:
+            cfg.oracle.horizons_hours = hrs
     pers = data.get("personality") or {}
     if "persona" in pers:
         cfg.personality.persona = str(pers["persona"])
@@ -610,6 +649,17 @@ def save_overrides(cfg: EngineConfig) -> None:
             "ttl_seconds": cfg.apollo.ttl_seconds,
             "retrieve_k": cfg.apollo.retrieve_k,
             "ingest_interval_seconds": cfg.apollo.ingest_interval_seconds,
+        },
+        "oracle": {
+            "enabled": cfg.oracle.enabled,
+            "extract_model": cfg.oracle.extract_model,
+            "judge_model": cfg.oracle.judge_model,
+            "judge_cloud_escalate": cfg.oracle.judge_cloud_escalate,
+            "grade_interval_seconds": cfg.oracle.grade_interval_seconds,
+            "retrain_interval_hours": cfg.oracle.retrain_interval_hours,
+            "min_samples_to_calibrate": cfg.oracle.min_samples_to_calibrate,
+            "max_per_run": cfg.oracle.max_per_run,
+            "horizons_hours": cfg.oracle.horizons_hours,
         },
         "personality": {
             "persona": cfg.personality.persona,

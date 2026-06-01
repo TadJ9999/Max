@@ -367,3 +367,68 @@ def sentinel_chat_messages(snapshot_json: str, history: list[dict]) -> list[dict
         + snapshot_json
     )
     return [{"role": "system", "content": system}, *history]
+
+
+# ---- Oracle (Phase 20 — self-grading track record) ----
+
+_ORACLE_EXTRACT_SYSTEM = (
+    "You are Oracle, MAX's prediction-accountability engine. Extract the concrete, "
+    "checkable PREDICTIONS from a report so they can later be graded against reality. "
+    "Return ONLY a JSON array — no prose, no markdown fences. Each element is an object "
+    "with exactly these keys:\n"
+    '  "claim": a single atomic, falsifiable statement (one prediction, not a paragraph)\n'
+    '  "entity": the thing it is about — a stock TICKER (e.g. "AAPL"), a COUNTRY name '
+    '(e.g. "Ukraine"), or a short topic phrase; null if none\n'
+    '  "entity_kind": one of "ticker" | "country" | "topic"\n'
+    '  "direction": one of "up" | "down" | "event" | "no-change" '
+    "(up/down for quantitative moves, event for something happening, no-change for stability)\n"
+    '  "magnitude": the predicted percent move as a number if stated (e.g. 5 for +5%), else null\n'
+    '  "horizon_hours": when it should resolve, in hours (24=a day, 168=a week, 720=a month); '
+    "infer a sensible value\n"
+    '  "confidence": the report\'s stated confidence as 0.0-1.0 (map Low≈0.35, Medium≈0.6, High≈0.85)\n'
+    "Only extract genuine forward-looking predictions — skip pure description or history. "
+    "Return at most 8, the most important first. If there are none, return []."
+)
+
+_ORACLE_JUDGE_SYSTEM = (
+    "You are Oracle, MAX's impartial prediction judge. You are given ONE past prediction "
+    "and fresh real-world EVIDENCE gathered now. Decide how well the prediction matched what "
+    "actually happened by its checkpoint. Return ONLY a JSON object — no prose, no fences — "
+    "with exactly these keys:\n"
+    '  "outcome": "hit" | "partial" | "miss" | "too-early" '
+    "(too-early ONLY if the evidence genuinely cannot resolve it yet)\n"
+    '  "score": 0-100 partial credit (100=exactly right, 50=half right/right direction wrong '
+    "magnitude, 0=opposite happened)\n"
+    '  "failure_tag": when not a clean hit, one of "wrong-direction" | "wrong-timing" | '
+    '"wrong-magnitude" | "black-swan" | "data-gap" | "overconfidence" | "partial-correct"; '
+    "null on a hit\n"
+    '  "reason": one or two sentences citing the evidence for your verdict\n'
+    '  "self_confidence": 0.0-1.0, how sure you are of THIS verdict given the evidence\n'
+    "Judge only on the evidence provided; do not invent facts. If evidence is thin, say so and "
+    "lower self_confidence."
+)
+
+
+def oracle_extract_messages(*, feature: str, report: str) -> list[dict]:
+    """Ask the model to extract atomic, gradeable claims from a report."""
+    return [
+        {"role": "system", "content": _ORACLE_EXTRACT_SYSTEM},
+        {"role": "user", "content": f"Report feature: {feature}\n\nREPORT:\n{report}"},
+    ]
+
+
+def oracle_judge_messages(*, claim: dict, evidence: str, checkpoint: str) -> list[dict]:
+    """Ask the model to grade one claim against fresh evidence at a checkpoint."""
+    horizon = claim.get("horizonHours") or claim.get("horizon_hours")
+    detail = (
+        f"PREDICTION: {claim.get('claim')}\n"
+        f"About: {claim.get('entity')} ({claim.get('entityKind') or claim.get('entity_kind')})\n"
+        f"Direction: {claim.get('direction')}  Magnitude: {claim.get('magnitude')}\n"
+        f"Stated confidence: {claim.get('confidence')}  Original horizon (h): {horizon}\n"
+        f"Grading checkpoint: {checkpoint}\n\n"
+        f"{evidence}"
+    )
+    return [
+        {"role": "system", "content": _ORACLE_JUDGE_SYSTEM},
+        {"role": "user", "content": detail},
+    ]

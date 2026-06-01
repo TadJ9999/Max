@@ -5,6 +5,7 @@
 
 import { useState } from "react";
 import { HubView, type HubTab } from "./HubView";
+import { OwlLogo } from "../oracle/OwlLogo";
 import "./Hub.css";
 
 function inTauri(): boolean {
@@ -60,6 +61,7 @@ const ICONS: Record<HubTab, React.ReactNode> = {
       <path d="M8 7v8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
     </svg>
   ),
+  oracle: <OwlLogo size={20} />,
   apollo: (
     <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M10 2.6 L18 16.6 L2 16.6 Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
@@ -123,9 +125,10 @@ const META: { id: HubTab; title: string; cls: string }[] = [
   { id: "market", title: "Market — Live Stocks", cls: "widget-action-btn--market" },
   { id: "polymarket", title: "Poly — Prediction Markets", cls: "widget-action-btn--polymarket" },
   { id: "apollo", title: "Apollo — Prediction Engine", cls: "widget-action-btn--apollo" },
-  { id: "aegis", title: "Aegis — Self-Repair Console", cls: "widget-action-btn--aegis" },
+  { id: "oracle", title: "Learning — Oracle Self-Grading Track Record", cls: "widget-action-btn--oracle" },
   { id: "shadow", title: "Shadow Net — Tor Browser", cls: "widget-action-btn--shadow" },
   { id: "sentinel", title: "Sentinel — 3D Space Intelligence", cls: "widget-action-btn--sentinel" },
+  { id: "aegis", title: "Aegis — Self-Repair Console", cls: "widget-action-btn--aegis" },
   { id: "code", title: "Code — AI Editor", cls: "widget-action-btn--code" },
   { id: "skills", title: "Skills — Web Search, Reports, Music, Calendar", cls: "widget-action-btn--skills" },
 ];

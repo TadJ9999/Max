@@ -15,6 +15,10 @@ dependencies = [
     "socksio>=0.9",
     "stem>=1.8",
     "beautifulsoup4>=4.12",
+    # Oracle (Phase 20) — local ML calibrator. Lazily imported; the engine still
+    # runs without them (calibration just stays dormant).
+    "numpy>=1.26",
+    "scikit-learn>=1.4",
 ]
 
 [project.scripts]

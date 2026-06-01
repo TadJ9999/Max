@@ -18,6 +18,8 @@ import { SettingsView } from "../settings/SettingsView";
 import { ShadowNetView } from "../darknet/ShadowNetView";
 import { CodeView } from "../code/CodeView";
 import { SkillsView } from "../skills/SkillsView";
+import { OracleView } from "../oracle/OracleView";
+import { OwlLogo } from "../oracle/OwlLogo";
 import "./Hub.css";
 
 // ── Error boundary — catches settings crashes without killing the whole Hub ──
@@ -53,16 +55,17 @@ class ViewErrorBoundary extends Component<{ children: ReactNode }, EBState> {
   }
 }
 
-export type HubTab = "apollo" | "osint" | "market" | "polymarket" | "aegis" | "shadow" | "sentinel" | "code" | "skills" | "settings";
+export type HubTab = "apollo" | "osint" | "market" | "polymarket" | "oracle" | "aegis" | "shadow" | "sentinel" | "code" | "skills" | "settings";
 
-const TABS: { id: HubTab; label: string; glyph: string }[] = [
-  { id: "apollo", label: "Apollo", glyph: "▲" },
+const TABS: { id: HubTab; label: string; glyph: ReactNode }[] = [
   { id: "osint", label: "OSINT", glyph: "◎" },
   { id: "market", label: "Market", glyph: "$" },
   { id: "polymarket", label: "Poly", glyph: "Ψ" },
-  { id: "aegis", label: "Aegis", glyph: "🛡" },
+  { id: "apollo", label: "Apollo", glyph: "▲" },
+  { id: "oracle", label: "Learning", glyph: <OwlLogo size={15} /> },
   { id: "shadow", label: "Shadow", glyph: "⬡" },
   { id: "sentinel", label: "Sentinel", glyph: "🛰" },
+  { id: "aegis", label: "Aegis", glyph: "🛡" },
   { id: "code", label: "Code", glyph: "⌨" },
   { id: "skills", label: "Skills", glyph: "⚡" },
   { id: "settings", label: "Settings", glyph: "⚙" },
@@ -151,6 +154,11 @@ export function HubView({
         {visited.has("polymarket") && (
           <div className="hub__view" hidden={tab !== "polymarket"}>
             <PolymarketView />
+          </div>
+        )}
+        {visited.has("oracle") && (
+          <div className="hub__view" hidden={tab !== "oracle"}>
+            <OracleView />
           </div>
         )}
         {visited.has("aegis") && (
