@@ -1250,28 +1250,58 @@ def rag_memory_clear(session_id: str) -> dict:
 # ---- OSINT: global news heat map ---------------------------------------
 
 
+def _parse_domains(domains: str | None) -> set[str] | None:
+    """Parse a comma-separated source-domain allowlist (the UI's per-source toggles)."""
+    if not domains:
+        return None
+    items = {d.strip().lower() for d in domains.split(",") if d.strip()}
+    return items or None
+
+
 @app.get("/osint/heatmap")
-async def osint_heatmap() -> dict:
+async def osint_heatmap(domains: str | None = None) -> dict:
     """Per-country news intensity (0..1) from GDELT + RSS, cached for a TTL.
 
     Outbound egress to public news services; aggregated in the engine so the
     client stays thin. Returns empty ``countries`` if every source is unreachable.
+    Pass ``domains`` (comma-separated allowlist) to restrict to specific sources.
     """
     _check_network()
-    heatmap = await osint.get_heatmap()
+    heatmap = await osint.get_heatmap(domains=_parse_domains(domains))
     return heatmap.to_dict()
 
 
 @app.get("/osint/articles")
-async def osint_articles(country: str | None = None, limit: int = 50) -> dict:
+async def osint_articles(
+    country: str | None = None, limit: int = 50, domains: str | None = None
+) -> dict:
     """Ranked articles, newest first. Pass ``country`` (ISO-A3) to scope to one;
-    omit it for the global top."""
+    omit it for the global top. ``domains`` is a comma-separated source allowlist."""
     _check_network()
-    articles = await osint.get_articles(iso=country, limit=limit)
+    articles = await osint.get_articles(
+        iso=country, limit=limit, domains=_parse_domains(domains)
+    )
     return {
         "country": country.upper() if country else None,
         "articles": [a.to_dict() for a in articles],
     }
+
+
+@app.get("/osint/domains")
+async def osint_domains() -> dict:
+    """Distinct source domains in the current article set + counts, for the UI's
+    per-source toggle list."""
+    _check_network()
+    return {"domains": await osint.get_domains()}
+
+
+@app.get("/osint/timeline")
+async def osint_timeline(frames: int = 24, window_hours: float = 24.0) -> dict:
+    """Heat replay: ``frames`` snapshots of per-country intensity over the last
+    ``window_hours``, for the time-scrubber. Each frame is scored over articles
+    up to that moment."""
+    _check_network()
+    return await osint.get_timeline(frames=frames, window_hours=window_hours)
 
 
 @app.get("/osint/sources")

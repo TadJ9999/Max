@@ -42,7 +42,10 @@ type Props = {
   geoEvents: GeoEvent[];
   showEvents: boolean;
   onSelect: (iso: string, name: string) => void;
+  onEventSelect?: (events: GeoEvent[]) => void;
 };
+
+type EventCluster = { x: number; y: number; events: GeoEvent[] };
 
 type Hover = { name: string; severity: number; articles: number; lit: boolean; x: number; y: number };
 type ShipHover = { ship: ShipPosition; x: number; y: number };
@@ -74,11 +77,12 @@ export function WorldMap({
   countries, selectedIso, activeSeverities,
   ships, showFleet,
   geoEvents, showEvents,
-  onSelect,
+  onSelect, onEventSelect,
 }: Props) {
   const [hover, setHover] = useState<Hover | null>(null);
   const [shipHover, setShipHover] = useState<ShipHover | null>(null);
   const [eventHover, setEventHover] = useState<EventHover | null>(null);
+  const [clusterHover, setClusterHover] = useState<{ cluster: EventCluster; x: number; y: number } | null>(null);
   const [tick, setTick] = useState(0);
 
   // ── viewBox zoom state ────────────────────────────────────────────────────
@@ -172,6 +176,39 @@ export function WorldMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project, tick]);
 
+  // Cluster nearby events by projected proximity. Threshold scales with the zoom
+  // level (vb.w) so events split apart as you zoom into a region.
+  const clusters = useMemo<EventCluster[]>(() => {
+    const pts: { ev: GeoEvent; p: [number, number] }[] = [];
+    for (const ev of geoEvents) {
+      const p = project([ev.lon, ev.lat]);
+      if (p) pts.push({ ev, p });
+    }
+    const thresh = 13 * (vb.w / W);
+    const t2 = thresh * thresh;
+    const used = new Array(pts.length).fill(false);
+    const out: EventCluster[] = [];
+    for (let i = 0; i < pts.length; i++) {
+      if (used[i]) continue;
+      used[i] = true;
+      const group = [pts[i]];
+      for (let j = i + 1; j < pts.length; j++) {
+        if (used[j]) continue;
+        const dx = pts[i].p[0] - pts[j].p[0];
+        const dy = pts[i].p[1] - pts[j].p[1];
+        if (dx * dx + dy * dy <= t2) { group.push(pts[j]); used[j] = true; }
+      }
+      const cx = group.reduce((s, g) => s + g.p[0], 0) / group.length;
+      const cy = group.reduce((s, g) => s + g.p[1], 0) / group.length;
+      // Most severe (then largest magnitude) event drives the cluster's color.
+      const lead = group.map((g) => g.ev).sort(
+        (a, b) => b.severity - a.severity || b.magnitude - a.magnitude,
+      )[0];
+      out.push({ x: cx, y: cy, events: [lead, ...group.map((g) => g.ev).filter((e) => e !== lead)] });
+    }
+    return out;
+  }, [geoEvents, project, vb.w]);
+
   const viewBoxStr = `${vb.x.toFixed(1)} ${vb.y.toFixed(1)} ${vb.w.toFixed(1)} ${vb.h.toFixed(1)}`;
 
   return (
@@ -240,25 +277,42 @@ export function WorldMap({
           <circle cx={night.sun[0]} cy={night.sun[1]} r={5} className="osint-map__sun" />
         )}
 
-        {/* Geo events (earthquakes, disasters) */}
+        {/* Geo events (earthquakes, disasters) — clustered by proximity */}
         {showEvents && (
           <g className="osint-map__events">
-            {geoEvents.map((ev) => {
-              const p = project([ev.lon, ev.lat]);
-              if (!p) return null;
-              const [x, y] = p;
-              const r = ev.category === "earthquake" ? quakeRadius(ev.magnitude) : 5;
+            {clusters.map((cl) => {
+              const lead = cl.events[0];
+              const n = cl.events.length;
+              if (n === 1) {
+                const r = lead.category === "earthquake" ? quakeRadius(lead.magnitude) : 5;
+                return (
+                  <g key={lead.id} className="osint-event"
+                    onMouseMove={(e) => setEventHover({ event: lead, x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY })}
+                    onMouseLeave={() => setEventHover(null)}
+                    onClick={() => onEventSelect?.([lead])}
+                  >
+                    <circle cx={cl.x} cy={cl.y} r={r + 5} fill={lead.color} opacity={0.1} />
+                    <circle cx={cl.x} cy={cl.y} r={r} fill={lead.color} opacity={0.72}
+                      stroke={lead.color} strokeWidth={0.7}
+                      style={{ filter: `drop-shadow(0 0 3px ${lead.color})` }}
+                    />
+                  </g>
+                );
+              }
+              const cr = Math.min(13, 7 + Math.log2(n) * 2.2);
               return (
-                <g key={ev.id} className="osint-event"
-                  onMouseMove={(e) => setEventHover({ event: ev, x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY })}
-                  onMouseLeave={() => setEventHover(null)}
-                  onClick={() => ev.url && window.open(ev.url, "_blank", "noopener")}
+                <g key={`cl-${lead.id}-${n}`} className="osint-event osint-event--cluster"
+                  onMouseMove={(e) => setClusterHover({ cluster: cl, x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY })}
+                  onMouseLeave={() => setClusterHover(null)}
+                  onClick={() => onEventSelect?.(cl.events)}
                 >
-                  <circle cx={x} cy={y} r={r + 5} fill={ev.color} opacity={0.1} />
-                  <circle cx={x} cy={y} r={r} fill={ev.color} opacity={0.72}
-                    stroke={ev.color} strokeWidth={0.7}
-                    style={{ filter: `drop-shadow(0 0 3px ${ev.color})` }}
+                  <circle cx={cl.x} cy={cl.y} r={cr + 6} fill={lead.color} opacity={0.12} />
+                  <circle cx={cl.x} cy={cl.y} r={cr} fill={lead.color} opacity={0.78}
+                    stroke="#fff" strokeWidth={0.8}
+                    style={{ filter: `drop-shadow(0 0 4px ${lead.color})` }}
                   />
+                  <text x={cl.x} y={cl.y} className="osint-event__count"
+                    textAnchor="middle" dominantBaseline="central">{n}</text>
                 </g>
               );
             })}
@@ -298,7 +352,7 @@ export function WorldMap({
       </svg>
 
       {/* Tooltips */}
-      {hover && !shipHover && !eventHover && (
+      {hover && !shipHover && !eventHover && !clusterHover && (
         <div className="osint-tip" style={{ left: hover.x + 14, top: hover.y + 10 }}>
           <span className="osint-tip__name">{hover.name}</span>
           {hover.lit && hover.articles > 0 ? (
@@ -325,7 +379,7 @@ export function WorldMap({
         </div>
       )}
 
-      {eventHover && (
+      {eventHover && !clusterHover && (
         <div className="osint-tip"
           style={{ left: eventHover.x + 14, top: eventHover.y + 10,
             borderColor: eventHover.event.color + "88" }}>
@@ -334,7 +388,19 @@ export function WorldMap({
             {eventHover.event.category}
             {eventHover.event.magnitude > 0 ? ` · M${eventHover.event.magnitude.toFixed(1)}` : ""}
           </span>
-          <span className="osint-tip__meta osint-tip__meta--quiet">{eventHover.event.source}</span>
+          <span className="osint-tip__meta osint-tip__meta--quiet">{eventHover.event.source} · click for detail</span>
+        </div>
+      )}
+
+      {clusterHover && (
+        <div className="osint-tip"
+          style={{ left: clusterHover.x + 14, top: clusterHover.y + 10,
+            borderColor: clusterHover.cluster.events[0].color + "88" }}>
+          <span className="osint-tip__name">{clusterHover.cluster.events.length} events clustered</span>
+          <span className="osint-tip__meta" style={{ color: clusterHover.cluster.events[0].color }}>
+            {clusterHover.cluster.events[0].title}
+          </span>
+          <span className="osint-tip__meta osint-tip__meta--quiet">click to expand</span>
         </div>
       )}
     </div>

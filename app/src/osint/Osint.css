@@ -979,3 +979,163 @@
   0%, 100% { transform: translate(-6%, 4%) rotate(0deg); }
   50%       { transform: translate(8%, -6%) rotate(180deg); }
 }
+
+/* ---- per-source domain toggles (popover) ---- */
+.osint__sources-wrap { position: relative; }
+.osint__sources-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: 280px;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(8, 16, 24, 0.97);
+  border: 1px solid var(--osint-border);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.osint__sources-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--osint-text);
+  border-bottom: 1px solid var(--osint-border);
+}
+.osint__sources-actions { display: flex; align-items: center; gap: 6px; }
+.osint__sources-actions button {
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--osint-muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--osint-border);
+  border-radius: 6px;
+  padding: 2px 7px;
+  cursor: pointer;
+}
+.osint__sources-actions button:disabled { opacity: 0.4; cursor: default; }
+.osint__sources-x { border: none !important; font-size: 13px !important; }
+.osint__sources-list { overflow-y: auto; padding: 4px; }
+.osint__source-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.12s, background 0.12s;
+}
+.osint__source-row.is-on { opacity: 1; }
+.osint__source-row:hover { background: rgba(255, 255, 255, 0.04); }
+.osint__source-row input { accent-color: var(--osint-accent); cursor: pointer; }
+.osint__source-n { margin-left: auto; font-size: 10.5px; color: var(--osint-muted); }
+
+/* ---- event / cluster detail card ---- */
+.osint__event-detail {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 35;
+  width: 300px;
+  max-height: calc(100% - 28px);
+  display: flex;
+  flex-direction: column;
+  background: rgba(8, 16, 24, 0.96);
+  border: 1px solid var(--osint-border);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.osint__event-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--osint-text);
+  border-bottom: 1px solid var(--osint-border);
+}
+.osint__event-detail-head button {
+  border: none;
+  background: none;
+  color: var(--osint-muted);
+  font-size: 15px;
+  cursor: pointer;
+}
+.osint__event-detail-list { overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+.osint__event-item {
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 3px solid var(--ev-color, var(--osint-accent));
+}
+.osint__event-item-title { font-size: 12px; color: var(--osint-text); line-height: 1.35; }
+.osint__event-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  font-size: 10.5px;
+  color: var(--osint-muted);
+}
+.osint__event-cat { text-transform: uppercase; letter-spacing: 0.05em; }
+.osint__event-item .news-card__link { margin-top: 7px; }
+
+/* ---- 24h heat replay scrubber ---- */
+.osint__scrubber {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(560px, 70%);
+  padding: 7px 14px;
+  background: rgba(8, 16, 24, 0.9);
+  border: 1px solid var(--osint-border);
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+}
+.osint__scrub-play {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  color: var(--osint-accent);
+  background: rgba(34, 211, 238, 0.12);
+  border: 1px solid color-mix(in srgb, var(--osint-accent) 50%, transparent);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.osint__scrub-range { flex: 1; accent-color: var(--osint-accent); cursor: pointer; }
+.osint__scrub-time {
+  flex: none;
+  min-width: 56px;
+  text-align: right;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--osint-muted);
+}
+.osint__scrub-time.is-live { color: #4ade80; letter-spacing: 0.04em; }
+
+/* ---- clustered event marker ---- */
+.osint-event--cluster { cursor: pointer; }
+.osint-event__count {
+  fill: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  pointer-events: none;
+  paint-order: stroke;
+}

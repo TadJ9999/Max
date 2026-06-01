@@ -309,7 +309,7 @@ Parser rules:
 - [x] **Surface egress in settings/privacy guard** — amber egress warning added to OSINT settings section ✅
 - [x] **Tauri external links** via the opener plugin — article links now use `@tauri-apps/plugin-opener`; falls back to `window.open` in browser ✅
 - [x] *(stretch)* **Per-source toggles** (GDELT / RSS / Naval) in OSINT settings + `OsintConfig`; **GDELT tone signal** (opt-in amplifier: negative tone → more heat) wired through Article model → score.py `use_tone=True` → settings toggle
-- [ ] *(stretch)* time-scrubber to replay the last 24h of heat; cluster/event detail on click; per-source domain toggles in the UI
+- [x] *(stretch)* **time-scrubber** to replay the last 24h of heat (`GET /osint/timeline` — cumulative per-frame `score_countries`; play/pause + range scrubber, map+hotspots reflect the selected frame); **cluster/event detail on click** (proximity clustering in `WorldMap`, zoom-aware threshold; click opens a detail card listing the clustered events with source links); **per-source domain toggles** in the UI (`GET /osint/domains` + `domains=` allowlist on `/osint/heatmap` + `/osint/articles`; ⌗ Sources popover re-filters heat+articles live)
 
 ---
 
