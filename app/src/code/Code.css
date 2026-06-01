@@ -1027,3 +1027,7 @@
 .code-view__cmd-insert:hover:not(:disabled) { border-color: #58a6ff; color: #58a6ff; }
 .code-view__cmd-insert:disabled { opacity: 0.4; cursor: default; }
 .code-view__cmd-clear:hover { color: #e6edf3; }
+
+/* in-editor inline command status (in the status bar) */
+.code-view__status-auto { color: #fbbf24; font-weight: 600; }
+.code-view__status-inline { color: #58a6ff; }

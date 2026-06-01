@@ -21,7 +21,7 @@ import {
   type SearchHit,
 } from "./code";
 import { getConfig, updateConfig } from "../config";
-import { isDslCommand, streamCommand } from "../engine";
+import { isDslCommand, streamChat, streamCommand } from "../engine";
 import { MarkdownView } from "../components/MarkdownView";
 import "./Code.css";
 
@@ -46,6 +46,22 @@ function guessLang(path: string): string {
   return MAP[ext] ?? "plaintext";
 }
 
+// Strip a wrapping markdown code fence (```lang … ```) from a streamed reply so
+// inline-inserted text doesn't carry fences into the file.
+function stripFences(text: string): string {
+  const t = text.trim();
+  const m = t.match(/^```[\w-]*\n([\s\S]*?)\n?```$/);
+  return m ? m[1] : text;
+}
+
+// True when an entire line (ignoring leading/trailing space) is a self-contained
+// DSL command: optional sigil, an operator (.. | . | ~), a body, the same close.
+// Anchored to the whole line so ordinary prose never matches (auto-run safety).
+const FULL_LINE_CMD = /^\s*[@#!%^]?(\.\.|\.|~)[\s\S]+?\1\s*$/;
+function lineIsCommand(line: string): boolean {
+  return FULL_LINE_CMD.test(line);
+}
+
 export function CodeView() {
   // ── tabs ─────────────────────────────────────────────────────────────────
   const [tabs, setTabs] = useState<OpenTab[]>([]);
@@ -64,14 +80,27 @@ export function CodeView() {
   const [termOpen, setTermOpen] = useState(false);
   const [termHeight, setTermHeight] = useState(200);
 
-  // ── inline DSL command bar (Ctrl+Shift+P-style: type `. … .`, `~ … ~`,
-  // `%…`, or a custom trigger and stream the reply; optionally insert it) ─────
+  // ── inline AI command bar — operates on the editor selection (or current
+  // line): type a plain instruction ("summarize", "add types") and the result
+  // replaces the target. A self-contained DSL command (`. … .`, `~ … ~`, `%…`)
+  // is instead run verbatim and inserted at the cursor. ──────────────────────
   const [cmdOpen, setCmdOpen] = useState(false);
   const [cmdText, setCmdText] = useState("");
   const [cmdOut, setCmdOut] = useState("");
   const [cmdBusy, setCmdBusy] = useState(false);
   const [cmdErr, setCmdErr] = useState<string | null>(null);
   const cmdAbortRef = useRef<AbortController | null>(null);
+
+  // ── in-editor inline commands: type a command in the file body and run it
+  // in place (Ctrl+Enter), or enable Auto-run to fire when a line you type
+  // becomes a complete DSL command. Streams the reply over the command text. ──
+  const [autoRun, setAutoRun] = useState(false);
+  const autoRunRef = useRef(false);
+  useEffect(() => { autoRunRef.current = autoRun; }, [autoRun]);
+  const inlineApplyingRef = useRef(false); // true while WE edit (ignore our own changes)
+  const inlineBusyRef = useRef(false);     // one in-editor run at a time
+  const inlineDebounceRef = useRef<number | null>(null);
+  const [inlineStatus, setInlineStatus] = useState<string | null>(null);
 
   // ── find in files ─────────────────────────────────────────────────────────
   const [findOpen, setFindOpen] = useState(false);
@@ -217,11 +246,77 @@ export function CodeView() {
     if (!ed || !cmdOut) return;
     const sel = ed.getSelection();
     if (!sel) return;
-    ed.executeEdits("max-inline-command", [{ range: sel, text: cmdOut, forceMoveMarkers: true }]);
+    ed.executeEdits("max-inline-command", [{ range: sel, text: stripFences(cmdOut), forceMoveMarkers: true }]);
     ed.focus();
   };
 
   useEffect(() => () => cmdAbortRef.current?.abort(), []);
+
+  // ── in-editor inline command: stream the reply directly over `range` ───────
+  // A self-contained DSL command (`. … .`, `~ … ~`, …) runs via /command; any
+  // other line is treated as a generation instruction via /chat. The command
+  // text is replaced live as the answer streams in.
+  const runInlineInEditor = async (range: monaco.IRange, commandText: string) => {
+    const ed = editorRef.current;
+    const model = ed?.getModel();
+    const q = commandText.trim();
+    if (!ed || !model || !q || inlineBusyRef.current) return;
+    inlineBusyRef.current = true;
+    setInlineStatus("running…");
+
+    const startOffset = model.getOffsetAt({ lineNumber: range.startLineNumber, column: range.startColumn });
+    let written = 0;
+    const apply = (full: string) => {
+      const from = model.getPositionAt(startOffset);
+      const to = model.getPositionAt(startOffset + written);
+      inlineApplyingRef.current = true;
+      ed.executeEdits("max-inline", [
+        { range: monaco.Range.fromPositions(from, to), text: full, forceMoveMarkers: true },
+      ]);
+      inlineApplyingRef.current = false;
+      written = full.length;
+    };
+    apply(""); // clear the command text; stream the reply into its place
+
+    const ac = new AbortController();
+    cmdAbortRef.current = ac;
+    let acc = "";
+    try {
+      const iter = isDslCommand(q) ? streamCommand(q, ac.signal) : streamChat(q, ac.signal);
+      for await (const delta of iter) { acc += delta; apply(acc); }
+      apply(stripFences(acc));
+      setInlineStatus(null);
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") {
+        apply(commandText); // restore the original command on failure
+        setInlineStatus(`inline error: ${e instanceof Error ? e.message : String(e)}`);
+      } else {
+        setInlineStatus(null);
+      }
+    } finally {
+      inlineBusyRef.current = false;
+      cmdAbortRef.current = null;
+      ed.focus();
+    }
+  };
+
+  // Run the selection, or the whole current line, as an inline command (Ctrl+Enter).
+  const runInlineAtCursor = () => {
+    const ed = editorRef.current;
+    const model = ed?.getModel();
+    if (!ed || !model) return;
+    const sel = ed.getSelection();
+    if (sel && !sel.isEmpty()) {
+      void runInlineInEditor(sel, model.getValueInRange(sel));
+      return;
+    }
+    const ln = ed.getPosition()?.lineNumber ?? 1;
+    const line = model.getLineContent(ln);
+    if (!line.trim()) { setInlineStatus("empty line — type a command first"); return; }
+    const startCol = line.length - line.trimStart().length + 1; // keep indentation
+    const range = new monaco.Range(ln, startCol, ln, model.getLineMaxColumn(ln));
+    void runInlineInEditor(range, line.trim());
+  };
 
   const anyDirty = tabs.some((t) => t.dirty);
 
@@ -259,6 +354,29 @@ export function CodeView() {
     editor.onDidChangeCursorPosition((e) => {
       setCursorPos({ line: e.position.lineNumber, col: e.position.column });
     });
+
+    // Ctrl/Cmd+Enter → run the selection (or current line) as an inline command.
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => runInlineAtCursor());
+
+    // Auto-run: when a line you type becomes a complete DSL command, fire it
+    // (debounced). Guarded against our own streamed edits via inlineApplyingRef.
+    editor.onDidChangeModelContent((e) => {
+      if (inlineApplyingRef.current || !autoRunRef.current || inlineBusyRef.current) return;
+      if (!e.changes.some((c) => c.text.includes(".") || c.text.includes("~"))) return;
+      if (inlineDebounceRef.current) window.clearTimeout(inlineDebounceRef.current);
+      inlineDebounceRef.current = window.setTimeout(() => {
+        const ed = editorRef.current;
+        const model = ed?.getModel();
+        if (!ed || !model) return;
+        const ln = ed.getPosition()?.lineNumber ?? 1;
+        const line = model.getLineContent(ln);
+        if (!lineIsCommand(line)) return;
+        const startCol = line.length - line.trimStart().length + 1;
+        const range = new monaco.Range(ln, startCol, ln, model.getLineMaxColumn(ln));
+        void runInlineInEditor(range, line.trim());
+      }, 600);
+    });
+
     if (pendingRevealLine.current !== null) {
       const line = pendingRevealLine.current;
       pendingRevealLine.current = null;
@@ -509,9 +627,17 @@ export function CodeView() {
           <button
             className={`code-view__toolbar-btn${cmdOpen ? " is-active" : ""}`}
             onClick={() => setCmdOpen((v) => !v)}
-            title="Inline command — run a DSL/slash command (Ctrl+I)"
+            title="Command bar — run a DSL/slash command in a panel (Ctrl+I)"
           >
             ⌘ Command
+          </button>
+          <button
+            className={`code-view__toolbar-btn${autoRun ? " is-active" : ""}`}
+            onClick={() => setAutoRun((v) => !v)}
+            disabled={!activeTab}
+            title="Auto-run: when a line you type is a complete command (. … . / ~ … ~), run it in place. Also available on demand via Ctrl+Enter."
+          >
+            ⚡ Auto-run
           </button>
           <button
             className={`code-view__toolbar-btn${termOpen ? " is-active" : ""}`}
@@ -648,7 +774,7 @@ export function CodeView() {
             <div className="code-view__empty-msg">
               <span className="code-view__empty-glyph">⌨</span>
               <span>Open a file to start editing</span>
-              <span className="code-view__empty-hint">Open Folder in the tree to load a workspace · ⊕ new file · Ctrl+` terminal · F1 palette · ✦ AI Plan to co-work</span>
+              <span className="code-view__empty-hint">Open Folder in the tree to load a workspace · ⊕ new file · Ctrl+` terminal · F1 palette · ✦ AI Plan to co-work · type <code>~ … ~</code> in the file + Ctrl+Enter (or ⚡ Auto-run)</span>
             </div>
           </div>
         )}
@@ -662,6 +788,8 @@ export function CodeView() {
               <span>Spaces: 2</span>
               <span>UTF-8</span>
               {gitMap.size > 0 && <span title="files changed in git">⎇ {gitMap.size} changed</span>}
+              {autoRun && <span className="code-view__status-auto" title="Auto-run inline commands is ON">⚡ auto</span>}
+              {inlineStatus && <span className="code-view__status-inline">{inlineStatus}</span>}
             </>
           ) : (
             gitMap.size > 0
