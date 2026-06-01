@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getBoard,
   getCandles,
+  getNews,
   getSources,
   getWatchlist,
   setWatchlist as putWatchlist,
@@ -18,11 +19,15 @@ import {
   type Candle,
   type ChatTurn,
   type MarketBoard,
+  type NewsItem,
   type Quote,
 } from "./market";
+import { MarketOverview } from "./MarketOverview";
 import { MarkdownView } from "../components/MarkdownView";
 import { CopyButton } from "../components/CopyButton";
 import "./Market.css";
+
+type MarketViewMode = "overview" | "terminal";
 
 const POLL_MS = 10_000;
 
@@ -330,6 +335,11 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [loadingChart, setLoadingChart] = useState(false);
 
+  // Overview (full market board) vs Terminal (single-symbol). Overview is the
+  // landing view; clicking a card drills into the Terminal for that symbol.
+  const [mode, setMode] = useState<MarketViewMode>("overview");
+  const [news, setNews] = useState<NewsItem[]>([]);
+
   // Live trade ticks: latest price per symbol (board overlay) + a rolling tape
   // for the focused symbol (Time & Sales).
   const [liveTicks, setLiveTicks] = useState<Record<string, number>>({});
@@ -376,6 +386,13 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
     const id = setInterval(() => void refresh(), POLL_MS);
     return () => clearInterval(id);
   }, [refresh]);
+
+  // Market news for the Overview board (slow-moving; 5-min server cache).
+  useEffect(() => {
+    void getNews(10).then(setNews);
+    const id = setInterval(() => void getNews(10).then(setNews), 300_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Pick a default focused symbol once the board loads.
   useEffect(() => {
@@ -583,7 +600,25 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
       <header className="market__bar">
         <div className="market__title">
           <span className="market__glyph">$</span>
-          Market · Terminal
+          Market
+        </div>
+        <div className="market__subtabs" role="tablist" aria-label="Market view">
+          <button
+            className={`market__subtab${mode === "overview" ? " is-on" : ""}`}
+            onClick={() => setMode("overview")}
+            role="tab"
+            aria-selected={mode === "overview"}
+          >
+            Overview
+          </button>
+          <button
+            className={`market__subtab${mode === "terminal" ? " is-on" : ""}`}
+            onClick={() => setMode("terminal")}
+            role="tab"
+            aria-selected={mode === "terminal"}
+          >
+            Terminal
+          </button>
         </div>
         <div className="market__bar-right">
           {streamLive && (
@@ -614,8 +649,24 @@ export function MarketView({ onClose }: { onClose?: () => void } = {}) {
         <span className="market__ai-fab__gloss" />
       </button>
 
+      {/* ── Overview (full market board) ── */}
+      {mode === "overview" && (
+        <MarketOverview
+          quotes={quotes}
+          news={news}
+          loading={loading}
+          offline={offline}
+          keySet={keySet}
+          add={add}
+          setAdd={setAdd}
+          onAdd={onAdd}
+          onRemove={onRemove}
+          onSelect={(sym) => { setFocused(sym); setMode("terminal"); }}
+        />
+      )}
+
       {/* ── terminal body: watchlist │ chart │ right rail ── */}
-      <div className="market__term">
+      <div className="market__term" hidden={mode !== "terminal"}>
         {/* Watchlist */}
         <aside className="mkt-watch">
           <div className="mkt-watch__add">

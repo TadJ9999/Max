@@ -21,6 +21,8 @@ import {
   type SearchHit,
 } from "./code";
 import { getConfig, updateConfig } from "../config";
+import { isDslCommand, streamCommand } from "../engine";
+import { MarkdownView } from "../components/MarkdownView";
 import "./Code.css";
 
 loader.config({ monaco });
@@ -61,6 +63,15 @@ export function CodeView() {
   // ── terminal ─────────────────────────────────────────────────────────────
   const [termOpen, setTermOpen] = useState(false);
   const [termHeight, setTermHeight] = useState(200);
+
+  // ── inline DSL command bar (Ctrl+Shift+P-style: type `. … .`, `~ … ~`,
+  // `%…`, or a custom trigger and stream the reply; optionally insert it) ─────
+  const [cmdOpen, setCmdOpen] = useState(false);
+  const [cmdText, setCmdText] = useState("");
+  const [cmdOut, setCmdOut] = useState("");
+  const [cmdBusy, setCmdBusy] = useState(false);
+  const [cmdErr, setCmdErr] = useState<string | null>(null);
+  const cmdAbortRef = useRef<AbortController | null>(null);
 
   // ── find in files ─────────────────────────────────────────────────────────
   const [findOpen, setFindOpen] = useState(false);
@@ -180,6 +191,38 @@ export function CodeView() {
     ed.getAction(id)?.run();
   };
 
+  // ── inline DSL command: stream the engine reply into the command bar ───────
+  const runCommand = async () => {
+    const q = cmdText.trim();
+    if (!q || cmdBusy) return;
+    setCmdOut("");
+    setCmdErr(null);
+    setCmdBusy(true);
+    const ac = new AbortController();
+    cmdAbortRef.current = ac;
+    try {
+      for await (const delta of streamCommand(q, ac.signal)) setCmdOut((o) => o + delta);
+    } catch (e) {
+      if ((e as Error).name !== "AbortError")
+        setCmdErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCmdBusy(false);
+      cmdAbortRef.current = null;
+    }
+  };
+
+  // Insert the command output at the editor's cursor (acts on the active tab).
+  const insertCmdOutput = () => {
+    const ed = editorRef.current;
+    if (!ed || !cmdOut) return;
+    const sel = ed.getSelection();
+    if (!sel) return;
+    ed.executeEdits("max-inline-command", [{ range: sel, text: cmdOut, forceMoveMarkers: true }]);
+    ed.focus();
+  };
+
+  useEffect(() => () => cmdAbortRef.current?.abort(), []);
+
   const anyDirty = tabs.some((t) => t.dirty);
 
   const closeTab = (idx: number) => {
@@ -203,6 +246,7 @@ export function CodeView() {
       if (ctrl && e.shiftKey && (e.key === "S" || e.key === "s")) { e.preventDefault(); void saveAll(); }
       else if (ctrl && e.key === "s") { e.preventDefault(); void saveActive(); }
       if (ctrl && e.key === "`") { e.preventDefault(); setTermOpen((v) => !v); }
+      if (ctrl && (e.key === "i" || e.key === "I")) { e.preventDefault(); setCmdOpen((v) => !v); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -463,6 +507,13 @@ export function CodeView() {
           </button>
           <div className="code-view__toolbar-sep" />
           <button
+            className={`code-view__toolbar-btn${cmdOpen ? " is-active" : ""}`}
+            onClick={() => setCmdOpen((v) => !v)}
+            title="Inline command — run a DSL/slash command (Ctrl+I)"
+          >
+            ⌘ Command
+          </button>
+          <button
             className={`code-view__toolbar-btn${termOpen ? " is-active" : ""}`}
             onClick={() => setTermOpen((v) => !v)}
             title="Toggle Terminal (Ctrl+`)"
@@ -485,6 +536,50 @@ export function CodeView() {
             ✦ AI Plan
           </button>
         </div>
+
+        {/* Inline DSL command bar */}
+        {cmdOpen && (
+          <div className="code-view__cmd">
+            <div className="code-view__cmd-row">
+              <span className="code-view__cmd-sigil" title="DSL command">{isDslCommand(cmdText) ? "⌘" : "›"}</span>
+              <input
+                className="code-view__cmd-input"
+                value={cmdText}
+                onChange={(e) => setCmdText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); void runCommand(); }
+                  if (e.key === "Escape") { e.preventDefault(); setCmdOpen(false); }
+                }}
+                placeholder="Inline command — e.g.  . write a debounce hook .   ~ tidy this ~   %. explain async . "
+                autoFocus
+                spellCheck={false}
+              />
+              <button className="code-view__cmd-run" onClick={() => void runCommand()} disabled={cmdBusy || !cmdText.trim()}>
+                {cmdBusy ? "…" : "Run"}
+              </button>
+              <button className="code-view__cmd-close" onClick={() => setCmdOpen(false)} title="Close (Esc)">×</button>
+            </div>
+            {(cmdOut || cmdErr || cmdBusy) && (
+              <div className="code-view__cmd-out">
+                {cmdErr ? (
+                  <span className="code-view__ai-err">⚠ {cmdErr}</span>
+                ) : cmdOut ? (
+                  <MarkdownView source={cmdOut} />
+                ) : (
+                  <span className="code-view__cmd-cursor">▍</span>
+                )}
+                {cmdOut && !cmdErr && (
+                  <div className="code-view__cmd-actions">
+                    <button className="code-view__cmd-insert" onClick={insertCmdOutput} disabled={!activeTab} title={activeTab ? "Insert at cursor" : "Open a file to insert"}>
+                      Insert at cursor
+                    </button>
+                    <button className="code-view__cmd-clear" onClick={() => setCmdOut("")}>Clear</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Tab bar */}
         {tabs.length > 0 && (

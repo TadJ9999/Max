@@ -19,7 +19,10 @@
   grid-template-columns: repeat(6, 44px);
   gap: 8px;
   margin-top: 8px;
-  justify-content: start;
+  /* Span the widget's content box so the 6 columns align flush to both edges
+     (like the chat row above). A partial last row stays aligned to those same
+     column tracks rather than floating with leftover slack. */
+  justify-content: space-between;
 }
 /* Square icon buttons — consistent size for any future tools */
 .widget-action-btn {

@@ -73,6 +73,24 @@ export async function getSources(): Promise<MarketSources | null> {
   }
 }
 
+export type NewsItem = {
+  headline: string;
+  source: string | null;
+  summary: string;
+  url: string | null;
+  datetime: string | null;
+};
+
+export async function getNews(count = 8): Promise<NewsItem[]> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/market/news?count=${count}`);
+    if (!r.ok) return [];
+    return ((await r.json()).news ?? []) as NewsItem[];
+  } catch {
+    return [];
+  }
+}
+
 export type Candle = { t: number; o: number; h: number; l: number; c: number; v: number };
 
 export async function getCandles(

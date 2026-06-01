@@ -1540,6 +1540,12 @@ def market_sources() -> dict:
     return market.sources()
 
 
+@app.get("/market/news")
+async def market_news(count: int = 8) -> dict:
+    """Recent general market headlines (Finnhub), cached. Empty list with no key."""
+    return {"news": await market.get_news(count=count)}
+
+
 @app.post("/market/analyze")
 async def market_analyze():
     """The "Ingest" action: snapshot the live board (quotes + computed breadth +
@@ -1583,14 +1589,15 @@ async def market_chat_endpoint(req: MarketChatRequest):
 @app.get("/market/candles/{symbol}")
 async def market_candles(symbol: str, resolution: str = "D", days: int = 30) -> dict:
     """OHLCV candles for a symbol. Used for sparklines (resolution=D, days=30) and
-    intraday charts (resolution=60, days=5). Returns [] when no key is set."""
-    from .market.finnhub import fetch_candles
-    api_key = os.environ.get("FINNHUB_API_KEY")
-    if not api_key:
-        return {"symbol": symbol, "candles": []}
+    intraday charts (resolution=60, days=5).
+
+    Sourced from Yahoo Finance (keyless) — Finnhub moved /stock/candle to its paid
+    tier, so free keys can no longer fetch candles. Quotes and the live trade
+    socket still come from Finnhub. Returns [] on any failure."""
+    from .market.yahoo import fetch_candles
     import httpx as _httpx
     async with _httpx.AsyncClient(timeout=15.0) as client:
-        candles = await fetch_candles(client, symbol, api_key, resolution=resolution, days=days)
+        candles = await fetch_candles(client, symbol, resolution=resolution, days=days)
     return {"symbol": symbol, "candles": candles}
 
 

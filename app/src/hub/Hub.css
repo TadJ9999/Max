@@ -98,6 +98,21 @@
 }
 .widget-action-btn--code {
   color: #60a5fa;
+  border-color: rgba(96, 165, 250, 0.3);
+  box-shadow: 0 0 14px rgba(96, 165, 250, 0.15);
+}
+.widget-action-btn--code:hover {
+  border-color: rgba(96, 165, 250, 0.65);
+  box-shadow: 0 0 22px rgba(96, 165, 250, 0.4);
+}
+.widget-action-btn--skills {
+  color: #4fc3f7;
+  border-color: rgba(79, 195, 247, 0.3);
+  box-shadow: 0 0 14px rgba(79, 195, 247, 0.15);
+}
+.widget-action-btn--skills:hover {
+  border-color: rgba(79, 195, 247, 0.65);
+  box-shadow: 0 0 22px rgba(79, 195, 247, 0.4);
 }
 .hub__tab--settings {
   margin-left: auto;

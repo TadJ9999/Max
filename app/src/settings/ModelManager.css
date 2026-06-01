@@ -365,6 +365,9 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
+  /* Allow the field to shrink inside the 2-col tuning grid (grid/flex items
+     default to min-width:auto, which is what let the number inputs overflow). */
+  min-width: 0;
 }
 .mm-server-field__label {
   font-size: 9px;
@@ -381,6 +384,15 @@
   border-radius: 4px;
   padding: 4px 6px;
   outline: none;
+  /* Fill the grid column instead of using the number input's intrinsic width
+     (which, with the spinner, overran the card). box-sizing is global. */
+  width: 100%;
+  min-width: 0;
+}
+.mm-server-field__label,
+.mm-server-field .mm-card__metric-val--dim {
+  /* Long labels/hints wrap instead of forcing the column wider. */
+  overflow-wrap: anywhere;
 }
 .mm-server-field__input:focus { border-color: #22d3ee; }
 .mm-server-status {

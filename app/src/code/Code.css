@@ -939,3 +939,91 @@
 .code-view__diff-row--ctx .code-view__diff-text {
   color: #8892a4;
 }
+
+/* ── Inline DSL command bar ─────────────────────────────────────────────── */
+.code-view__cmd {
+  display: flex;
+  flex-direction: column;
+  background: #0b1020;
+  border-bottom: 1px solid #1e2030;
+  flex-shrink: 0;
+}
+.code-view__cmd-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+.code-view__cmd-sigil {
+  color: #58a6ff;
+  font-size: 13px;
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.code-view__cmd-input {
+  flex: 1;
+  min-width: 0;
+  background: #0d1117;
+  border: 1px solid #2d3748;
+  border-radius: 6px;
+  color: #e6edf3;
+  font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+  font-size: 12px;
+  padding: 6px 9px;
+  outline: none;
+}
+.code-view__cmd-input:focus { border-color: #58a6ff; }
+.code-view__cmd-input::placeholder { color: #4a5568; }
+.code-view__cmd-run {
+  background: #132a1c;
+  border: 1px solid #2e7d4f;
+  border-radius: 6px;
+  color: #4ade80;
+  font-size: 11px;
+  padding: 6px 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.code-view__cmd-run:hover:not(:disabled) { background: #1a3a26; color: #86efac; }
+.code-view__cmd-run:disabled { opacity: 0.4; cursor: default; }
+.code-view__cmd-close {
+  background: none;
+  border: none;
+  color: #8892a4;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+.code-view__cmd-close:hover { color: #f87171; }
+.code-view__cmd-out {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 8px 12px 10px 32px;
+  border-top: 1px solid #161b2c;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #c9d1d9;
+}
+.code-view__cmd-out::-webkit-scrollbar { width: 6px; }
+.code-view__cmd-out::-webkit-scrollbar-thumb { background: rgba(88, 166, 255, 0.2); border-radius: 3px; }
+.code-view__cmd-cursor { color: #58a6ff; animation: code-cmd-blink 1s step-end infinite; }
+@keyframes code-cmd-blink { 50% { opacity: 0; } }
+.code-view__cmd-actions { display: flex; gap: 8px; margin-top: 8px; }
+.code-view__cmd-insert,
+.code-view__cmd-clear {
+  background: #1c2a3a;
+  border: 1px solid #2d3748;
+  border-radius: 5px;
+  color: #8892a4;
+  font-size: 11px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.code-view__cmd-insert:hover:not(:disabled) { border-color: #58a6ff; color: #58a6ff; }
+.code-view__cmd-insert:disabled { opacity: 0.4; cursor: default; }
+.code-view__cmd-clear:hover { color: #e6edf3; }
