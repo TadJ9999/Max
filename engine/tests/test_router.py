@@ -2,7 +2,7 @@ import pytest
 
 from max_engine.config import EngineConfig
 from max_engine.dsl import parse_command
-from max_engine.router import resolve
+from max_engine.router import model_for, resolve
 
 
 def _route(text: str, **overrides):
@@ -27,3 +27,26 @@ def test_local_sigil_uses_task_model():
 def test_cloud_blocked_when_disabled():
     with pytest.raises(PermissionError):
         _route("!. do it .", allow_cloud=False)
+
+
+def test_local_provider_never_gets_cloud_model():
+    """Regression: a cloud model set as a task default (via Model Manager) must not
+    be handed to a local provider — Ollama 404s on e.g. claude-opus-4-8."""
+    cfg = EngineConfig()
+    cfg.task_models["generate"] = "claude-opus-4-8"
+    cfg.task_models["fix"] = "claude-opus-4-8"
+    # Local provider falls back to a local model instead of the cloud id.
+    assert model_for("ollama", "generate", cfg) == "qwen2.5-coder:14b"
+    assert not model_for("ollama", "fix", cfg).startswith("claude")
+    # Cloud provider still gets its proper cloud model.
+    assert model_for("claude", "generate", cfg).startswith("claude-")
+
+
+def test_local_route_with_cloud_task_default_resolves_local():
+    cfg_kwargs = {"task_models": {
+        "generate": "claude-opus-4-8", "summarize": "qwen2.5-coder:14b",
+        "fix": "gpt-4o", "chat": "qwen2.5-coder:14b", "completion": "qwen2.5-coder:3b",
+    }}
+    r = _route("@. add a function .", **cfg_kwargs)  # ollama, generate action
+    assert r.provider == "ollama" and r.is_cloud is False
+    assert not r.model.startswith(("claude", "gpt"))

@@ -19,11 +19,35 @@ class Route:
     is_cloud: bool
 
 
+_LOCAL_DEFAULT_MODEL = "qwen2.5-coder:14b"
+
+
+def _looks_like_cloud_model(model: str) -> bool:
+    """A model id that belongs to a cloud provider (Claude / GPT / Gemini).
+    Used to keep cloud ids off local providers (Ollama would 404 on them)."""
+    m = (model or "").lower()
+    return m.startswith(("claude", "gpt", "gemini", "o1", "o3", "o4"))
+
+
 def model_for(provider: str, action: str, config: EngineConfig) -> str:
-    """Pick the model for a provider+action: per-provider override, else per-task."""
-    return config.provider_models.get(provider, {}).get(action) or config.task_models.get(
-        action, "qwen2.5-coder:14b"
+    """Pick the model for a provider+action: per-provider override, else per-task.
+
+    Guard: a **local** provider must never be handed a **cloud** model id. This
+    happens when ``task_models[action]`` is set to a cloud model in the Model
+    Manager (task_models is the shared fallback for every provider) — Ollama then
+    404s on e.g. ``claude-opus-4-8``. In that case we fall back to a sane local
+    model so local routing keeps working regardless of the cloud task defaults.
+    """
+    model = config.provider_models.get(provider, {}).get(action) or config.task_models.get(
+        action, _LOCAL_DEFAULT_MODEL
     )
+    if _looks_like_cloud_model(model) and not is_cloud_provider(provider, config):
+        for candidate in (config.task_models.get("chat"), config.idle.resident_model,
+                          _LOCAL_DEFAULT_MODEL):
+            if candidate and not _looks_like_cloud_model(candidate):
+                return candidate
+        return _LOCAL_DEFAULT_MODEL
+    return model
 
 
 def is_cloud_provider(provider: str, config: EngineConfig) -> bool:

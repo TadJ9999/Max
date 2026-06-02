@@ -79,3 +79,15 @@ by the AI diagnosis.
 - **Root cause:** ROOT CAUSE:
 - **Fix:** Port 8001 is held by a stale process or crashed FastAPI instance. Without Ollama running, the engine cannot start its local diagnosis fallback, compounding the startup failure.  FIX COMMANDS: lsof -i :8001 | grep LISTEN | awk '{print $2}' | xargs kill -9 sleep 2 cd /path/to/max && python -m uvicorn main:app --host 0.0.0.0 --port 8001  (Replace /path/to/max with your actual FastAPI project directory)  VERIFICATION: curl -s http://localhost:8001/health | grep -q "ok" && echo "ENGINE UP" || echo "FAILED"  If curl fails, check logs: tail -f /path/to/max/engine.log
 
+
+## 2026-06-02T12:17Z - Boot failure (Leo)
+- **Status:** proposed
+- **Root cause:** ROOT CAUSE:
+- **Fix:** FastAPI engine on port 8001 failed to start with no stderr output, indicating either a missing dependency, port conflict, or incomplete startup before logs were captured.  FIX COMMANDS: lsof -i :8001 pip install fastapi uvicorn python -m uvicorn main:app --host 0.0.0.0 --port 8001  VERIFICATION: curl http://localhost:8001/docs Check response is HTTP 200 and Swagger UI loads.
+
+
+## 2026-06-02T12:19Z - Boot failure (Leo)
+- **Status:** proposed
+- **Root cause:** ROOT CAUSE:
+- **Fix:** The FastAPI engine on port 8001 failed to start, likely due to a missing or misconfigured startup process, dependency issue, or port already in use. Without stderr logs, the process may have exited silently before logging errors.  FIX COMMANDS: lsof -i :8001 | grep LISTEN kill -9 $(lsof -t -i :8001) 2>/dev/null || true cd /path/to/max && python -m pip install -r requirements.txt cd /path/to/max && python -m uvicorn main:app --host 0.0.0.0 --port 8001  VERIFICATION: curl http://localhost:8001/docs If the Swagger UI loads, the engine is running. Also check: ps aux | grep uvicorn to confirm the process is active.
+
