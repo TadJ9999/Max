@@ -36,12 +36,18 @@ export async function getHealth(): Promise<Health | null> {
   }
 }
 
+// Optional metadata surfaced from an SSE stream (currently the resolved model id,
+// emitted by the engine on every chunk). `onMeta` fires once, on the first chunk
+// that carries a model — useful for showing the invoked model's logo.
+export type StreamMeta = { model?: string };
+
 // POST a JSON body to an SSE endpoint and yield text deltas as they arrive.
 // Throws if the engine reports an error event in the stream.
 async function* streamSSE(
   path: string,
   body: unknown,
   signal?: AbortSignal,
+  onMeta?: (m: StreamMeta) => void,
 ): AsyncGenerator<string> {
   const r = await fetch(`${ENGINE_URL}${path}`, {
     method: "POST",
@@ -56,6 +62,7 @@ async function* streamSSE(
   const reader = r.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
+  let metaSent = false;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -72,6 +79,10 @@ async function* streamSSE(
 
       const obj = JSON.parse(data);
       if (obj.error) throw new Error(obj.error.message ?? "engine error");
+      if (!metaSent && onMeta && typeof obj.model === "string" && obj.model) {
+        metaSent = true;
+        onMeta({ model: obj.model });
+      }
       const delta: string | undefined = obj.choices?.[0]?.delta?.content;
       if (delta) yield delta;
     }
@@ -88,13 +99,17 @@ export function isDslCommand(text: string): boolean {
 }
 
 // Stream a full DSL command via /command.
-export function streamCommand(text: string, signal?: AbortSignal): AsyncGenerator<string> {
-  return streamSSE("/command", { text }, signal);
+export function streamCommand(
+  text: string, signal?: AbortSignal, onMeta?: (m: StreamMeta) => void,
+): AsyncGenerator<string> {
+  return streamSSE("/command", { text }, signal, onMeta);
 }
 
 // Stream a plain conversational reply via /chat (no DSL operators needed).
-export function streamChat(text: string, signal?: AbortSignal): AsyncGenerator<string> {
-  return streamSSE("/chat", { text }, signal);
+export function streamChat(
+  text: string, signal?: AbortSignal, onMeta?: (m: StreamMeta) => void,
+): AsyncGenerator<string> {
+  return streamSSE("/chat", { text }, signal, onMeta);
 }
 
 // Stream a vision (image + text) reply. Encodes the image to base64 and routes

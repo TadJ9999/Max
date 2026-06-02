@@ -45,7 +45,7 @@ from .skills import (
     WebSearchCapability,
 )
 from .skills.web_search import ddg_search, _search_stream
-from .aegis import AegisCapture, AegisService, AegisStore, ScanService
+from .aegis import AegisCapture, AegisService, AegisStore, RepairService, ScanService
 from .analytics.store import UsageStore
 from .darknet import TorService
 from .darknet.client import make_tor_client as _make_tor_client
@@ -242,6 +242,12 @@ scan_svc = ScanService(
     store=_aegis_store,
     config=config,
     repo_root=_repo_root,
+)
+repair_svc = RepairService(
+    store=_aegis_store,
+    config=config,
+    repo_root=_repo_root,
+    apollo_store=apollo._store,
 )
 dark_svc = TorService(
     socks_port=config.darknet.socks_port,
@@ -2295,6 +2301,75 @@ def aegis_finding_status(finding_id: str, req: AegisFindingStatusRequest) -> dic
 def aegis_report_md() -> dict:
     """Markdown posture report (score, trend, grouped findings)."""
     return {"report": scan_svc.report_markdown()}
+
+
+# ---- Aegis repair: whole-file fix → review → apply --------------------------
+#
+# Unlike /aegis/findings/{id}/fix (text proposal) these endpoints make Leo
+# actually edit the repo: propose streams a reviewable plan of whole-file
+# rewrites; apply writes them, verifies, and keeps or rolls back.
+
+
+@app.post("/aegis/findings/{finding_id}/repair")
+async def aegis_finding_repair(finding_id: str) -> StreamingResponse:
+    """SSE — propose a whole-file repair plan for a security finding."""
+    if _aegis_store.get_finding(finding_id) is None:
+        raise HTTPException(status_code=404, detail="finding not found")
+    return StreamingResponse(
+        repair_svc.propose_for_finding(finding_id), media_type="text/event-stream"
+    )
+
+
+@app.post("/aegis/events/{event_id}/repair")
+async def aegis_event_repair(event_id: str) -> StreamingResponse:
+    """SSE — propose a whole-file repair plan for a runtime error event."""
+    if _aegis_store.get_event(event_id) is None:
+        raise HTTPException(status_code=404, detail="event not found")
+    return StreamingResponse(
+        repair_svc.propose_for_event(event_id), media_type="text/event-stream"
+    )
+
+
+class AegisRepairPatch(BaseModel):
+    path: str
+    new_content: str
+
+
+class AegisRepairApplyRequest(BaseModel):
+    kind: str  # "finding" | "event"
+    id: str
+    patches: list[AegisRepairPatch]
+    log_id: str | None = None
+
+
+@app.post("/aegis/repair/apply")
+def aegis_repair_apply(req: AegisRepairApplyRequest) -> dict:
+    """Write an approved repair plan to disk: write → verify → keep or restore."""
+    try:
+        return repair_svc.apply(
+            req.kind,
+            req.id,
+            [p.model_dump() for p in req.patches],
+            req.log_id,
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+class AegisRepairRevertRequest(BaseModel):
+    paths: list[str]
+    log_id: str | None = None
+
+
+@app.post("/aegis/repair/revert")
+def aegis_repair_revert(req: AegisRepairRevertRequest) -> dict:
+    """Undo a kept repair by restoring the listed files from git HEAD."""
+    try:
+        return repair_svc.revert(req.paths, req.log_id)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
 
 
 # ---- Sentinel: space situational awareness -----------------------------

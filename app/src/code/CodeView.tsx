@@ -4,6 +4,7 @@
 //   [file tree + find-in-files 200px] | [toolbar / tabs / Monaco / statusbar / terminal] | [AI panel]
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Editor, { loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
 import { FileTree } from "./FileTree";
@@ -23,7 +24,12 @@ import {
 import { getConfig, updateConfig } from "../config";
 import { isDslCommand, streamChat, streamCommand } from "../engine";
 import { MarkdownView } from "../components/MarkdownView";
+import { InlineRunner, type RunnerState } from "./InlineRunner";
+import { logoForModel, sigilOf } from "./modelLogos";
+import { createProgressEstimator } from "./inlineProgress";
 import "./Code.css";
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 loader.config({ monaco });
 
@@ -101,6 +107,20 @@ export function CodeView() {
   const inlineBusyRef = useRef(false);     // one in-editor run at a time
   const inlineDebounceRef = useRef<number | null>(null);
   const [inlineStatus, setInlineStatus] = useState<string | null>(null);
+
+  // ── inline AI "runner": an animated invoked-model logo on a progress track,
+  // rendered into a Monaco content widget ~2 lines below the invoke, in place of
+  // the old "receiving… N chars" text. ──────────────────────────────────────
+  const [runner, setRunner] = useState<RunnerState | null>(null);
+  const [runnerNode, setRunnerNode] = useState<HTMLDivElement | null>(null);
+  const runnerWidgetRef = useRef<monaco.editor.IContentWidget | null>(null);
+  const runnerHostRef = useRef<HTMLDivElement | null>(null);
+  const runnerAnchorRef = useRef<number>(1);
+  const runnerRafRef = useRef<number | null>(null);
+  const estimatorRef = useRef(createProgressEstimator());
+  useEffect(() => () => {
+    if (runnerRafRef.current != null) cancelAnimationFrame(runnerRafRef.current);
+  }, []);
 
   // ── find in files ─────────────────────────────────────────────────────────
   const [findOpen, setFindOpen] = useState(false);
@@ -260,47 +280,134 @@ export function CodeView() {
   // reply is buffered and inserted in ONE edit — no streaming-into-the-document,
   // which is what produced the scrambled/duplicated text before. A self-contained
   // DSL command (`. … .`, `~ … ~`, …) runs via /command; anything else via /chat.
+  // Mount (or re-anchor) the runner content widget just below `anchorLine`.
+  const showRunnerWidget = (anchorLine: number) => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    runnerAnchorRef.current = anchorLine;
+    if (!runnerHostRef.current) {
+      const node = document.createElement("div");
+      node.className = "ir-host";
+      runnerHostRef.current = node;
+    }
+    if (!runnerWidgetRef.current) {
+      const widget: monaco.editor.IContentWidget = {
+        getId: () => "max.inline.runner",
+        getDomNode: () => runnerHostRef.current!,
+        getPosition: () => ({
+          position: { lineNumber: runnerAnchorRef.current, column: 1 },
+          preference: [
+            monaco.editor.ContentWidgetPositionPreference.BELOW,
+            monaco.editor.ContentWidgetPositionPreference.ABOVE,
+          ],
+        }),
+      };
+      runnerWidgetRef.current = widget;
+      ed.addContentWidget(widget);
+    } else {
+      ed.layoutContentWidget(runnerWidgetRef.current);
+    }
+    setRunnerNode(runnerHostRef.current);
+  };
+
+  const hideRunnerWidget = () => {
+    const ed = editorRef.current;
+    if (ed && runnerWidgetRef.current) ed.removeContentWidget(runnerWidgetRef.current);
+    runnerWidgetRef.current = null;
+    setRunnerNode(null);
+    setRunner(null);
+  };
+
+  const stopRunnerEase = () => {
+    if (runnerRafRef.current != null) cancelAnimationFrame(runnerRafRef.current);
+    runnerRafRef.current = null;
+  };
+
+  // Ease the displayed % toward the estimator's target each frame (buttery).
+  const startRunnerEase = () => {
+    stopRunnerEase();
+    const tick = () => {
+      setRunner((r) => {
+        if (!r || r.phase !== "running") return r;
+        const t = estimatorRef.current.target();
+        return { ...r, pct: r.pct + (t - r.pct) * 0.12 };
+      });
+      runnerRafRef.current = requestAnimationFrame(tick);
+    };
+    runnerRafRef.current = requestAnimationFrame(tick);
+  };
+
   const runInlineInEditor = async (prompt: string, anchorLine: number) => {
     const ed = editorRef.current;
     const model = ed?.getModel();
     const q = prompt.trim();
     if (!ed || !model || !q || inlineBusyRef.current) return;
     inlineBusyRef.current = true;
-    setInlineStatus("running…");
+    setInlineStatus(null); // the animated runner is the feedback now
+
+    const sigil = sigilOf(q);
+    estimatorRef.current.begin();
+    setRunner({ phase: "running", pct: 0, kind: logoForModel(undefined, sigil), model: undefined });
+    showRunnerWidget(anchorLine);
+    startRunnerEase();
 
     const ac = new AbortController();
     cmdAbortRef.current = ac;
     let acc = "";
     try {
-      const iter = isDslCommand(q) ? streamCommand(q, ac.signal) : streamChat(q, ac.signal);
+      // Swap the provisional (sigil-based) logo for the real model once the
+      // engine reports it on the first chunk.
+      const onMeta = (m: { model?: string }) => {
+        if (m.model) {
+          setRunner((r) => (r ? { ...r, kind: logoForModel(m.model, sigil), model: m.model } : r));
+        }
+      };
+      const iter = isDslCommand(q)
+        ? streamCommand(q, ac.signal, onMeta)
+        : streamChat(q, ac.signal, onMeta);
       for await (const delta of iter) {
         acc += delta;
-        setInlineStatus(`receiving… ${acc.length} chars`);
+        estimatorRef.current.update(acc.length);
       }
+      stopRunnerEase();
+      if (ac.signal.aborted) { hideRunnerWidget(); return; }
+
       const clean = stripFences(acc).trim();
-      if (clean && !ac.signal.aborted) {
+      estimatorRef.current.finish(acc.length);
+      // 100% + green "done" pulse, then fade as the reply drops in.
+      setRunner((r) => (r ? { ...r, phase: "done", pct: 100 } : r));
+      await sleep(460);
+
+      if (clean) {
         const ln = Math.min(Math.max(anchorLine, 1), model.getLineCount());
         const pos = { lineNumber: ln, column: model.getLineMaxColumn(ln) };
         // Remember where the user is typing so we can hand the cursor back —
-        // the reply drops in below without stealing focus or scrolling away.
+        // the reply drops in TWO lines below without stealing focus.
         const userSel = ed.getSelection();
         inlineApplyingRef.current = true;
         ed.executeEdits("max-inline", [
-          // Blank line + reply → the answer starts TWO lines below the command,
-          // leaving a gap the user can keep typing into while it streams in.
           { range: monaco.Range.fromPositions(pos, pos), text: "\n\n" + clean, forceMoveMarkers: false },
         ]);
         inlineApplyingRef.current = false;
-        // Keep the user where they were (don't jump down to the reply end).
         if (userSel) ed.setSelection(userSel);
       }
-      setInlineStatus(null);
+      setRunner((r) => (r ? { ...r, phase: "leaving" } : r));
+      await sleep(280);
+      hideRunnerWidget();
     } catch (e) {
-      setInlineStatus(
-        (e as Error).name === "AbortError"
-          ? null
-          : `inline error: ${e instanceof Error ? e.message : String(e)}`,
-      );
+      stopRunnerEase();
+      if ((e as Error).name === "AbortError") {
+        setRunner((r) => (r ? { ...r, phase: "leaving" } : r));
+        await sleep(220);
+        hideRunnerWidget();
+      } else {
+        const msg = e instanceof Error ? e.message : String(e);
+        setRunner((r) =>
+          r ? { ...r, phase: "error", message: msg } : { phase: "error", pct: 0, kind: "llama", message: msg },
+        );
+        await sleep(2600);
+        hideRunnerWidget();
+      }
     } finally {
       inlineBusyRef.current = false;
       cmdAbortRef.current = null;
@@ -349,6 +456,8 @@ export function CodeView() {
       else if (ctrl && e.key === "s") { e.preventDefault(); void saveActive(); }
       if (ctrl && e.key === "`") { e.preventDefault(); setTermOpen((v) => !v); }
       if (ctrl && (e.key === "i" || e.key === "I")) { e.preventDefault(); setCmdOpen((v) => !v); }
+      // Esc cancels an in-flight inline run (the runner fades out).
+      if (e.key === "Escape" && inlineBusyRef.current) { cmdAbortRef.current?.abort(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -783,6 +892,9 @@ export function CodeView() {
             </div>
           </div>
         )}
+
+        {/* Inline AI runner — portaled into its Monaco content widget */}
+        {runnerNode && runner && createPortal(<InlineRunner state={runner} />, runnerNode)}
 
         {/* Status bar */}
         <div className="code-view__status">

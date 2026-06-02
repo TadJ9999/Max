@@ -2,13 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type AegisEvent,
   type AegisSeverity,
-  applyFix,
   autoFixNative,
   getAegisEvents,
   getAegisSources,
   streamAutoFix,
   streamDiagnosis,
 } from "./aegis";
+import { RepairPanel } from "./RepairPanel";
 import { SecurityPostureView } from "./SecurityPostureView";
 import "./Aegis.css";
 
@@ -92,7 +92,6 @@ function DiagnosisBody({
 
 type AegisTab = "runtime" | "posture";
 type DiagState = "idle" | "streaming" | "done" | "error";
-type ApplyState = "idle" | "applying" | "ok" | "error";
 
 export function AegisView() {
   const [tab, setTab] = useState<AegisTab>("runtime");
@@ -100,12 +99,9 @@ export function AegisView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [diagText, setDiagText] = useState("");
   const [diagState, setDiagState] = useState<DiagState>("idle");
-  const [applyState, setApplyState] = useState<ApplyState>("idle");
-  const [applyMsg, setApplyMsg] = useState("");
   const [autonomy, setAutonomy] = useState<string>("ask");
   const [autoFixStatus, setAutoFixStatus] = useState<string>("");
   const [autoFixing, setAutoFixing] = useState(false);
-  const [lastLogId, setLastLogId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const diagAreaRef = useRef<HTMLDivElement | null>(null);
 
@@ -135,9 +131,6 @@ export function AegisView() {
     setSelectedId(id);
     setDiagText("");
     setDiagState("idle");
-    setApplyState("idle");
-    setApplyMsg("");
-    setLastLogId(null);
   }, []);
 
   const diagnose = useCallback(async () => {
@@ -147,8 +140,6 @@ export function AegisView() {
     abortRef.current = ctrl;
     setDiagText("");
     setDiagState("streaming");
-    setApplyState("idle");
-    setApplyMsg("");
     try {
       let accumulated = "";
       for await (const chunk of streamDiagnosis(selectedId, ctrl.signal)) {
@@ -164,37 +155,10 @@ export function AegisView() {
     }
   }, [selectedId, diagState]);
 
-  const extractDiff = (text: string): string | null => {
-    const m = /```diff\n([\s\S]*?)```/.exec(text);
-    return m ? m[1] : null;
-  };
-
-  const approve = useCallback(async () => {
-    if (!selectedId || applyState === "applying") return;
-    const diff = extractDiff(diagText);
-    if (!diff) {
-      setApplyMsg("No diff found in the diagnosis. Apply manually.");
-      setApplyState("error");
-      return;
-    }
-    setApplyState("applying");
-    setApplyMsg("Applying patch…");
-    const result = await applyFix(selectedId, diff, lastLogId ?? undefined);
-    if (result.ok) {
-      setApplyState("ok");
-      setApplyMsg(`Verified ✓  ${result.verification ?? ""}`);
-    } else {
-      setApplyState("error");
-      setApplyMsg(result.error ?? "Apply failed");
-    }
-  }, [selectedId, diagText, applyState, lastLogId]);
-
   const reject = useCallback(() => {
     abortRef.current?.abort();
     setDiagText("");
     setDiagState("idle");
-    setApplyState("idle");
-    setApplyMsg("");
   }, []);
 
   const autoFix = useCallback(async () => {
@@ -367,20 +331,22 @@ export function AegisView() {
                 )}
               </div>
 
-              {/* diagnosis stream area */}
+              {/* diagnosis stream area (read-only explanation) */}
               <div className="aegis__diag-area" ref={diagAreaRef}>
                 {diagText ? (
                   <DiagnosisBody text={diagText} streaming={diagState === "streaming"} />
                 ) : (
                   diagState === "idle" && (
                     <div style={{ color: "#3a5068", fontSize: 12 }}>
-                      Click <strong style={{ color: "#ff8c42" }}>Diagnose</strong> to ask AI for the root cause and a fix.
+                      Click <strong style={{ color: "#ff8c42" }}>Diagnose</strong> for a root-cause
+                      explanation, or <strong style={{ color: "#ff8c42" }}>🐩 Ask Leo to fix</strong> to
+                      repair it in the repo.
                     </div>
                   )
                 )}
               </div>
 
-              {/* action bar */}
+              {/* diagnose / auto-fix action bar */}
               <div className="aegis__actions">
                 {diagState !== "streaming" && !autoFixing && (
                   <button
@@ -415,37 +381,10 @@ export function AegisView() {
                   </button>
                 )}
 
-                {diagState === "done" && autonomy === "ask" && extractDiff(diagText) && (
-                  <>
-                    <button
-                      className="aegis__btn aegis__btn--approve"
-                      onClick={approve}
-                      disabled={applyState === "applying"}
-                    >
-                      {applyState === "applying" ? (
-                        <><span className="aegis__spinner" /> Applying…</>
-                      ) : (
-                        "✓ Approve & Apply"
-                      )}
-                    </button>
-                    <button className="aegis__btn aegis__btn--reject" onClick={reject}>
-                      ✕ Reject
-                    </button>
-                  </>
-                )}
-
                 {diagState === "done" && (
                   <button className="aegis__btn aegis__btn--diagnose" onClick={diagnose}>
                     ↻ Re-diagnose
                   </button>
-                )}
-
-                {applyMsg && (
-                  <span
-                    className={`aegis__toast aegis__toast--${applyState === "ok" ? "ok" : "err"}`}
-                  >
-                    {applyMsg}
-                  </span>
                 )}
 
                 <div style={{ flex: 1 }} />
@@ -457,6 +396,9 @@ export function AegisView() {
                   Dismiss
                 </button>
               </div>
+
+              {/* Repair: ask Leo → review diff → apply to repo */}
+              <RepairPanel kind="event" id={selected.id} onApplied={load} />
             </>
           )}
         </div>

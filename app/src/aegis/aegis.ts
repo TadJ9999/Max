@@ -374,6 +374,107 @@ export async function* streamFindingFix(
   }
 }
 
+// ─── Repair: whole-file fix → review → apply ─────────────────────────────────
+
+export type RepairKind = "finding" | "event";
+
+export type RepairPatch = {
+  path: string;
+  description: string;
+  diff: string;
+  new_content: string;
+};
+
+export type RepairPlan = {
+  summary: string;
+  log_id: string | null;
+  patches: RepairPatch[];
+};
+
+export type RepairProposalEvent =
+  | { type: "status"; text: string }
+  | { type: "note"; text: string }
+  | { type: "plan"; plan: RepairPlan };
+
+export async function* streamRepairProposal(
+  kind: RepairKind,
+  id: string,
+  signal?: AbortSignal,
+): AsyncGenerator<RepairProposalEvent> {
+  const base = kind === "finding" ? "findings" : "events";
+  const r = await fetch(`${ENGINE_URL}/aegis/${base}/${encodeURIComponent(id)}/repair`, {
+    method: "POST",
+    signal,
+  });
+  if (!r.ok || !r.body) throw new Error(`engine returned HTTP ${r.status}`);
+
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t.startsWith("data:")) continue;
+      const data = t.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+      const obj = JSON.parse(data);
+      if (obj.error) throw new Error(obj.error.message ?? "engine error");
+      if (obj.plan) yield { type: "plan", plan: obj.plan as RepairPlan };
+      else if (obj.note) yield { type: "note", text: String(obj.note) };
+      else if (obj.status) yield { type: "status", text: String(obj.status) };
+    }
+  }
+}
+
+export async function applyRepair(body: {
+  kind: RepairKind;
+  id: string;
+  patches: { path: string; new_content: string }[];
+  log_id?: string | null;
+}): Promise<{ ok: boolean; error?: string; verification?: string; files?: string[] }> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/aegis/repair/apply`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: body.kind,
+        id: body.id,
+        patches: body.patches,
+        log_id: body.log_id ?? null,
+      }),
+    });
+    if (!r.ok) {
+      const detail = await r.json().catch(() => ({}));
+      return { ok: false, error: (detail as { detail?: string }).detail ?? `HTTP ${r.status}` };
+    }
+    return (await r.json()) as { ok: boolean; error?: string; verification?: string; files?: string[] };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+export async function revertRepair(
+  paths: string[],
+  logId?: string | null,
+): Promise<{ ok: boolean; output?: string }> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/aegis/repair/revert`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ paths, log_id: logId ?? null }),
+    });
+    if (!r.ok) return { ok: false };
+    return (await r.json()) as { ok: boolean; output?: string };
+  } catch {
+    return { ok: false };
+  }
+}
+
 export async function setFindingStatus(
   findingId: string,
   status: SecurityFindingStatus,

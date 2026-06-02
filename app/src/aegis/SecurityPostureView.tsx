@@ -1,20 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   type AegisSeverity,
   type Posture,
   type ScanStatus,
   type SecurityFinding,
   type SecurityFindingCategory,
-  applyFix,
   getFindings,
   getPosture,
   getReport,
   getScanStatus,
   runScan,
   setFindingStatus,
-  streamFindingFix,
 } from "./aegis";
-import { CopyButton } from "../components/CopyButton";
+import { RepairPanel } from "./RepairPanel";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -114,49 +112,6 @@ function HistoryStrip({ history }: { history: { ts: string; score: number }[] })
   );
 }
 
-// ─── Diff block (reused from AegisView pattern) ───────────────────────────────
-
-function DiffBlock({ text }: { text: string }) {
-  const lines = text.split("\n");
-  return (
-    <pre className="aegis__diff">
-      {lines.map((line, i) => {
-        let cls = "aegis__diff-line--ctx";
-        if (line.startsWith("+++") || line.startsWith("---")) cls = "aegis__diff-line--hunk";
-        else if (line.startsWith("@@")) cls = "aegis__diff-line--hunk";
-        else if (line.startsWith("+")) cls = "aegis__diff-line--add";
-        else if (line.startsWith("-")) cls = "aegis__diff-line--del";
-        return <span key={i} className={`aegis__diff-line ${cls}`}>{line}{"\n"}</span>;
-      })}
-    </pre>
-  );
-}
-
-function DiagnosisBody({ text, streaming }: { text: string; streaming: boolean }) {
-  const parts: { type: "text" | "diff"; content: string }[] = [];
-  const diffRe = /```diff\n([\s\S]*?)```/g;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = diffRe.exec(text)) !== null) {
-    if (m.index > last) parts.push({ type: "text", content: text.slice(last, m.index) });
-    parts.push({ type: "diff", content: m[1] });
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) parts.push({ type: "text", content: text.slice(last) });
-  return (
-    <>
-      {parts.map((p, i) =>
-        p.type === "diff" ? (
-          <DiffBlock key={i} text={p.content} />
-        ) : (
-          <span key={i} className="aegis__diag-text">{p.content}</span>
-        ),
-      )}
-      {streaming && <span className="aegis__cursor" />}
-    </>
-  );
-}
-
 // ─── Finding card ─────────────────────────────────────────────────────────────
 
 function FindingCard({
@@ -211,9 +166,6 @@ function FindingCard({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-type FixState = "idle" | "streaming" | "done" | "error";
-type ApplyState = "idle" | "applying" | "ok" | "error";
-
 export function SecurityPostureView() {
   const [posture, setPosture] = useState<Posture | null>(null);
   const [findings, setFindings] = useState<SecurityFinding[]>([]);
@@ -227,23 +179,7 @@ export function SecurityPostureView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [scanMsg, setScanMsg] = useState<string | null>(null);
 
-  // Fix stream state
-  const [fixText, setFixText] = useState("");
-  const [fixState, setFixState] = useState<FixState>("idle");
-  const [applyState, setApplyState] = useState<ApplyState>("idle");
-  const [applyMsg, setApplyMsg] = useState("");
-  const [lastLogId, setLastLogId] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const fixAreaRef = useRef<HTMLDivElement | null>(null);
-
   const selected = findings.find((f) => f.id === selectedId) ?? null;
-
-  // Auto-scroll fix area
-  useEffect(() => {
-    if (fixAreaRef.current) {
-      fixAreaRef.current.scrollTop = fixAreaRef.current.scrollHeight;
-    }
-  }, [fixText]);
 
   // Load posture + findings
   const load = useCallback(async () => {
@@ -292,11 +228,6 @@ export function SecurityPostureView() {
 
   const selectFinding = useCallback((id: string) => {
     setSelectedId(id);
-    setFixText("");
-    setFixState("idle");
-    setApplyState("idle");
-    setApplyMsg("");
-    setLastLogId(null);
   }, []);
 
   const startScan = useCallback(async () => {
@@ -304,57 +235,11 @@ export function SecurityPostureView() {
     setScanStatus((s) => ({ ...s, running: true }));
   }, []);
 
-  const askLeoToFix = useCallback(async () => {
-    if (!selectedId || fixState === "streaming") return;
-    abortRef.current?.abort();
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    setFixText("");
-    setFixState("streaming");
-    setApplyState("idle");
-    setApplyMsg("");
-    try {
-      let acc = "";
-      for await (const chunk of streamFindingFix(selectedId, ctrl.signal)) {
-        acc += chunk;
-        setFixText(acc);
-      }
-      setFixState("done");
-    } catch (e: unknown) {
-      if ((e as Error)?.name !== "AbortError") {
-        setFixText((t) => t + `\n\n[error: ${String(e)}]`);
-        setFixState("error");
-      }
-    }
-  }, [selectedId, fixState]);
-
-  const extractDiff = (text: string): string | null => {
-    const m = /```diff\n([\s\S]*?)```/.exec(text);
-    return m ? m[1] : null;
-  };
-
-  const approve = useCallback(async () => {
-    if (!selectedId || applyState === "applying") return;
-    const diff = extractDiff(fixText);
-    if (!diff) {
-      setApplyMsg("No diff found in the fix. Apply manually.");
-      setApplyState("error");
-      return;
-    }
-    setApplyState("applying");
-    setApplyMsg("Applying patch…");
-    const result = await applyFix(selectedId, diff, lastLogId ?? undefined);
-    if (result.ok) {
-      await setFindingStatus(selectedId, "fixed");
-      setApplyState("ok");
-      setApplyMsg(`Verified ✓  ${result.verification ?? ""}`);
-      // Refresh findings
-      void load();
-    } else {
-      setApplyState("error");
-      setApplyMsg(result.error ?? "Apply failed");
-    }
-  }, [selectedId, fixText, applyState, lastLogId, load]);
+  // When Leo applies a repair, mark the finding fixed and refresh.
+  const onRepaired = useCallback(async () => {
+    if (selectedId) await setFindingStatus(selectedId, "fixed");
+    void load();
+  }, [selectedId, load]);
 
   const ignore = useCallback(async () => {
     if (!selectedId) return;
@@ -570,67 +455,12 @@ export function SecurityPostureView() {
                 )}
               </div>
 
-              {/* Fix stream area */}
-              <div className="aegis__diag-area" ref={fixAreaRef}>
-                {fixText ? (
-                  <DiagnosisBody text={fixText} streaming={fixState === "streaming"} />
-                ) : (
-                  fixState === "idle" && (
-                    <div style={{ color: "#3a5068", fontSize: 12 }}>
-                      Click{" "}
-                      <strong style={{ color: "#ff8c42" }}>🐩 Ask Leo to fix</strong>{" "}
-                      to get an AI-generated patch.
-                    </div>
-                  )
-                )}
-              </div>
+              {/* Repair: ask Leo → review diff → apply to repo */}
+              <RepairPanel kind="finding" id={selected.id} onApplied={onRepaired} />
 
-              {/* Action bar */}
+              {/* Finding status bar */}
               <div className="aegis__actions">
-                {fixState !== "streaming" && (
-                  <button
-                    className="aegis__btn aegis__btn--diagnose"
-                    onClick={askLeoToFix}
-                  >
-                    🐩 Ask Leo to fix
-                  </button>
-                )}
-
-                {fixState === "streaming" && (
-                  <button
-                    className="aegis__btn aegis__btn--reject"
-                    onClick={() => { abortRef.current?.abort(); setFixState("idle"); }}
-                  >
-                    ✕ Stop
-                  </button>
-                )}
-
-                {fixState === "done" && extractDiff(fixText) && (
-                  <button
-                    className="aegis__btn aegis__btn--approve"
-                    onClick={approve}
-                    disabled={applyState === "applying"}
-                  >
-                    {applyState === "applying" ? (
-                      <><span className="aegis__spinner" /> Applying…</>
-                    ) : (
-                      "✓ Approve & Apply"
-                    )}
-                  </button>
-                )}
-
-                {fixText && (
-                  <CopyButton text={fixText} className="aegis__btn aegis__btn--dismiss" title="Copy fix" />
-                )}
-
-                {applyMsg && (
-                  <span className={`aegis__toast aegis__toast--${applyState === "ok" ? "ok" : "err"}`}>
-                    {applyMsg}
-                  </span>
-                )}
-
                 <div style={{ flex: 1 }} />
-
                 {selected.status === "open" && (
                   <button className="aegis__btn aegis__btn--reject" onClick={ignore}>
                     Ignore
@@ -643,7 +473,7 @@ export function SecurityPostureView() {
                 )}
                 <button
                   className="aegis__btn aegis__btn--dismiss"
-                  onClick={() => { setSelectedId(null); abortRef.current?.abort(); }}
+                  onClick={() => setSelectedId(null)}
                 >
                   Dismiss
                 </button>

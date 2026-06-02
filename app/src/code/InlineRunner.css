@@ -1,0 +1,134 @@
+/* Inline AI runner — a glowing track the invoked model's logo rides L→R as the
+   response streams. Lives inside a Monaco content widget, just below the invoke. */
+
+/* Monaco content-widget host — informational, never intercepts editor clicks. */
+.ir-host { pointer-events: none; z-index: 40; }
+
+.ir {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 340px;
+  max-width: 560px;
+  padding: 5px 11px;
+  border-radius: 9px;
+  background: rgba(13, 17, 23, 0.93);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45),
+              0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+  font: 500 11px/1.2 ui-sans-serif, system-ui, sans-serif;
+  color: #c9d1d9;
+  backdrop-filter: blur(8px);
+  animation: ir-in 0.18s ease both;
+  transition: opacity 0.26s ease, transform 0.26s ease;
+}
+
+.ir__label {
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.92;
+}
+
+.ir__track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 4px;
+  min-width: 120px;
+  background: rgba(255, 255, 255, 0.09);
+  border-radius: 3px;
+}
+
+.ir__trail {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--pct);
+  border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--accent));
+  box-shadow: 0 0 9px var(--accent);
+  transition: width 0.14s linear;
+}
+
+.ir__runner {
+  position: absolute;
+  top: 50%;
+  left: var(--pct);
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  color: var(--accent);
+  filter: drop-shadow(0 0 4px var(--accent));
+  transition: left 0.14s linear;
+  animation: ir-bob 1.15s ease-in-out infinite;
+}
+
+/* sparkle at the runner's head */
+.ir__spark {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-left: 1px;
+  transform: translateY(-50%);
+  background: radial-gradient(circle, var(--accent) 0%, transparent 70%);
+  border-radius: 50%;
+  animation: ir-twinkle 0.9s ease-in-out infinite;
+}
+
+.ir__pct {
+  flex: 0 0 auto;
+  width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #c9d1d9;
+}
+
+/* ── done: green pulse ── */
+.ir.is-done .ir__runner {
+  color: #4ade80;
+  filter: drop-shadow(0 0 7px #4ade80);
+  animation: ir-done-pop 0.45s ease;
+}
+.ir.is-done .ir__trail {
+  background: linear-gradient(90deg, transparent, #22c55e);
+  box-shadow: 0 0 11px #22c55e;
+}
+.ir.is-done .ir__pct { color: #4ade80; }
+.ir.is-done .ir__spark { animation: none; opacity: 0; }
+
+/* ── leaving: fade as the reply inserts ── */
+.ir.is-leaving {
+  opacity: 0;
+  transform: translateY(3px) scale(0.99);
+}
+
+/* ── error ── */
+.ir.is-error {
+  border-color: #ef4444;
+  background: rgba(30, 14, 14, 0.94);
+}
+.ir__err { color: #f87171; font-size: 11px; }
+
+/* ── keyframes ── */
+@keyframes ir-in {
+  from { opacity: 0; transform: translateY(-3px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes ir-bob {
+  0%, 100% { transform: translate(-50%, -50%); }
+  50%      { transform: translate(-50%, calc(-50% - 1.5px)); }
+}
+@keyframes ir-twinkle {
+  0%, 100% { opacity: 0.35; transform: translateY(-50%) scale(0.7); }
+  50%      { opacity: 1;    transform: translateY(-50%) scale(1.1); }
+}
+@keyframes ir-done-pop {
+  0%   { transform: translate(-50%, -50%) scale(1); }
+  45%  { transform: translate(-50%, -50%) scale(1.4); }
+  100% { transform: translate(-50%, -50%) scale(1); }
+}
