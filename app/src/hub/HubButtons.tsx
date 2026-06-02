@@ -125,7 +125,7 @@ const META: { id: HubTab; title: string; cls: string }[] = [
   { id: "market", title: "Market — Live Stocks", cls: "widget-action-btn--market" },
   { id: "polymarket", title: "Poly — Prediction Markets", cls: "widget-action-btn--polymarket" },
   { id: "apollo", title: "Apollo — Prediction Engine", cls: "widget-action-btn--apollo" },
-  { id: "oracle", title: "Learning — Oracle Self-Grading Track Record", cls: "widget-action-btn--oracle" },
+  { id: "oracle", title: "Oracle — Self-Grading Prediction Track Record", cls: "widget-action-btn--oracle" },
   { id: "shadow", title: "Shadow Net — Tor Browser", cls: "widget-action-btn--shadow" },
   { id: "sentinel", title: "Sentinel — 3D Space Intelligence", cls: "widget-action-btn--sentinel" },
   { id: "aegis", title: "Aegis — Self-Repair Console", cls: "widget-action-btn--aegis" },

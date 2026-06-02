@@ -181,7 +181,7 @@ export function OracleView({ onClose }: { onClose?: () => void } = {}) {
       <header className="ora__bar">
         <div className="ora__title">
           <OwlLogo size={22} glow />
-          Oracle · Learning
+          Oracle
           <span className="ora__subtitle">self-grading prediction track record</span>
         </div>
         <div className="ora__actions">

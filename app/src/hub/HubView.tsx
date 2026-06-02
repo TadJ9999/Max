@@ -62,7 +62,7 @@ const TABS: { id: HubTab; label: string; glyph: ReactNode }[] = [
   { id: "market", label: "Market", glyph: "$" },
   { id: "polymarket", label: "Poly", glyph: "Ψ" },
   { id: "apollo", label: "Apollo", glyph: "▲" },
-  { id: "oracle", label: "Learning", glyph: <OwlLogo size={15} /> },
+  { id: "oracle", label: "Oracle", glyph: <OwlLogo size={15} /> },
   { id: "shadow", label: "Shadow", glyph: "⬡" },
   { id: "sentinel", label: "Sentinel", glyph: "🛰" },
   { id: "aegis", label: "Aegis", glyph: "🛡" },

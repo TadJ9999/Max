@@ -1,0 +1,7 @@
+{
+  "ready": false,
+  "reason": "scikit-learn not installed",
+  "samples": 0,
+  "minSamples": 30,
+  "trainedAt": null
+}
