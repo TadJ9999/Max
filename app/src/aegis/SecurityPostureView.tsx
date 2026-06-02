@@ -8,6 +8,7 @@ import {
   getFindings,
   getPosture,
   getReport,
+  saveReport,
   getScanStatus,
   runScan,
   setFindingStatus,
@@ -178,6 +179,7 @@ export function SecurityPostureView() {
   const [catFilter, setCatFilter] = useState<SecurityFindingCategory | "all">("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [scanMsg, setScanMsg] = useState<string | null>(null);
+  const [exportMsg, setExportMsg] = useState<string | null>(null);
 
   const selected = findings.find((f) => f.id === selectedId) ?? null;
 
@@ -255,6 +257,23 @@ export function SecurityPostureView() {
   }, [selectedId, load]);
 
   const exportReport = useCallback(async () => {
+    const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+    if (inTauri) {
+      // The desktop webview can't trigger an <a download> blob save, so the
+      // engine writes the file (to ~/Downloads) and we reveal it in the OS.
+      const path = await saveReport();
+      if (!path) { setExportMsg("Export failed — is the engine running?"); return; }
+      try {
+        const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+        await revealItemInDir(path);
+      } catch {
+        /* reveal not permitted — the file is still saved; the path is shown */
+      }
+      setExportMsg(`Saved to ${path}`);
+      window.setTimeout(() => setExportMsg(null), 6000);
+      return;
+    }
+    // Browser (preview / LAN): a normal blob download to the Downloads folder.
     const md = await getReport();
     if (!md) return;
     const blob = new Blob([md], { type: "text/markdown" });
@@ -325,6 +344,7 @@ export function SecurityPostureView() {
           <button className="aegis__btn aegis__btn--dismiss" onClick={exportReport}>
             ⬇ Export report
           </button>
+          {exportMsg && <span className="posture__export-msg" title={exportMsg}>{exportMsg}</span>}
         </div>
       </div>
 

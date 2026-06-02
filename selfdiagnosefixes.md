@@ -91,3 +91,9 @@ by the AI diagnosis.
 - **Root cause:** ROOT CAUSE:
 - **Fix:** The FastAPI engine on port 8001 failed to start, likely due to a missing or misconfigured startup process, dependency issue, or port already in use. Without stderr logs, the process may have exited silently before logging errors.  FIX COMMANDS: lsof -i :8001 | grep LISTEN kill -9 $(lsof -t -i :8001) 2>/dev/null || true cd /path/to/max && python -m pip install -r requirements.txt cd /path/to/max && python -m uvicorn main:app --host 0.0.0.0 --port 8001  VERIFICATION: curl http://localhost:8001/docs If the Swagger UI loads, the engine is running. Also check: ps aux | grep uvicorn to confirm the process is active.
 
+
+## 2026-06-02T12:33Z - Boot failure (Leo)
+- **Status:** proposed
+- **Root cause:** ROOT CAUSE:
+- **Fix:** FastAPI engine on port 8001 failed to start with no stderr output, suggesting either a port binding issue, missing dependencies, or the process never launched. The absence of logs indicates the startup failed before logging initialized.  FIX COMMANDS: lsof -i :8001 pkill -f "port 8001" cd /path/to/max && pip install -r requirements.txt python -m uvicorn main:app --host 0.0.0.0 --port 8001  VERIFICATION: curl http://localhost:8001/docs Check that the Swagger UI loads and shows available endpoints.
+

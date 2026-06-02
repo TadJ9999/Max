@@ -68,6 +68,9 @@ function lineIsCommand(line: string): boolean {
   return FULL_LINE_CMD.test(line);
 }
 
+// Run-all also accepts the `q` sigil (FULL_LINE_CMD omits it for auto-run safety).
+const RUNALL_CMD = /^\s*[@q#!%^]?(\.\.|\.|~)[\s\S]+?\1\s*$/;
+
 export function CodeView() {
   // ── tabs ─────────────────────────────────────────────────────────────────
   const [tabs, setTabs] = useState<OpenTab[]>([]);
@@ -104,22 +107,23 @@ export function CodeView() {
   const autoRunRef = useRef(false);
   useEffect(() => { autoRunRef.current = autoRun; }, [autoRun]);
   const inlineApplyingRef = useRef(false); // true while WE edit (ignore our own changes)
-  const inlineBusyRef = useRef(false);     // one in-editor run at a time
   const inlineDebounceRef = useRef<number | null>(null);
   const [inlineStatus, setInlineStatus] = useState<string | null>(null);
 
-  // ── inline AI "runner": an animated invoked-model logo on a progress track,
-  // rendered into a Monaco content widget ~2 lines below the invoke, in place of
-  // the old "receiving… N chars" text. ──────────────────────────────────────
-  const [runner, setRunner] = useState<RunnerState | null>(null);
-  const [runnerNode, setRunnerNode] = useState<HTMLDivElement | null>(null);
-  const runnerWidgetRef = useRef<monaco.editor.IContentWidget | null>(null);
-  const runnerHostRef = useRef<HTMLDivElement | null>(null);
-  const runnerAnchorRef = useRef<number>(1);
-  const runnerRafRef = useRef<number | null>(null);
-  const estimatorRef = useRef(createProgressEstimator());
+  // ── inline AI "runner(s)": animated invoked-model logos on progress tracks,
+  // each rendered into its own Monaco content widget ~2 lines below an invoke,
+  // in place of the old "receiving… N chars" text. Keyed by run id so multiple
+  // commands (Ctrl+Shift+Enter = run all) can stream in parallel. ────────────
+  const [runners, setRunners] = useState<Record<string, RunnerState>>({});
+  const [runnerNodes, setRunnerNodes] = useState<Record<string, HTMLDivElement>>({});
+  const runnerWidgetsRef = useRef<Map<string, monaco.editor.IContentWidget>>(new Map());
+  // Per-run controller: estimator + the (live) anchor line the widget tracks.
+  const runCtlsRef = useRef<Map<string, { estimator: ReturnType<typeof createProgressEstimator>; anchor: number }>>(new Map());
+  const runAbortsRef = useRef<Map<string, AbortController>>(new Map());
+  const runSeqRef = useRef(0);
+  const easeRafRef = useRef<number | null>(null);
   useEffect(() => () => {
-    if (runnerRafRef.current != null) cancelAnimationFrame(runnerRafRef.current);
+    if (easeRafRef.current != null) cancelAnimationFrame(easeRafRef.current);
   }, []);
 
   // ── find in files ─────────────────────────────────────────────────────────
@@ -280,139 +284,190 @@ export function CodeView() {
   // reply is buffered and inserted in ONE edit — no streaming-into-the-document,
   // which is what produced the scrambled/duplicated text before. A self-contained
   // DSL command (`. … .`, `~ … ~`, …) runs via /command; anything else via /chat.
-  // Mount (or re-anchor) the runner content widget just below `anchorLine`.
-  const showRunnerWidget = (anchorLine: number) => {
+  // Patch one runner's state (no-op if it's already gone).
+  const patchRunner = (id: string, patch: Partial<RunnerState>) =>
+    setRunners((prev) => (prev[id] ? { ...prev, [id]: { ...prev[id], ...patch } } : prev));
+
+  // Mount a runner content widget anchored just below its command line.
+  const mountRunner = (id: string, anchorLine: number, init: RunnerState) => {
     const ed = editorRef.current;
     if (!ed) return;
-    runnerAnchorRef.current = anchorLine;
-    if (!runnerHostRef.current) {
-      const node = document.createElement("div");
-      node.className = "ir-host";
-      runnerHostRef.current = node;
-    }
-    if (!runnerWidgetRef.current) {
-      const widget: monaco.editor.IContentWidget = {
-        getId: () => "max.inline.runner",
-        getDomNode: () => runnerHostRef.current!,
-        getPosition: () => ({
-          position: { lineNumber: runnerAnchorRef.current, column: 1 },
-          preference: [
-            monaco.editor.ContentWidgetPositionPreference.BELOW,
-            monaco.editor.ContentWidgetPositionPreference.ABOVE,
-          ],
-        }),
-      };
-      runnerWidgetRef.current = widget;
-      ed.addContentWidget(widget);
-    } else {
-      ed.layoutContentWidget(runnerWidgetRef.current);
-    }
-    setRunnerNode(runnerHostRef.current);
+    const host = document.createElement("div");
+    host.className = "ir-host";
+    runnerWidgetsRef.current.set(id, {
+      getId: () => `max.inline.runner.${id}`,
+      getDomNode: () => host,
+      getPosition: () => ({
+        position: { lineNumber: runCtlsRef.current.get(id)?.anchor ?? anchorLine, column: 1 },
+        preference: [
+          monaco.editor.ContentWidgetPositionPreference.BELOW,
+          monaco.editor.ContentWidgetPositionPreference.ABOVE,
+        ],
+      }),
+    });
+    ed.addContentWidget(runnerWidgetsRef.current.get(id)!);
+    setRunnerNodes((prev) => ({ ...prev, [id]: host }));
+    setRunners((prev) => ({ ...prev, [id]: init }));
   };
 
-  const hideRunnerWidget = () => {
+  const unmountRunner = (id: string) => {
     const ed = editorRef.current;
-    if (ed && runnerWidgetRef.current) ed.removeContentWidget(runnerWidgetRef.current);
-    runnerWidgetRef.current = null;
-    setRunnerNode(null);
-    setRunner(null);
+    const w = runnerWidgetsRef.current.get(id);
+    if (ed && w) ed.removeContentWidget(w);
+    runnerWidgetsRef.current.delete(id);
+    runCtlsRef.current.delete(id);
+    runAbortsRef.current.delete(id);
+    setRunnerNodes((prev) => { const n = { ...prev }; delete n[id]; return n; });
+    setRunners((prev) => { const n = { ...prev }; delete n[id]; return n; });
   };
 
-  const stopRunnerEase = () => {
-    if (runnerRafRef.current != null) cancelAnimationFrame(runnerRafRef.current);
-    runnerRafRef.current = null;
-  };
-
-  // Ease the displayed % toward the estimator's target each frame (buttery).
-  const startRunnerEase = () => {
-    stopRunnerEase();
+  // One shared rAF loop eases every *running* runner's % toward its target.
+  const ensureEaseLoop = () => {
+    if (easeRafRef.current != null) return;
     const tick = () => {
-      setRunner((r) => {
-        if (!r || r.phase !== "running") return r;
-        const t = estimatorRef.current.target();
-        return { ...r, pct: r.pct + (t - r.pct) * 0.12 };
+      setRunners((prev) => {
+        let changed = false;
+        const next: Record<string, RunnerState> = { ...prev };
+        for (const [id, st] of Object.entries(prev)) {
+          if (st.phase === "running") {
+            const t = runCtlsRef.current.get(id)?.estimator.target() ?? st.pct;
+            next[id] = { ...st, pct: st.pct + (t - st.pct) * 0.12 };
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
       });
-      runnerRafRef.current = requestAnimationFrame(tick);
+      if (runCtlsRef.current.size === 0) {
+        easeRafRef.current = null; // nothing left to animate — stop
+        return;
+      }
+      easeRafRef.current = requestAnimationFrame(tick);
     };
-    runnerRafRef.current = requestAnimationFrame(tick);
+    easeRafRef.current = requestAnimationFrame(tick);
   };
 
-  const runInlineInEditor = async (prompt: string, anchorLine: number) => {
+  // Drop a reply two lines below `anchorLine` in one edit (cursor preserved).
+  const insertReplyAt = (anchorLine: number, clean: string) => {
+    const ed = editorRef.current;
+    const model = ed?.getModel();
+    if (!ed || !model || !clean) return;
+    const ln = Math.min(Math.max(anchorLine, 1), model.getLineCount());
+    const pos = { lineNumber: ln, column: model.getLineMaxColumn(ln) };
+    const userSel = ed.getSelection();
+    inlineApplyingRef.current = true;
+    ed.executeEdits("max-inline", [
+      { range: monaco.Range.fromPositions(pos, pos), text: "\n\n" + clean, forceMoveMarkers: false },
+    ]);
+    inlineApplyingRef.current = false;
+    if (userSel) ed.setSelection(userSel);
+  };
+
+  // Stream one inline command behind its own runner. When `insert` is true the
+  // reply is dropped in itself (single-run); otherwise the cleaned reply is
+  // returned for the caller to insert (batch run inserts bottom-up).
+  const runOne = async (
+    prompt: string,
+    anchorLine: number,
+    opts: { insert: boolean },
+  ): Promise<{ anchorLine: number; clean: string } | null> => {
     const ed = editorRef.current;
     const model = ed?.getModel();
     const q = prompt.trim();
-    if (!ed || !model || !q || inlineBusyRef.current) return;
-    inlineBusyRef.current = true;
-    setInlineStatus(null); // the animated runner is the feedback now
+    if (!ed || !model || !q) return null;
 
+    const id = `r${runSeqRef.current++}`;
     const sigil = sigilOf(q);
-    estimatorRef.current.begin();
-    setRunner({ phase: "running", pct: 0, kind: logoForModel(undefined, sigil), model: undefined });
-    showRunnerWidget(anchorLine);
-    startRunnerEase();
+    const estimator = createProgressEstimator();
+    estimator.begin();
+    runCtlsRef.current.set(id, { estimator, anchor: anchorLine });
+    mountRunner(id, anchorLine, { phase: "running", pct: 0, kind: logoForModel(undefined, sigil) });
+    ensureEaseLoop();
 
     const ac = new AbortController();
-    cmdAbortRef.current = ac;
+    runAbortsRef.current.set(id, ac);
     let acc = "";
     try {
-      // Swap the provisional (sigil-based) logo for the real model once the
-      // engine reports it on the first chunk.
       const onMeta = (m: { model?: string }) => {
-        if (m.model) {
-          setRunner((r) => (r ? { ...r, kind: logoForModel(m.model, sigil), model: m.model } : r));
-        }
+        if (m.model) patchRunner(id, { kind: logoForModel(m.model, sigil), model: m.model });
       };
       const iter = isDslCommand(q)
         ? streamCommand(q, ac.signal, onMeta)
         : streamChat(q, ac.signal, onMeta);
       for await (const delta of iter) {
         acc += delta;
-        estimatorRef.current.update(acc.length);
+        estimator.update(acc.length);
       }
-      stopRunnerEase();
-      if (ac.signal.aborted) { hideRunnerWidget(); return; }
+      if (ac.signal.aborted) { unmountRunner(id); return null; }
 
       const clean = stripFences(acc).trim();
-      estimatorRef.current.finish(acc.length);
-      // 100% + green "done" pulse, then fade as the reply drops in.
-      setRunner((r) => (r ? { ...r, phase: "done", pct: 100 } : r));
-      await sleep(460);
+      estimator.finish(acc.length);
+      patchRunner(id, { phase: "done", pct: 100 });
 
-      if (clean) {
-        const ln = Math.min(Math.max(anchorLine, 1), model.getLineCount());
-        const pos = { lineNumber: ln, column: model.getLineMaxColumn(ln) };
-        // Remember where the user is typing so we can hand the cursor back —
-        // the reply drops in TWO lines below without stealing focus.
-        const userSel = ed.getSelection();
-        inlineApplyingRef.current = true;
-        ed.executeEdits("max-inline", [
-          { range: monaco.Range.fromPositions(pos, pos), text: "\n\n" + clean, forceMoveMarkers: false },
-        ]);
-        inlineApplyingRef.current = false;
-        if (userSel) ed.setSelection(userSel);
+      if (opts.insert) {
+        await sleep(460);
+        insertReplyAt(anchorLine, clean);
+        patchRunner(id, { phase: "leaving" });
+        await sleep(280);
+        unmountRunner(id);
       }
-      setRunner((r) => (r ? { ...r, phase: "leaving" } : r));
-      await sleep(280);
-      hideRunnerWidget();
+      return { anchorLine, clean };
     } catch (e) {
-      stopRunnerEase();
       if ((e as Error).name === "AbortError") {
-        setRunner((r) => (r ? { ...r, phase: "leaving" } : r));
+        patchRunner(id, { phase: "leaving" });
         await sleep(220);
-        hideRunnerWidget();
+        unmountRunner(id);
       } else {
-        const msg = e instanceof Error ? e.message : String(e);
-        setRunner((r) =>
-          r ? { ...r, phase: "error", message: msg } : { phase: "error", pct: 0, kind: "llama", message: msg },
-        );
+        patchRunner(id, { phase: "error", message: e instanceof Error ? e.message : String(e) });
         await sleep(2600);
-        hideRunnerWidget();
+        unmountRunner(id);
       }
+      return null;
     } finally {
-      inlineBusyRef.current = false;
-      cmdAbortRef.current = null;
-      ed.focus();
+      runAbortsRef.current.delete(id);
     }
+  };
+
+  // Single inline run (Ctrl+Enter): one command → its reply 2 lines below.
+  const runInlineInEditor = async (prompt: string, anchorLine: number) => {
+    await runOne(prompt, anchorLine, { insert: true });
+    editorRef.current?.focus();
+  };
+
+  // Run-all (Ctrl+Shift+Enter): every complete `sigil. … .` line in the file,
+  // in parallel, each behind its own runner. Replies are inserted bottom-up
+  // after the fade so earlier anchor lines stay valid as lines shift down.
+  const runAllInEditor = async () => {
+    const ed = editorRef.current;
+    const model = ed?.getModel();
+    if (!ed || !model) return;
+    const cmds: { line: number; text: string }[] = [];
+    for (let i = 1; i <= model.getLineCount(); i++) {
+      const t = model.getLineContent(i);
+      if (RUNALL_CMD.test(t)) cmds.push({ line: i, text: t.trim() });
+    }
+    if (cmds.length === 0) {
+      setInlineStatus("no commands to run — write `sigil. … .` lines first");
+      window.setTimeout(() => setInlineStatus(null), 2500);
+      return;
+    }
+    if (cmds.length === 1) { void runInlineInEditor(cmds[0].text, cmds[0].line); return; }
+
+    setInlineStatus(null);
+    const results = await Promise.all(cmds.map((c) => runOne(c.text, c.line, { insert: false })));
+    const done = results
+      .filter((r): r is { anchorLine: number; clean: string } => !!r && !!r.clean)
+      .sort((a, b) => b.anchorLine - a.anchorLine); // bottom-up
+    // Fade the finished runners while their positions are still valid…
+    setRunners((prev) => {
+      const n = { ...prev };
+      for (const id of Object.keys(n)) n[id] = { ...n[id], phase: "leaving" };
+      return n;
+    });
+    await sleep(300);
+    // …then insert replies bottom-up and tear the widgets down.
+    for (const r of done) insertReplyAt(r.anchorLine, r.clean);
+    for (const id of Array.from(runnerWidgetsRef.current.keys())) unmountRunner(id);
+    ed.focus();
   };
 
   // Run the selection, or the current line, as an inline command (Ctrl+Enter).
@@ -456,8 +511,11 @@ export function CodeView() {
       else if (ctrl && e.key === "s") { e.preventDefault(); void saveActive(); }
       if (ctrl && e.key === "`") { e.preventDefault(); setTermOpen((v) => !v); }
       if (ctrl && (e.key === "i" || e.key === "I")) { e.preventDefault(); setCmdOpen((v) => !v); }
-      // Esc cancels an in-flight inline run (the runner fades out).
-      if (e.key === "Escape" && inlineBusyRef.current) { cmdAbortRef.current?.abort(); }
+      // Esc cancels any in-flight inline run(s) — every runner fades out.
+      if (e.key === "Escape" && runAbortsRef.current.size > 0) {
+        for (const ac of runAbortsRef.current.values()) ac.abort();
+        cmdAbortRef.current?.abort();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -474,10 +532,16 @@ export function CodeView() {
     // Ctrl/Cmd+Enter → run the selection (or current line) as an inline command.
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => runInlineAtCursor());
 
+    // Ctrl/Cmd+Shift+Enter → run EVERY complete command line in the file at once.
+    editor.addCommand(
+      monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter,
+      () => void runAllInEditor(),
+    );
+
     // Auto-run: when a line you type becomes a complete DSL command, fire it
     // (debounced). Guarded against our own streamed edits via inlineApplyingRef.
     editor.onDidChangeModelContent((e) => {
-      if (inlineApplyingRef.current || !autoRunRef.current || inlineBusyRef.current) return;
+      if (inlineApplyingRef.current || !autoRunRef.current || runCtlsRef.current.size > 0) return;
       if (!e.changes.some((c) => c.text.includes(".") || c.text.includes("~"))) return;
       if (inlineDebounceRef.current) window.clearTimeout(inlineDebounceRef.current);
       inlineDebounceRef.current = window.setTimeout(() => {
@@ -893,8 +957,10 @@ export function CodeView() {
           </div>
         )}
 
-        {/* Inline AI runner — portaled into its Monaco content widget */}
-        {runnerNode && runner && createPortal(<InlineRunner state={runner} />, runnerNode)}
+        {/* Inline AI runner(s) — each portaled into its Monaco content widget */}
+        {Object.entries(runnerNodes).map(([id, node]) =>
+          runners[id] ? createPortal(<InlineRunner state={runners[id]} />, node, id) : null,
+        )}
 
         {/* Status bar */}
         <div className="code-view__status">

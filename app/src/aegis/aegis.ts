@@ -501,3 +501,16 @@ export async function getReport(): Promise<string> {
     return "";
   }
 }
+
+// Desktop save: the engine writes the report to ~/Downloads and returns the path
+// (the webview can't do an <a download> blob save). Returns null on failure.
+export async function saveReport(): Promise<string | null> {
+  try {
+    const r = await fetch(`${ENGINE_URL}/aegis/report/save`, { method: "POST" });
+    if (!r.ok) return null;
+    const data = (await r.json()) as { path: string };
+    return data.path ?? null;
+  } catch {
+    return null;
+  }
+}

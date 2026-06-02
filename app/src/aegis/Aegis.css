@@ -391,6 +391,14 @@
   color: #5a7090;
 }
 .aegis__btn--dismiss:hover { color: #d7e2ee; }
+.posture__export-msg {
+  font-size: 11px;
+  color: #4ade80;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .aegis__btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;

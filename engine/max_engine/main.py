@@ -2303,6 +2303,21 @@ def aegis_report_md() -> dict:
     return {"report": scan_svc.report_markdown()}
 
 
+@app.post("/aegis/report/save")
+def aegis_report_save() -> dict:
+    """Write the Markdown posture report to the user's Downloads folder and return
+    the absolute path. Used by the desktop app (the webview can't do an <a download>
+    blob save); the app then reveals the file. Falls back to the repo root if
+    ~/Downloads doesn't exist."""
+    md = scan_svc.report_markdown()
+    downloads = Path.home() / "Downloads"
+    target_dir = downloads if downloads.is_dir() else Path(_repo_root)
+    fname = f"max-security-posture-{_dt.datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
+    path = target_dir / fname
+    path.write_text(md, encoding="utf-8")
+    return {"path": str(path)}
+
+
 # ---- Aegis repair: whole-file fix → review → apply --------------------------
 #
 # Unlike /aegis/findings/{id}/fix (text proposal) these endpoints make Leo
