@@ -22,15 +22,7 @@ import httpx
 
 from .gazetteer import find_iso_in_text, name_for
 from .models import Article
-
-DEFAULT_FEEDS: list[str] = [
-    "http://feeds.bbci.co.uk/news/world/rss.xml",
-    "https://feeds.skynews.com/feeds/rss/world.xml",
-    "https://www.aljazeera.com/xml/rss/all.xml",
-    "https://rss.dw.com/rdf/rss-en-world",
-    "https://www.theguardian.com/world/rss",
-    "https://apnews.com/index.rss",
-]
+from .sources import DEFAULT_FEEDS  # re-exported; the curated catalog lives there
 
 _ATOM = "{http://www.w3.org/2005/Atom}"
 _MEDIA = "{http://search.yahoo.com/mrss/}"

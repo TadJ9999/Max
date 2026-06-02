@@ -111,6 +111,11 @@ osint = OsintService(
     gdelt_enabled=config.osint.gdelt_enabled,
     rss_enabled=config.osint.rss_enabled,
     tone_signal=config.osint.tone_signal,
+    gnews_enabled=config.osint.gnews_enabled,
+    gnews_query=config.osint.gnews_query,
+    gnews_ttl_seconds=config.osint.gnews_ttl_seconds,
+    gnews_max_records=config.osint.gnews_max_records,
+    gnews_key=os.environ.get("GNEWS_API_KEY"),
 )
 naval = NavalService(
     twz_url=config.osint.naval_twz_url,
@@ -221,6 +226,7 @@ oracle = OracleService(
     extract_route=lambda: _oracle_local_route("extract"),
     judge_local_route=lambda: _oracle_local_route("judge"),
     judge_cloud_route=_oracle_cloud_route,
+    enrich_route=lambda: _ai_route(),  # cloud Claude when allowed, else local default
     horizons_hours=config.oracle.horizons_hours,
     enabled=config.oracle.enabled,
     escalate=config.oracle.judge_cloud_escalate,
@@ -477,6 +483,10 @@ def _config_view() -> dict:
             "rss_enabled": config.osint.rss_enabled,
             "naval_enabled": config.osint.naval_enabled,
             "tone_signal": config.osint.tone_signal,
+            "gnews_enabled": config.osint.gnews_enabled,
+            "gnews_query": config.osint.gnews_query,
+            "gnews_ttl_seconds": config.osint.gnews_ttl_seconds,
+            "gnews_key_set": bool(os.environ.get("GNEWS_API_KEY")),
         },
         "market": {
             "watchlist": config.market.watchlist,
@@ -574,6 +584,9 @@ class OsintPatch(BaseModel):
     rss_enabled: bool | None = None
     naval_enabled: bool | None = None
     tone_signal: bool | None = None
+    gnews_enabled: bool | None = None
+    gnews_query: str | None = None
+    gnews_ttl_seconds: int | None = None
 
 
 class MarketPatch(BaseModel):
@@ -714,6 +727,16 @@ def update_config(patch: ConfigPatch) -> dict:
         if o.tone_signal is not None:
             config.osint.tone_signal = o.tone_signal
             osint.tone_signal = o.tone_signal
+        if o.gnews_enabled is not None:
+            config.osint.gnews_enabled = o.gnews_enabled
+            osint.gnews_enabled = o.gnews_enabled
+        if o.gnews_query is not None:
+            config.osint.gnews_query = o.gnews_query
+            osint.gnews_query = o.gnews_query
+            osint._gnews_at = None  # force a refetch next refresh
+        if o.gnews_ttl_seconds is not None:
+            config.osint.gnews_ttl_seconds = max(300, o.gnews_ttl_seconds)
+            osint.gnews_ttl_seconds = config.osint.gnews_ttl_seconds
     if patch.market is not None:
         m = patch.market
         if m.watchlist is not None:
@@ -831,7 +854,7 @@ def set_api_key(patch: KeyPatch) -> dict:
     """Write an API key to engine/.env and reload it into the running process."""
     allowed = {
         "ANTHROPIC_API_KEY", "FINNHUB_API_KEY", "OPENAI_API_KEY",
-        "GOOGLE_API_KEY", "NASA_API_KEY",
+        "GOOGLE_API_KEY", "NASA_API_KEY", "GNEWS_API_KEY",
         "SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET",
         "GOOGLE_CALENDAR_CLIENT_ID", "GOOGLE_CALENDAR_CLIENT_SECRET",
     }
@@ -851,6 +874,10 @@ def set_api_key(patch: KeyPatch) -> dict:
         new_lines.append(f"{patch.name}={patch.value}")
     env_path.write_text("\n".join(new_lines) + "\n")
     os.environ[patch.name] = patch.value
+    # Push live keys into already-constructed services so no restart is needed.
+    if patch.name == "GNEWS_API_KEY":
+        osint.gnews_key = patch.value
+        osint._gnews_at = None  # force a refetch next refresh
     return _config_view()
 
 
@@ -2727,6 +2754,14 @@ async def oracle_grade_now() -> dict:
 async def oracle_retrain() -> dict:
     """Retrain the calibrator on the full graded history right now."""
     return await asyncio.to_thread(oracle.retrain)
+
+
+@app.get("/oracle/enrichment")
+async def oracle_enrichment(refresh: bool = False) -> dict:
+    """Data-enrichment suggestions: Oracle analyzes its own track record and
+    recommends what new data sources would sharpen predictions/grading. Cached on
+    a slow TTL; pass ``refresh=true`` to regenerate."""
+    return await oracle.enrichment(refresh=refresh)
 
 
 # ---- User profile: persistent personal memory --------------------------

@@ -30,9 +30,9 @@ rem  Mobile and desktop are the same bundle (main.tsx renders MobileApp on /m),
 rem  so one `npm run build` covers both. This is just tsc + vite (no Rust
 rem  recompile), and frontendDist=../dist means the desktop app picks it up too.
 rem  If the rebuild fails we keep the existing dist and still launch.
-echo [Max] Refreshing web UI (mobile + desktop)...
-cd /d "%~dp0app"
-call npm run build
+rem  Leo build console: animated poodle + spinner; verbose output → logs\,
+rem  errors surfaced only on failure (see scripts\leo-build.ps1).
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\leo-build.ps1" -Mode refresh -AppDir "%APPDIR%"
 if errorlevel 1 (
     echo.
     echo   [Max] Web UI rebuild failed - launching with the existing dist.
@@ -59,21 +59,16 @@ start "Max Health Gate" /min cmd /c ^
 goto :end
 
 :build
-echo.
-echo   [Max] Max.exe not found — building now (this may take a few minutes)...
-echo.
-cd /d "%~dp0app"
-call npm run tauri build -- --no-bundle
+rem  First run: full desktop build, fronted by the Leo build console.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\leo-build.ps1" -Mode full -AppDir "%APPDIR%"
 if errorlevel 1 (
     echo.
-    echo   [Max] Build failed. Check the output above for errors.
+    echo   [Max] Build failed. See the Leo error tail above ^(full log: logs\build.out.log^).
     echo.
     pause
     goto :end
 )
 cd /d "%~dp0"
-echo.
-echo   [Max] Build complete. Launching...
 goto :launch
 
 :end

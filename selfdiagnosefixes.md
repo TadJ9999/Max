@@ -97,3 +97,21 @@ by the AI diagnosis.
 - **Root cause:** ROOT CAUSE:
 - **Fix:** FastAPI engine on port 8001 failed to start with no stderr output, suggesting either a port binding issue, missing dependencies, or the process never launched. The absence of logs indicates the startup failed before logging initialized.  FIX COMMANDS: lsof -i :8001 pkill -f "port 8001" cd /path/to/max && pip install -r requirements.txt python -m uvicorn main:app --host 0.0.0.0 --port 8001  VERIFICATION: curl http://localhost:8001/docs Check that the Swagger UI loads and shows available endpoints.
 
+
+## 2026-06-02T14:13Z - Boot failure (Leo)
+- **Status:** proposed
+- **Root cause:** ROOT CAUSE:
+- **Fix:** The FastAPI engine on port 8001 failed to start with no stderr output, indicating either a missing dependency, import error, or the process exited before logging. The engine likely crashed during initialization before error messages could be written.  FIX COMMANDS: pip install fastapi uvicorn cd /path/to/max && python -m uvicorn main:app --host 0.0.0.0 --port 8001  VERIFICATION: curl http://localhost:8001/docs If the FastAPI interactive docs page loads, the engine is running successfully.
+
+
+## 2026-06-02T14:13Z - Boot failure (Leo)
+- **Status:** proposed
+- **Root cause:** ROOT CAUSE:
+- **Fix:** FastAPI engine on port 8001 failed to start with no stderr output. This typically indicates either the process exited silently before logging, a port binding issue, or missing dependencies.  FIX COMMANDS: lsof -i :8001 pip install -r requirements.txt python -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload  VERIFICATION: curl http://localhost:8001/docs Check that the FastAPI Swagger UI loads and returns a 200 status code.
+
+
+## 2026-06-02T14:13Z - Boot failure (Leo)
+- **Status:** proposed
+- **Root cause:** ROOT CAUSE:
+- **Fix:** The FastAPI engine on port 8001 failed to start, but no error logs are available. The process likely crashed silently or failed during initialization before logging could occur.  FIX COMMANDS: python -m pip install fastapi uvicorn --upgrade cd /path/to/max && python -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload  VERIFICATION: curl http://localhost:8001/docs If the Swagger UI loads and returns HTTP 200, the engine is running.  Note: Replace /path/to/max with the actual project directory path. If the engine still fails, run with --log-level debug to capture initialization errors.
+

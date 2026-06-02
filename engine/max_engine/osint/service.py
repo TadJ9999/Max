@@ -15,6 +15,7 @@ from time import monotonic
 import httpx
 
 from .gdelt import DEFAULT_QUERY, fetch_gdelt
+from .gnews import fetch_gnews
 from .models import Article, Heatmap
 from .rss import DEFAULT_FEEDS, fetch_rss
 from .score import score_countries
@@ -37,6 +38,11 @@ class OsintService:
         gdelt_enabled: bool = True,
         rss_enabled: bool = True,
         tone_signal: bool = False,
+        gnews_enabled: bool = False,
+        gnews_query: str | None = None,
+        gnews_ttl_seconds: int = 1800,
+        gnews_key: str | None = None,
+        gnews_max_records: int = 25,
     ):
         self.feeds = feeds or DEFAULT_FEEDS
         self.query = query
@@ -47,11 +53,20 @@ class OsintService:
         self.gdelt_enabled = gdelt_enabled
         self.rss_enabled = rss_enabled
         self.tone_signal = tone_signal
+        # GNews rides its own slow TTL — the free tier is 100 req/day, far below
+        # the ~144/day the 600s main refresh would otherwise drive.
+        self.gnews_enabled = gnews_enabled
+        self.gnews_query = gnews_query or query
+        self.gnews_ttl_seconds = gnews_ttl_seconds
+        self.gnews_key = gnews_key
+        self.gnews_max_records = gnews_max_records
 
         self._lock = asyncio.Lock()
         self._articles: list[Article] = []
         self._heatmap: Heatmap | None = None
         self._fetched_at: float | None = None
+        self._gnews_articles: list[Article] = []
+        self._gnews_at: float | None = None
 
     # ---- fetch / cache --------------------------------------------------
 
@@ -61,6 +76,31 @@ class OsintService:
             and self._fetched_at is not None
             and (monotonic() - self._fetched_at) < self.ttl_seconds
         )
+
+    def _gnews_fresh(self) -> bool:
+        return (
+            self._gnews_at is not None
+            and (monotonic() - self._gnews_at) < self.gnews_ttl_seconds
+        )
+
+    async def _refresh_gnews(self, client: httpx.AsyncClient) -> None:
+        """Refetch GNews only when its own (slow) TTL elapsed; otherwise keep the
+        cached batch so the daily quota isn't burned on every main refresh."""
+        if not (self.gnews_enabled and self.gnews_key):
+            self._gnews_articles = []
+            return
+        if self._gnews_fresh():
+            return
+        try:
+            self._gnews_articles = await fetch_gnews(
+                client,
+                query=self.gnews_query,
+                api_key=self.gnews_key,
+                max_records=self.gnews_max_records,
+            )
+        except Exception:
+            self._gnews_articles = []
+        self._gnews_at = monotonic()
 
     @staticmethod
     def _dedupe(articles: list[Article]) -> list[Article]:
@@ -99,11 +139,13 @@ class OsintService:
                 results = await asyncio.gather(gdelt_coro, rss_coro, return_exceptions=True)
                 gdelt = results[0] if not isinstance(results[0], BaseException) else []
                 rss = results[1] if not isinstance(results[1], BaseException) else []
+                # GNews on its own slow TTL; reuse the cached batch otherwise.
+                await self._refresh_gnews(client)
             finally:
                 if owns:
                     await client.aclose()
 
-            articles = self._dedupe([*gdelt, *rss])
+            articles = self._dedupe([*gdelt, *rss, *self._gnews_articles])
             for art in articles:
                 art.severity = classify(art.title)
             self._articles = articles
@@ -191,9 +233,19 @@ class OsintService:
         return {"frames": out, "windowHours": window_hours}
 
     def sources(self) -> dict:
-        """Static description of where the data comes from (for the UI)."""
+        """Static description of where the data comes from (for the UI + the
+        Oracle Enrichment analyzer, which reasons about active vs available
+        coverage)."""
+        from .sources import FEED_GROUP, GROUP_LABELS
+
+        groups: dict[str, int] = {}
+        for f in self.feeds:
+            groups[FEED_GROUP.get(f, "other")] = groups.get(FEED_GROUP.get(f, "other"), 0) + 1
         return {
-            "gdelt": {"query": self.query, "timespan": self.timespan},
+            "gdelt": {"query": self.query, "timespan": self.timespan, "enabled": self.gdelt_enabled},
+            "rss": {"enabled": self.rss_enabled, "count": len(self.feeds), "groups": groups},
+            "gnews": {"enabled": self.gnews_enabled, "hasKey": bool(self.gnews_key)},
             "feeds": self.feeds,
+            "feedGroups": {g: GROUP_LABELS.get(g, g) for g in groups},
             "ttlSeconds": self.ttl_seconds,
         }

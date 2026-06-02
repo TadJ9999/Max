@@ -103,6 +103,11 @@ class OsintConfig(BaseModel):
     # Naval layer: US carrier/amphib positions from public OSINT trackers.
     naval_twz_url: str = OSINT_DEFAULT_TWZ_URL
     naval_ttl_seconds: int = 21_600  # trackers update ~weekly
+    # GNews.io query-based provider (key in env GNEWS_API_KEY, free tier 100/day).
+    gnews_enabled: bool = False
+    gnews_query: str = OSINT_DEFAULT_QUERY
+    gnews_ttl_seconds: int = 1800  # slow TTL → ~48 req/day, under the free quota
+    gnews_max_records: int = 25
     # Per-source toggles
     gdelt_enabled: bool = True
     rss_enabled: bool = True

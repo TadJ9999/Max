@@ -31,6 +31,21 @@ import "./Code.css";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+// Signal the widget mascot about AI activity (it pulses/animates on these).
+// Mirrors the helper every other feature view uses so editor LLM calls light it
+// up too — BroadcastChannel for browser/cross-window + Tauri event for desktop.
+async function emitMascotEvent(name: string, payload?: unknown) {
+  try {
+    const ch = new BroadcastChannel("max:mascot");
+    ch.postMessage({ type: name, payload });
+    ch.close();
+  } catch { /* not supported */ }
+  try {
+    const { emit } = await import("@tauri-apps/api/event");
+    await emit(name, payload);
+  } catch { /* not in Tauri */ }
+}
+
 loader.config({ monaco });
 
 interface OpenTab {
@@ -253,6 +268,8 @@ export function CodeView() {
     setCmdBusy(true);
     const ac = new AbortController();
     cmdAbortRef.current = ac;
+    void emitMascotEvent("mascot:signal");
+    void emitMascotEvent("mascot:thinking", true);
     try {
       for await (const delta of streamCommand(q, ac.signal)) setCmdOut((o) => o + delta);
     } catch (e) {
@@ -261,6 +278,7 @@ export function CodeView() {
     } finally {
       setCmdBusy(false);
       cmdAbortRef.current = null;
+      if (runAbortsRef.current.size === 0) void emitMascotEvent("mascot:thinking", false);
     }
   };
 
@@ -385,6 +403,9 @@ export function CodeView() {
 
     const ac = new AbortController();
     runAbortsRef.current.set(id, ac);
+    // Pulse the widget mascot — same signal the other feature views emit.
+    void emitMascotEvent("mascot:signal");
+    void emitMascotEvent("mascot:thinking", true);
     let acc = "";
     try {
       const onMeta = (m: { model?: string }) => {
@@ -424,6 +445,8 @@ export function CodeView() {
       return null;
     } finally {
       runAbortsRef.current.delete(id);
+      // Stop the mascot only once every concurrent run has finished streaming.
+      if (runAbortsRef.current.size === 0) void emitMascotEvent("mascot:thinking", false);
     }
   };
 

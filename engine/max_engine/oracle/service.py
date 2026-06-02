@@ -21,6 +21,12 @@ from collections.abc import Awaitable, Callable
 import httpx
 
 from ..market.yahoo import fetch_candles
+from .enrichment import (
+    build_gap_report,
+    build_messages,
+    heuristic_suggestions,
+    parse_suggestions,
+)
 from .extract import extract_claims
 from .grading import checkpoints
 from .hindsight import related
@@ -48,10 +54,12 @@ class OracleService:
         extract_route: Route,
         judge_local_route: Route,
         judge_cloud_route: Route | None = None,
+        enrich_route: Route | None = None,
         horizons_hours: list[int] | None = None,
         enabled: bool = True,
         escalate: bool = True,
         max_per_run: int = 25,
+        enrich_ttl_seconds: int = 1800,
     ) -> None:
         self.store = store
         self.vector = vector
@@ -63,10 +71,14 @@ class OracleService:
         self.extract_route = extract_route
         self.judge_local_route = judge_local_route
         self.judge_cloud_route = judge_cloud_route
+        self.enrich_route = enrich_route
         self.horizons_hours = horizons_hours
         self.enabled = enabled
         self.escalate = escalate
         self.max_per_run = max_per_run
+        self.enrich_ttl_seconds = enrich_ttl_seconds
+        self._enrich_cache: dict | None = None
+        self._enrich_at: float | None = None
 
     # ---- capture --------------------------------------------------------
 
@@ -247,6 +259,65 @@ class OracleService:
         s["enabled"] = self.enabled
         s["horizons"] = [lbl for lbl, _ in checkpoints(self.horizons_hours)]
         return s
+
+    # ---- enrichment (what new data would help) -------------------------
+
+    def _source_desc(self) -> dict:
+        """Snapshot of the data sources currently feeding predictions/grading."""
+        desc: dict = {}
+        try:
+            if self.osint:
+                desc["osint"] = self.osint.sources()
+        except Exception:
+            pass
+        try:
+            if self.market:
+                desc["market"] = {"watchlist": getattr(self.market, "symbols", None)}
+        except Exception:
+            pass
+        return desc
+
+    async def enrichment(self, *, refresh: bool = False) -> dict:
+        """Analyze the track record and suggest data sources that would sharpen
+        predictions/grading. Hybrid: a deterministic gap report + Leo's ranked
+        suggestions, with a grounded heuristic fallback. Cached on a slow TTL."""
+        now = time.monotonic()
+        if (
+            not refresh
+            and self._enrich_cache is not None
+            and self._enrich_at is not None
+            and (now - self._enrich_at) < self.enrich_ttl_seconds
+        ):
+            return self._enrich_cache
+
+        stats = self.stats()
+        model_metrics = self.calibrator.metrics() if self.calibrator else {"ready": False}
+        gap = build_gap_report(stats, model_metrics, self._source_desc())
+
+        suggestions: list[dict] = []
+        source = "heuristic"
+        route = self.enrich_route() if self.enrich_route else None
+        if route:
+            try:
+                raw = await self.llm(build_messages(gap), provider=route[0], model=route[1])
+                suggestions = parse_suggestions(raw)
+                if suggestions:
+                    source = "llm"
+            except Exception:
+                suggestions = []
+        if not suggestions:
+            suggestions = heuristic_suggestions(gap)
+
+        result = {
+            "generatedAt": int(time.time()),
+            "signals": gap,
+            "suggestions": suggestions,
+            "modelReady": gap.get("modelReady", False),
+            "source": source,
+        }
+        self._enrich_cache = result
+        self._enrich_at = now
+        return result
 
     def list_claims(self, **kw) -> list[dict]:
         return self.store.list_claims(**kw)

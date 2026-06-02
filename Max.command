@@ -19,6 +19,7 @@
 # ============================================================================
 cd "$(dirname "$0")" || exit 1
 
+ROOT="$PWD"
 APP_DIR="$PWD/app"
 CONFIG="$PWD/engine/.maxconfig.json"
 DEFAULT_URL="https://max-pc.local:8443"
@@ -107,11 +108,14 @@ launch() {
 }
 
 if ! launch; then
-  echo "[Max] No build found — building the desktop app (first run, may take a few minutes)..."
   command -v npm >/dev/null 2>&1 || { echo "[Max] npm not found. Install Node.js, then re-run."; exit 1; }
-  npm install
+  # Leo build console: animated poodle + spinner, output tucked into a log,
+  # errors surfaced only on failure (see scripts/leo-build.sh).
+  LEOBUILD="$ROOT/scripts/leo-build.sh"
+  LOG="${TMPDIR:-/tmp}/max-build.log"
+  bash "$LEOBUILD" "Installing dependencies (npm install)" "$LOG" npm install || exit 1
   # --no-bundle matches Max.cmd: produces the raw release binary, no installer.
-  npm run tauri build -- --no-bundle
+  bash "$LEOBUILD" "Building the desktop app (first run)" "$LOG" npm run tauri build -- --no-bundle || exit 1
   if ! launch; then
     echo "[Max] Build finished but no app binary was found."
     echo "      Try a dev run instead:  cd app && npm run tauri dev"
