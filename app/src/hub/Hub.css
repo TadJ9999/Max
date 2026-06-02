@@ -114,6 +114,22 @@
   border-color: rgba(79, 195, 247, 0.65);
   box-shadow: 0 0 22px rgba(79, 195, 247, 0.4);
 }
+/* Compound selector (.widget-action-btn.widget-action-btn--oracle) outranks the
+   base .widget-action-btn rule in Osint.css regardless of stylesheet load order. */
+.widget-action-btn.widget-action-btn--oracle {
+  color: #a78bfa;
+  border-color: rgba(167, 139, 250, 0.35);
+  box-shadow: 0 0 14px rgba(167, 139, 250, 0.18);
+}
+.widget-action-btn.widget-action-btn--oracle:hover {
+  border-color: rgba(167, 139, 250, 0.65);
+  box-shadow: 0 0 22px rgba(167, 139, 250, 0.4);
+}
+.hub__tab--oracle.is-active {
+  color: #a78bfa;
+  border-color: rgba(167, 139, 250, 0.4);
+  background: rgba(167, 139, 250, 0.1);
+}
 .hub__tab--settings {
   margin-left: auto;
 }
