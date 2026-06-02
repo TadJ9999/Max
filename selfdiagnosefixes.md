@@ -115,3 +115,21 @@ by the AI diagnosis.
 - **Root cause:** ROOT CAUSE:
 - **Fix:** The FastAPI engine on port 8001 failed to start, but no error logs are available. The process likely crashed silently or failed during initialization before logging could occur.  FIX COMMANDS: python -m pip install fastapi uvicorn --upgrade cd /path/to/max && python -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload  VERIFICATION: curl http://localhost:8001/docs If the Swagger UI loads and returns HTTP 200, the engine is running.  Note: Replace /path/to/max with the actual project directory path. If the engine still fails, run with --log-level debug to capture initialization errors.
 
+
+## 2026-06-02T14:53Z - Boot failure (Leo)
+- **Status:** proposed
+- **Root cause:** ROOT CAUSE:
+- **Fix:** The FastAPI engine on port 8001 failed to start with no error logs captured, indicating either a startup timeout, silent crash, or port binding issue.  FIX COMMANDS: lsof -i :8001 pkill -f "FastAPI.*8001" || true cd /path/to/max && python -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload  VERIFICATION: curl http://localhost:8001/docs Check for 200 response and FastAPI Swagger UI loads successfully.
+
+
+## 2026-06-02T14:54Z - Boot failure (Leo)
+- **Status:** proposed
+- **Root cause:** ROOT CAUSE:
+- **Fix:** FastAPI engine on port 8001 failed to start with no error logs, indicating either a port binding issue, missing dependencies, or the process didn't initialize. The absence of stderr suggests the application may have exited before logging began.  FIX COMMANDS: lsof -i :8001 | grep -v COMMAND | awk '{print $2}' | xargs kill -9 2>/dev/null || true cd /path/to/max && pip install -r requirements.txt python -m uvicorn main:app --host 0.0.0.0 --port 8001  VERIFICATION: curl -s http://localhost:8001/docs && echo "Engine running successfully" || echo "Engine failed"
+
+
+## 2026-06-02T14:54Z - Boot failure (Leo)
+- **Status:** proposed
+- **Root cause:** ROOT CAUSE:
+- **Fix:** The FastAPI engine on port 8001 failed to start with no stderr output logged. This typically indicates either a port binding failure (port already in use), missing dependencies, or the process crashed before generating logs.  FIX COMMANDS: lsof -i :8001 | grep LISTEN && kill -9 $(lsof -t -i :8001) || true cd /path/to/max && pip install -r requirements.txt python -m uvicorn main:app --host 0.0.0.0 --port 8001  VERIFICATION: curl -s http://localhost:8001/docs && echo "FastAPI engine running" ps aux | grep "uvicorn" | grep -v grep
+

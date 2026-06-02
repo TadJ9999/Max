@@ -38,7 +38,25 @@ if (-not $AppDir -or -not (Test-Path $AppDir)) {
 # first, but the engine (uvicorn) binds only 127.0.0.1 (IPv4). A localhost
 # request wastes ~2s failing over IPv6 before falling back to IPv4 — which
 # blows the 2s health timeout and makes Leo think a healthy engine is down.
-$HEALTH_URL   = "http://127.0.0.1:8001/health"
+# Where is the engine listening? LAN mode ("Share on LAN") rebinds it to HTTPS on
+# lan_port (default 8443); otherwise plain http on 8001. Read .maxconfig.json so
+# Leo checks the RIGHT place instead of always assuming 8001 — that mismatch made
+# Leo think a perfectly healthy LAN engine (on 8443) was down and fire on launch.
+$EnginePort = 8001
+$EngineTls  = $false
+$cfgPath = Join-Path $AppDir "engine\.maxconfig.json"
+if (Test-Path $cfgPath) {
+    try {
+        $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
+        if ($cfg.lan -and $cfg.lan.lan_enabled) {
+            if ($cfg.lan.lan_port) { $EnginePort = [int]$cfg.lan.lan_port }
+            $cp = [string]$cfg.lan.cert_path
+            $kp = [string]$cfg.lan.key_path
+            if ($cp -and $kp -and (Test-Path $cp) -and (Test-Path $kp)) { $EngineTls = $true }
+        }
+    } catch { }
+}
+$HEALTH_URL   = "http://127.0.0.1:$EnginePort/health"
 $MAX_ATTEMPTS = 3
 
 try { $Host.UI.RawUI.WindowTitle = "LEO - SELF-DIAGNOSE MODE" } catch { }
@@ -77,6 +95,19 @@ function Show-Poodle([string]$mood = "work") {
 #  Health check
 # ============================================================
 function Test-Health {
+    if ($EngineTls) {
+        # HTTPS/LAN mode: can't raw-HTTP the self-signed TLS port, so a successful
+        # TCP connect to the port counts as "up" (matches the Rust spawn logic).
+        try {
+            $c = New-Object System.Net.Sockets.TcpClient
+            $c.ConnectAsync("127.0.0.1", $EnginePort).Wait(2000) | Out-Null
+            $ok = $c.Connected
+            $c.Close()
+            return $ok
+        } catch {
+            return $false
+        }
+    }
     try {
         $r = Invoke-WebRequest -Uri $HEALTH_URL -TimeoutSec 2 -ErrorAction Stop -UseBasicParsing
         return $r.StatusCode -eq 200
